@@ -22,6 +22,8 @@ db.exec(fs.readFileSync(SCHEMA_PATH, "utf8"));
 // já existe — engolimos esse erro específico.
 for (const stmt of [
   "ALTER TABLE periodos ADD COLUMN vendas_ultimo_dia_motivo TEXT",
+  "ALTER TABLE vendas_transacoes ADD COLUMN emp_id TEXT",
+  "ALTER TABLE vendas_transacoes ADD COLUMN cli_id TEXT",
 ]) {
   try {
     db.exec(stmt);
@@ -68,8 +70,8 @@ function replaceVendas(periodoId, rows) {
   const del = db.prepare("DELETE FROM vendas_transacoes WHERE periodo_id = ?");
   const ins = db.prepare(
     `INSERT INTO vendas_transacoes
-      (periodo_id, data, hora, lancamento, barras, descricao, categoria, preco_unit, quantidade, valor_liquido, forma_pagto)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (periodo_id, data, hora, lancamento, barras, descricao, categoria, preco_unit, quantidade, valor_liquido, forma_pagto, emp_id, cli_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const tx = db.prepare("BEGIN");
   tx.run();
@@ -87,7 +89,9 @@ function replaceVendas(periodoId, rows) {
         r.preco_unit ?? null,
         r.quantidade,
         r.valor_liquido,
-        r.forma_pagto ?? null
+        r.forma_pagto ?? null,
+        r.emp_id ?? null,
+        r.cli_id ?? null
       );
     }
     db.prepare("COMMIT").run();

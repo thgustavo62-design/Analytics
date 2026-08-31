@@ -1,18 +1,22 @@
 # Motor de Análise Comercial — Fase 2
 
-> **Status: recepção/validação/telas IMPLEMENTADAS.** Falta só a tarefa externa que
-> aplica o system prompt abaixo e entrega o JSON. Como está no código:
-> - O backend Node **não chama LLM**. Recebe o JSON pronto — pela pasta `inbox/`
->   (`*.json` com `meta` + `diagnostico_executivo`) ou por
->   `POST /analise-comercial/upload` (cabeçalho `X-Analise-Token` se `ANALISE_UPLOAD_TOKEN`
->   estiver setado). Valida com `validate-analise.js`; se falhar → `422` / log, guarda
->   `analise_AAAA-MM.INVALIDO.json` e **mantém a anterior**. OK → grava
->   `data/analises/<loja>/analise_AAAA-MM.json`.
-> - `loja` vem de `meta.loja`; mês de `meta.periodo.inicio`. Roda para **as duas lojas**.
+> **Status: IMPLEMENTADO, incluindo a geração.** Este é o system prompt que `motor.js`
+> aplica. Como está no código:
+> - `analytics-deep.js` monta os agregados (Passos 1–8) de forma determinística;
+>   `motor.js` chama a API da Anthropic (`ANALISE_MODEL`, padrão `claude-opus-5`) passando
+>   **só os agregados** — o modelo interpreta e decide, no schema da PARTE 2. Valida com
+>   `validate-analise.js` (1 retry). Opt-in por `ANTHROPIC_API_KEY`.
+> - Também aceita o JSON pronto por fora: `*.json` na pasta `inbox/` (reconhecido pelo
+>   `meta` + `diagnostico_executivo`) ou `POST /analise-comercial/upload`
+>   (`X-Analise-Token` se `ANALISE_UPLOAD_TOKEN` setado). Inválido → `422` / log,
+>   `analise_AAAA-MM.INVALIDO.json`, **mantém a anterior**.
+> - `loja` de `meta.loja`; mês de `meta.periodo.inicio`. Grava
+>   `data/analises/<loja>/analise_AAAA-MM.json`. Roda para **as duas lojas**.
 > - Lê: `GET /api/analise-comercial/{loja}[/{AAAA-MM}]`. Tela: **Análise Comercial**
->   (sidebar). Export: `GET /export-analise/{loja}/{AAAA-MM}`.
-> - Ao configurar a tarefa: o documento cita `claude-sonnet-4-5` — use o id vigente
->   (hoje `claude-sonnet-5`).
+>   (sidebar) com botão "Gerar análise agora" / "Regerar". Export:
+>   `GET /export-analise/{loja}/{AAAA-MM}`.
+> - Disparo automático: após ingest de vendas do mês corrente/anterior, e numa verificação
+>   diária (`AUTO_ANALISE=0` desliga).
 
 ---
 

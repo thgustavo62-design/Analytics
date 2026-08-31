@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const chokidar = require("chokidar");
 const { ingestFile } = require("./ingest");
+const { maybeAutoAnalise } = require("./motor");
 
 const LOG_PATH = path.join(__dirname, "data", "inbox-log.json");
 const MAX_LOG = 200;
@@ -63,6 +64,11 @@ async function processar(filePath) {
     processados.add(sig);
     registrar({ arquivo: nome, sig, ok: true, ms: Date.now() - t0, resultado });
     console.log(`[inbox] ${nome} -> ok (${Date.now() - t0}ms)`, JSON.stringify(resultado));
+    try {
+      maybeAutoAnalise(resultado, (m) => registrar({ arquivo: nome, sig: null, ok: true, auto: true, msg: m }));
+    } catch (e) {
+      console.error("[inbox] auto-análise:", e.message);
+    }
   } catch (e) {
     processados.add(sig); // não reprocessa arquivo quebrado a cada boot; corrigir o arquivo muda a assinatura
     registrar({ arquivo: nome, sig, ok: false, ms: Date.now() - t0, erro: e.message });

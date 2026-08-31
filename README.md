@@ -39,6 +39,9 @@ Variáveis de ambiente:
 | `VA_POLL_MIN` | `5` | de quantos em quantos minutos o navegador recarrega o mês corrente |
 | `VA_ANALISES` | `data/analises` | onde ficam os JSONs do Motor de Análise Comercial |
 | `ANALISE_UPLOAD_TOKEN` | *(sem token)* | se definido, exige `X-Analise-Token` no `POST /analise-comercial/upload` |
+| `ANTHROPIC_API_KEY` | — | se definida, o site **gera a Análise Comercial sozinho** (botão + auto após ingest) |
+| `ANALISE_MODEL` | `claude-opus-5` | modelo usado para gerar a análise (ex.: `claude-sonnet-5` p/ gastar menos) |
+| `AUTO_ANALISE` | *(ligado se há chave)* | `0` desliga a geração automática (mantém só o botão manual) |
 | `VA_NO_AUTH` | — | `1` desliga a autenticação (**só para teste local**) |
 
 `GET /healthz` responde sem login (health check).
@@ -111,6 +114,9 @@ watcher.js           observa inbox/ (chokidar), serializa a ingestão, mantém d
 ingest.js            recebe 1 arquivo -> detecta loja pelo CNPJ, split por mês, grava no banco
 validate-analise.js  validador (sem dep) do JSON do Motor de Análise Comercial (Fase 2)
 analise-store.js     lê/grava data/analises/<loja>/analise_AAAA-MM.json (JSON quebrado vira *.INVALIDO.json)
+analytics-deep.js    agregados profundos p/ o Motor (ticket mediano, baseline c/ desvio, incrementalidade
+                     intradiária, canais convênio/delivery, concentração cliente/convênio, operadores)
+motor.js             gera o JSON via API da Anthropic a partir dos agregados profundos (opt-in por ANTHROPIC_API_KEY)
 db.js                node:sqlite — acesso, sempre por loja/período
 schema.sql           tabelas
 parsers/vendas.js    PDF "Analítico de Vendas" -> transações + empresa (CNPJ) + validação da soma
@@ -170,12 +176,20 @@ serve o JSON. A geração roda **por fora**: uma tarefa agendada (Cowork/rotina)
 system prompt de `prompts/motor-analise-comercial.md` sobre os agregados e entrega o JSON
 no contrato da Parte 2. Roda para as duas lojas, separadamente.
 
-Como o JSON chega:
+Como o JSON chega — três caminhos, do mais automático ao mais manual:
 
-- **Pela pasta `inbox/`** — salve um arquivo `*.json` com o conteúdo da análise (o site
-  reconhece pelo `meta` + `diagnostico_executivo`). Mesmo caminho de tudo.
-- **Por `POST /analise-comercial/upload`** — para o agente externo. Cabeçalho
-  `X-Analise-Token: <ANALISE_UPLOAD_TOKEN>` se a variável estiver definida. Corpo = o JSON.
+1. **O próprio site gera** (se `ANTHROPIC_API_KEY` estiver no ambiente). `analytics-deep.js`
+   monta os agregados (ticket médio E mediano, baseline semanal com desvio padrão, participação
+   intradiária da categoria de campanha, canais convênio/delivery/balcão, concentração por
+   cliente e por convênio, dispersão por operador) e `motor.js` chama a API — o modelo só
+   **interpreta e decide** (nunca faz conta sobre a base). Dispara: no botão **"Gerar análise
+   agora"** da tela; automático depois de um ingest de vendas do mês corrente/anterior
+   (`AUTO_ANALISE=0` desliga); e numa verificação diária. Modelo em `ANALISE_MODEL`
+   (padrão `claude-opus-5`; `claude-sonnet-5` sai mais barato). Custa alguns centavos por rodada.
+2. **Pela pasta `inbox/`** — salve um `*.json` com o conteúdo da análise (reconhecido pelo
+   `meta` + `diagnostico_executivo`). Para quem gera por fora (Cowork/rotina).
+3. **Por `POST /analise-comercial/upload`** — para um agente externo. Cabeçalho
+   `X-Analise-Token: <ANALISE_UPLOAD_TOKEN>` se a variável estiver definida. Corpo = o JSON.
 
 Em ambos os casos: **valida contra o schema antes de gravar**. Se falhar → responde `422`
 (ou registra o erro no log da `inbox`), guarda uma cópia `analise_AAAA-MM.INVALIDO.json`

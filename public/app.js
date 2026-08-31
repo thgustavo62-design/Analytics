@@ -554,10 +554,14 @@
     try {
       d = await getJSON(url);
     } catch (e) {
+      var b = e.body || {};
       view.innerHTML =
         '<div class="page-head"><div><h1>🧭 Análise Comercial</h1><div class="sub">' + esc(state.loja) + "</div></div></div>" +
-        '<div class="empty"><div class="big">' + esc((e.body && e.body.erro) || "Sem análise comercial ainda") + ".</div>" +
-        (EXPORT ? "" : '<p>A análise mensal é gerada por fora (tarefa agendada) e chega como um JSON — pela pasta <b>inbox</b> ou por <code>POST /analise-comercial/upload</code>. Veja <b>prompts/motor-analise-comercial.md</b>.</p>') + "</div>";
+        '<div class="empty"><div class="big">' + esc(b.erro || "Sem análise comercial ainda") + ".</div>" +
+        (!EXPORT && b.podeGerar ? '<p><button class="btn" id="acGerar">🧠 Gerar análise agora</button><br><span class="hint">usa a API da Anthropic (' + esc(b.model || "") + ") · custa alguns centavos por rodada</span></p>" : "") +
+        (EXPORT ? "" : '<p class="hint">Também dá para entregar o JSON pela pasta <b>inbox</b> ou por <code>POST /analise-comercial/upload</code> (tarefa agendada). Veja <b>prompts/motor-analise-comercial.md</b>.</p>') + "</div>";
+      var g = view.querySelector("#acGerar");
+      if (g) g.addEventListener("click", function () { gerarAnaliseAgora(g); });
       return;
     }
     var a = d.analise;
@@ -574,7 +578,9 @@
     view.innerHTML =
       '<div class="page-head"><div><h1>🧭 Análise Comercial</h1><div class="sub">' + esc(d.loja) + " · " + esc(d.periodo) +
         (meses.length > 1 ? ' &nbsp; <select id="acMes" class="inp" style="width:auto;display:inline-block">' + sel + "</select>" : "") + "</div></div>" +
-        (EXPORT ? "" : '<button class="btn secondary" id="acBaixar">⬇ Baixar (HTML)</button>') + "</div>" +
+        '<div style="display:flex;gap:8px">' +
+        (!EXPORT && d.podeGerar ? '<button class="btn secondary" id="acRegerar" title="Regera com a API da Anthropic">🧠 Regerar</button>' : "") +
+        (EXPORT ? "" : '<button class="btn secondary" id="acBaixar">⬇ Baixar (HTML)</button>') + "</div></div>" +
       (metaLine ? '<div class="note" style="margin:-8px 0 16px">' + metaLine + "</div>" : "") +
       acDiagnostico(a) +
       acKpis(a) +
@@ -592,6 +598,30 @@
     if (acMes) acMes.addEventListener("change", function () { renderAnalise(acMes.value); });
     var acB = view.querySelector("#acBaixar");
     if (acB) acB.addEventListener("click", function () { window.location.href = "/export-analise/" + encodeURIComponent(d.loja) + "/" + d.periodo; });
+    var acR = view.querySelector("#acRegerar");
+    if (acR) acR.addEventListener("click", function () { gerarAnaliseAgora(acR, d.periodo); });
+  }
+
+  async function gerarAnaliseAgora(btn, ym) {
+    var loja = state.loja;
+    btn.disabled = true;
+    var txt0 = btn.textContent;
+    btn.textContent = "Gerando… (pode levar 1–2 min)";
+    try {
+      if (!ym) {
+        var ps = (await getJSON("/api/periodos/" + encodeURIComponent(loja))).filter(function (p) { return p.temVendas; });
+        if (!ps.length) throw new Error("não há vendas processadas para " + loja);
+        ym = (ps.filter(function (p) { return p.atual; })[0] || ps[0]).periodo;
+      }
+      var r = await fetch("/analise-comercial/gerar/" + encodeURIComponent(loja) + "/" + ym, { method: "POST" });
+      var j = await r.json();
+      if (!r.ok) throw new Error(j.erro || ("HTTP " + r.status));
+      renderAnalise(ym);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = txt0;
+      alert("Não deu para gerar: " + e.message);
+    }
   }
 
   function acDiagnostico(a) {

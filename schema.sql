@@ -34,7 +34,9 @@ CREATE TABLE IF NOT EXISTS vendas_transacoes (
   preco_unit    REAL,
   quantidade    REAL NOT NULL,
   valor_liquido REAL NOT NULL,
-  forma_pagto   TEXT                   -- 'A VISTA' | 'A PRAZO'
+  forma_pagto   TEXT,                  -- 'A VISTA' | 'A PRAZO'
+  emp_id        TEXT,                  -- Emp. ID (convênio/empresa)
+  cli_id        TEXT                   -- Cli. ID (cliente)
 );
 CREATE INDEX IF NOT EXISTS ix_vendas_periodo ON vendas_transacoes(periodo_id);
 CREATE INDEX IF NOT EXISTS ix_vendas_periodo_data ON vendas_transacoes(periodo_id, data);

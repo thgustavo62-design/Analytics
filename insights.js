@@ -19,11 +19,14 @@ function weekdayOf(isoDate) {
   return new Date(isoDate + "T12:00:00").getDay();
 }
 
+const zeros = (s) => !s || /^0+$/.test(String(s).trim());
+
 /**
  * @param {object} agg   saída de aggregate()
  * @param {{ diasCampanha?: number[], campanhaNome?: string }} loja
+ * @param {Array} vendas  linhas de vendas_transacoes (para concentração por cliente/convênio)
  */
-function gerarInsights(agg, loja = {}) {
+function gerarInsights(agg, loja = {}, vendas = null) {
   const c = cfg();
   const cards = [];
   const diasCompletos = agg.daily.filter((d) => !d.parcial);
@@ -89,6 +92,33 @@ function gerarInsights(agg, loja = {}) {
         ` entraram sem descrição de produto — itens fracionados ou sem cadastro. ` +
         `É dinheiro sem rastro de estoque nem de margem; vale auditar o que está sendo vendido assim.`,
     });
+  }
+
+  // 4 · Concentração de faturamento numa conta única (cliente ou convênio) > 5%
+  if (Array.isArray(vendas) && vendas.length) {
+    const total = vendas.reduce((s, r) => s + r.valor_liquido, 0);
+    for (const [campo, rotulo] of [["emp_id", "convênio"], ["cli_id", "cliente"]]) {
+      const acc = new Map();
+      for (const r of vendas) {
+        if (zeros(r[campo])) continue;
+        acc.set(r[campo], (acc.get(r[campo]) || 0) + r.valor_liquido);
+      }
+      if (!acc.size) continue;
+      const [id, val] = [...acc.entries()].sort((a, b) => b[1] - a[1])[0];
+      const pct = val / total;
+      if (pct > 0.05) {
+        const lancs = new Set(vendas.filter((r) => r[campo] === id).map((r) => r.lancamento)).size;
+        cards.push({
+          icon: "◆",
+          title: `Uma conta de ${rotulo} concentra ${(pct * 100).toFixed(1).replace(".", ",")}% do faturamento`,
+          body:
+            `A conta ${rotulo} ${id} respondeu por ${brl(val)} em ${lancs.toLocaleString("pt-BR")} cupons no mês. ` +
+            `Acima de 5% num único ${rotulo} é risco material — se essa conta some, o mês vira. ` +
+            `Confira o mix (centenas de cupons não é uma pessoa: é convênio, rota de entrega ou instituição).`,
+        });
+        break; // um card de concentração basta
+      }
+    }
   }
 
   return cards;

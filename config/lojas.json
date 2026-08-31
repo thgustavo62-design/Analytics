@@ -1,5 +1,5 @@
 {
-  "_nota": "Configuração por loja. 'diasCampanha' usa a convenção JS getDay(): 0=domingo ... 6=sábado. 'concorrentes' alimenta os cards do radar. 'horaFechamento' = hora que a loja fecha; se o relatório foi gerado nesse mesmo dia antes disso, o último dia é marcado como parcial. Ajuste se o horário real for outro.",
+  "_nota": "Configuração por loja. 'diasCampanha' usa a convenção JS getDay(): 0=domingo ... 6=sábado. 'concorrentes' alimenta os cards do radar. 'horaFechamento' = hora que a loja fecha; se o relatório foi gerado nesse mesmo dia antes disso, o último dia é marcado como parcial. Ajuste se o horário real for outro. 'campanhaCategoria' = categoria-alvo da campanha propria (p/ medir incrementalidade intradiaria).",
   "Farma e Farma": {
     "endereco": "Av. Carlos Medeiros 499, Centro — Baixo Guandu/ES",
     "instagram": "@farmaefarma",
@@ -27,7 +27,8 @@
     ],
     "horaFechamento": 22,
     "cnpj": "36007525000104",
-    "razaoSocial": "Drogaria Melhor Preco LTDA"
+    "razaoSocial": "Drogaria Melhor Preco LTDA",
+    "campanhaCategoria": "Fraldas"
   },
   "Minas Farma": {
     "endereco": "Baixo Guandu/ES",
@@ -53,6 +54,7 @@
     ],
     "horaFechamento": 22,
     "cnpj": "31689601000349",
-    "razaoSocial": "Rede Minas Farma"
+    "razaoSocial": "Rede Minas Farma",
+    "campanhaCategoria": null
   }
 }

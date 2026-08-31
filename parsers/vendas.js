@@ -114,6 +114,8 @@ async function parseVendasPdf(pdfPath, opts = {}) {
         quantidade: parseInt(m[8], 10),
         valor_liquido: toFloat(m[9]),
         forma_pagto: m[10],
+        emp_id: m[11], // Emp. ID — convênio/empresa
+        cli_id: m[12], // Cli. ID — cliente
       });
       continue;
     }

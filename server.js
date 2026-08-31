@@ -35,6 +35,7 @@ const { ingestFile } = require("./ingest");
 const { startWatcher, getLog } = require("./watcher");
 const { validate: validateAnalise } = require("./validate-analise");
 const analiseStore = require("./analise-store");
+const { gerarAnalise, podeGerar, MODEL: ANALISE_MODEL } = require("./motor");
 
 const PORT = process.env.PORT || 4180;
 const UPLOAD_DIR = path.join(__dirname, "data", "uploads");
@@ -233,6 +234,14 @@ app.post("/upload/analise", campos, async (req, res) => {
     }
     if (concFile) resultado.concorrentes = processarConcorrentes(periodoId, loja, ano, mes, concFile);
 
+    if (parsedVendas) {
+      try {
+        require("./motor").maybeAutoAnalise({ tipo: "vendas", meses: [{ loja, periodo: periodoSlug(ano, mes) }] });
+      } catch (e) {
+        console.error("[upload/analise] auto-análise:", e.message);
+      }
+    }
+
     res.json(resultado);
   } catch (e) {
     console.error("[upload/analise]", e.message);
@@ -329,8 +338,8 @@ app.get("/api/analise-comercial/:loja", (req, res) => {
   const loja = req.params.loja;
   if (!LOJAS_VALIDAS.includes(loja)) return res.status(404).json({ erro: "loja desconhecida" });
   const l = analiseStore.latest(loja);
-  if (!l || !l.doc) return res.status(404).json({ erro: "nenhuma análise comercial para esta loja ainda" });
-  res.json({ loja, periodo: l.ym, meses: analiseStore.listMeses(loja), analise: l.doc });
+  if (!l || !l.doc) return res.status(404).json({ erro: "nenhuma análise comercial para esta loja ainda", podeGerar: podeGerar(), model: ANALISE_MODEL });
+  res.json({ loja, periodo: l.ym, meses: analiseStore.listMeses(loja), analise: l.doc, podeGerar: podeGerar(), model: ANALISE_MODEL });
 });
 
 app.get("/api/analise-comercial/:loja/:ym", (req, res) => {
@@ -338,8 +347,29 @@ app.get("/api/analise-comercial/:loja/:ym", (req, res) => {
   if (!LOJAS_VALIDAS.includes(loja)) return res.status(404).json({ erro: "loja desconhecida" });
   if (!/^\d{4}-\d{2}$/.test(req.params.ym)) return res.status(400).json({ erro: "período deve ser AAAA-MM" });
   const doc = analiseStore.read(loja, req.params.ym);
-  if (!doc) return res.status(404).json({ erro: "sem análise comercial para este período" });
-  res.json({ loja, periodo: req.params.ym, meses: analiseStore.listMeses(loja), analise: doc });
+  if (!doc) return res.status(404).json({ erro: "sem análise comercial para este período", podeGerar: podeGerar(), model: ANALISE_MODEL });
+  res.json({ loja, periodo: req.params.ym, meses: analiseStore.listMeses(loja), analise: doc, podeGerar: podeGerar(), model: ANALISE_MODEL });
+});
+
+// gerar sob demanda (botão "Gerar análise agora") — usa a API da Anthropic
+let gerando = new Set();
+app.post("/analise-comercial/gerar/:loja/:ym", async (req, res) => {
+  const loja = req.params.loja;
+  if (!LOJAS_VALIDAS.includes(loja)) return res.status(404).json({ erro: "loja desconhecida" });
+  const m = String(req.params.ym).match(/^(\d{4})-(\d{2})$/);
+  if (!m) return res.status(400).json({ erro: "período deve ser AAAA-MM" });
+  const key = `${loja}/${req.params.ym}`;
+  if (gerando.has(key)) return res.status(409).json({ erro: "já está gerando esta análise" });
+  gerando.add(key);
+  try {
+    const r = await gerarAnalise(loja, +m[1], +m[2]);
+    res.json(r);
+  } catch (e) {
+    console.error("[analise-comercial/gerar]", e.message);
+    res.status(e.code === "SEM_CHAVE" ? 400 : 500).json({ erro: e.message, code: e.code || null });
+  } finally {
+    gerando.delete(key);
+  }
 });
 
 function norm(s) {
@@ -364,7 +394,7 @@ function buildAnalise(loja, ano, mes) {
     lastDayPartial: !!periodo.vendas_ultimo_dia_parcial,
     diasCampanha: lojaCfg.diasCampanha || [],
   });
-  const insights = gerarInsights(agg, lojaCfg);
+  const insights = gerarInsights(agg, lojaCfg, vendas);
 
   // variação vs. mês anterior — só compara se o mês anterior estiver "cheio" (evita
   // comparar agosto inteiro contra um julho que só tem um pedaço de dados).
@@ -625,9 +655,41 @@ app.use((err, req, res, next) => {
   res.status(500).json({ erro: (err && err.message) || "erro interno" });
 });
 
+// verifica de tempos em tempos se falta a análise comercial do mês corrente/anterior
+function verificacaoAnaliseComercial() {
+  if (!podeGerar() || process.env.AUTO_ANALISE === "0") return;
+  const now = new Date();
+  const dPrev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const meses = [
+    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
+    `${dPrev.getFullYear()}-${String(dPrev.getMonth() + 1).padStart(2, "0")}`,
+  ];
+  const alvo = [];
+  for (const loja of LOJAS_VALIDAS) {
+    for (const periodo of meses) {
+      const [a, m] = periodo.split("-").map(Number);
+      if (findPeriodo(loja, a, m)) alvo.push({ loja, periodo });
+    }
+  }
+  if (alvo.length) {
+    try {
+      require("./motor").maybeAutoAnalise({ tipo: "vendas", meses: alvo });
+    } catch (e) {
+      console.error("[verificação análise]", e.message);
+    }
+  }
+}
+
 app.listen(PORT, () => {
   console.log(`Vermelhinha Analytics em http://localhost:${PORT}`);
   console.log(`  painel:  http://localhost:${PORT}/`);
   console.log(`  inbox:   ${INBOX_DIR}  (jogue aqui o "Analítico de Vendas" .pdf e o Concorrentes_Coleta_*.xlsx)`);
+  if (podeGerar()) {
+    console.log(`  motor:   análise comercial via ${ANALISE_MODEL}${process.env.AUTO_ANALISE === "0" ? " (auto DESLIGADO)" : " (auto ligado — AUTO_ANALISE=0 desliga)"}`);
+  } else {
+    console.log(`  motor:   ANTHROPIC_API_KEY não definida — análise comercial só entra por JSON (inbox / POST)`);
+  }
   startWatcher(INBOX_DIR);
+  setTimeout(verificacaoAnaliseComercial, 30000);
+  setInterval(verificacaoAnaliseComercial, 24 * 3600 * 1000);
 });
