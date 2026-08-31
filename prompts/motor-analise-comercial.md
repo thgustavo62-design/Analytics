@@ -1,14 +1,17 @@
-# Motor de Análise Comercial — referência da Fase 2
+# Motor de Análise Comercial — Fase 2
 
-> **Status: NÃO implementado no código.** Este arquivo guarda a especificação para quando
-> a Fase 2 for construída. Decisões já tomadas com o dono:
-> - O backend Node **não chama LLM**. Ele só recebe o JSON pronto via
->   `POST /analise-comercial/upload` (com token), valida contra o schema, guarda em
->   `data/analises/<loja>/analise_AAAA-MM.json` e serve nas telas.
-> - A geração roda **fora deste código**, numa tarefa agendada (Cowork/rotina) que aplica
->   o system prompt abaixo e faz o POST.
-> - Roda para **as duas lojas**, separadamente (mesmo prompt, dados de cada uma).
-> - O documento cita `claude-sonnet-4-5`; usar o id vigente ao configurar a tarefa
+> **Status: recepção/validação/telas IMPLEMENTADAS.** Falta só a tarefa externa que
+> aplica o system prompt abaixo e entrega o JSON. Como está no código:
+> - O backend Node **não chama LLM**. Recebe o JSON pronto — pela pasta `inbox/`
+>   (`*.json` com `meta` + `diagnostico_executivo`) ou por
+>   `POST /analise-comercial/upload` (cabeçalho `X-Analise-Token` se `ANALISE_UPLOAD_TOKEN`
+>   estiver setado). Valida com `validate-analise.js`; se falhar → `422` / log, guarda
+>   `analise_AAAA-MM.INVALIDO.json` e **mantém a anterior**. OK → grava
+>   `data/analises/<loja>/analise_AAAA-MM.json`.
+> - `loja` vem de `meta.loja`; mês de `meta.periodo.inicio`. Roda para **as duas lojas**.
+> - Lê: `GET /api/analise-comercial/{loja}[/{AAAA-MM}]`. Tela: **Análise Comercial**
+>   (sidebar). Export: `GET /export-analise/{loja}/{AAAA-MM}`.
+> - Ao configurar a tarefa: o documento cita `claude-sonnet-4-5` — use o id vigente
 >   (hoje `claude-sonnet-5`).
 
 ---

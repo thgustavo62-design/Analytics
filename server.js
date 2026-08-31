@@ -33,11 +33,14 @@ const { aggregate } = require("./aggregate");
 const { gerarInsights } = require("./insights");
 const { ingestFile } = require("./ingest");
 const { startWatcher, getLog } = require("./watcher");
+const { validate: validateAnalise } = require("./validate-analise");
+const analiseStore = require("./analise-store");
 
 const PORT = process.env.PORT || 4180;
 const UPLOAD_DIR = path.join(__dirname, "data", "uploads");
 const INBOX_DIR = process.env.VA_INBOX || path.join(__dirname, "inbox");
 const POLL_MIN = Number(process.env.VA_POLL_MIN || 5);
+const ANALISE_TOKEN = process.env.ANALISE_UPLOAD_TOKEN || null;
 const LOJAS_CFG = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "lojas.json"), "utf8"));
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -113,6 +116,8 @@ const NO_AUTH = process.env.VA_NO_AUTH === "1";
 if (NO_AUTH) console.warn("  ⚠  VA_NO_AUTH=1 — autenticação DESLIGADA (use só localmente).");
 app.use((req, res, next) => {
   if (NO_AUTH) return next();
+  // a tarefa agendada externa posta aqui com token próprio (X-Analise-Token), sem sessão
+  if (req.method === "POST" && req.path === "/analise-comercial/upload") return next();
   const cookies = parseCookies(req.headers.cookie);
   if (validToken(cookies.va_session)) return next();
   if (req.path.startsWith("/api/") || req.path.startsWith("/upload/")) {
@@ -298,6 +303,44 @@ app.get("/api/periodos/:loja", (req, res) => {
 
 // eventos da pasta inbox/ (o que foi ingerido, quando, e o que falhou)
 app.get("/api/ingest-log", (req, res) => res.json({ inbox: INBOX_DIR, pollMin: POLL_MIN, eventos: getLog() }));
+
+// --- Fase 2: Motor de Análise Comercial (o backend só recebe/valida/guarda/serve o JSON) ---
+
+// recebe o JSON gerado pela tarefa agendada externa (Cowork/rotina)
+app.post("/analise-comercial/upload", express.json({ limit: "2mb" }), (req, res) => {
+  if (ANALISE_TOKEN && req.get("X-Analise-Token") !== ANALISE_TOKEN) {
+    return res.status(401).json({ erro: "token ausente ou inválido (header X-Analise-Token)" });
+  }
+  const doc = req.body;
+  const { ok, erros } = validateAnalise(doc);
+  const loja = doc && doc.meta && doc.meta.loja;
+  const ym = String((doc && doc.meta && doc.meta.periodo && doc.meta.periodo.inicio) || "").slice(0, 7);
+  if (!ok) {
+    if (LOJAS_VALIDAS.includes(loja) && /^\d{4}-\d{2}$/.test(ym)) analiseStore.saveErro(loja, ym, erros, doc);
+    console.warn(`[analise-comercial] recusado (${loja || "?"}/${ym || "?"}):`, erros.slice(0, 3).join("; "));
+    return res.status(422).json({ erro: "JSON não passou na validação — análise anterior mantida", detalhes: erros });
+  }
+  const f = analiseStore.save(loja, ym, doc);
+  console.log(`[analise-comercial] gravado ${loja}/${ym}`);
+  res.json({ ok: true, loja, periodo: ym, arquivo: path.basename(f) });
+});
+
+app.get("/api/analise-comercial/:loja", (req, res) => {
+  const loja = req.params.loja;
+  if (!LOJAS_VALIDAS.includes(loja)) return res.status(404).json({ erro: "loja desconhecida" });
+  const l = analiseStore.latest(loja);
+  if (!l || !l.doc) return res.status(404).json({ erro: "nenhuma análise comercial para esta loja ainda" });
+  res.json({ loja, periodo: l.ym, meses: analiseStore.listMeses(loja), analise: l.doc });
+});
+
+app.get("/api/analise-comercial/:loja/:ym", (req, res) => {
+  const loja = req.params.loja;
+  if (!LOJAS_VALIDAS.includes(loja)) return res.status(404).json({ erro: "loja desconhecida" });
+  if (!/^\d{4}-\d{2}$/.test(req.params.ym)) return res.status(400).json({ erro: "período deve ser AAAA-MM" });
+  const doc = analiseStore.read(loja, req.params.ym);
+  if (!doc) return res.status(404).json({ erro: "sem análise comercial para este período" });
+  res.json({ loja, periodo: req.params.ym, meses: analiseStore.listMeses(loja), analise: doc });
+});
 
 function norm(s) {
   return String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
@@ -521,6 +564,49 @@ app.get("/export/:loja/:periodo", (req, res) => {
       .send(buildStandaloneHtml(r.body, loja, slug));
   } catch (e) {
     console.error("[export]", e);
+    res.status(500).send(e.message);
+  }
+});
+
+app.get("/export-analise/:loja/:ym", (req, res) => {
+  try {
+    if (!LOJAS_VALIDAS.includes(req.params.loja)) return res.status(404).send("loja desconhecida");
+    if (!/^\d{4}-\d{2}$/.test(req.params.ym)) return res.status(400).send("período deve ser AAAA-MM");
+    const doc = analiseStore.read(req.params.loja, req.params.ym);
+    if (!doc) return res.status(404).send("sem análise comercial para este período");
+    const payload = { loja: req.params.loja, periodo: req.params.ym, meses: [req.params.ym], analise: doc };
+    const css = fs.readFileSync(path.join(__dirname, "public", "styles.css"), "utf8");
+    const appJs = fs.readFileSync(path.join(__dirname, "public", "app.js"), "utf8");
+    const body = fs
+      .readFileSync(path.join(__dirname, "public", "index.html"), "utf8")
+      .replace(/^[\s\S]*?<body>/i, "")
+      .replace(/<\/body>[\s\S]*$/i, "")
+      .replace(/<script src="\/app\.js"><\/script>/i, "");
+    const stub = `
+    window.__EXPORT__ = true; window.__EXPORT_VIEW__ = "analise";
+    (function () {
+      var LOJAS = ${JSON.stringify([{ nome: req.params.loja }])};
+      var RESP = ${JSON.stringify(payload)};
+      window.fetch = function (url) {
+        url = String(url);
+        var data = /\\/api\\/lojas/.test(url) ? LOJAS
+          : /\\/api\\/analise-comercial\\//.test(url) ? RESP : undefined;
+        if (data === undefined) return Promise.reject(new Error("offline"));
+        return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve(data); } });
+      };
+      try { localStorage.clear(); } catch (e) {}
+    })();`;
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Análise Comercial — ${req.params.loja} — ${req.params.ym}</title>
+${FONTS_LINK}<style>${css}</style></head><body class="export">
+${body}<script>${stub}</script><script>${appJs}</script></body></html>`;
+    res
+      .type("html")
+      .set("Content-Disposition", `attachment; filename="analise-comercial-${req.params.loja.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${req.params.ym}.html"`)
+      .send(html);
+  } catch (e) {
+    console.error("[export-analise]", e);
     res.status(500).send(e.message);
   }
 });

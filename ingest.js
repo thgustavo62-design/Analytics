@@ -142,6 +142,26 @@ function ingestConcorrentes(filePath) {
 
 // --- json de Instagram (opcional; formato: {loja, periodo:"AAAA-MM", metricas:{...}}) ---
 
+// --- json do Motor de Análise Comercial (Fase 2) ------------------------
+
+function ingestAnaliseComercial(doc) {
+  const { validate } = require("./validate-analise");
+  const store = require("./analise-store");
+  const loja = doc.meta && doc.meta.loja;
+  const ym = String((doc.meta && doc.meta.periodo && doc.meta.periodo.inicio) || "").slice(0, 7);
+  if (!LOJAS_VALIDAS.includes(loja)) throw new Error(`meta.loja inválida na análise comercial: ${loja}`);
+  if (!/^\d{4}-\d{2}$/.test(ym)) throw new Error("meta.periodo.inicio inválido na análise comercial");
+  const { ok, erros } = validate(doc);
+  if (!ok) {
+    store.saveErro(loja, ym, erros, doc);
+    throw new Error("análise comercial não passou na validação: " + erros.slice(0, 3).join("; "));
+  }
+  store.save(loja, ym, doc);
+  return { tipo: "analise-comercial", loja, periodo: ym };
+}
+
+// --- json de Instagram (opcional; formato: {loja, periodo:"AAAA-MM", metricas:{...}}) ---
+
 function ingestInstagramJson(filePath) {
   const payload = JSON.parse(fs.readFileSync(filePath, "utf8"));
   const loja = payload.loja;
@@ -167,8 +187,15 @@ async function ingestFile(filePath) {
     if (/concorrente|coleta|varredura|confronto/.test(base)) return ingestConcorrentes(filePath);
     throw new Error("xlsx não reconhecido — esperado Concorrentes_Coleta_*.xlsx.");
   }
-  if (ext === ".json" && /instagram|insta/.test(base)) return ingestInstagramJson(filePath);
+  if (ext === ".json") {
+    const payload = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (payload && payload.diagnostico_executivo && payload.meta && payload.meta.periodo) {
+      return ingestAnaliseComercial(payload);
+    }
+    if (/instagram|insta/.test(base) || payload.metricas) return ingestInstagramJson(filePath);
+    throw new Error("JSON não reconhecido (nem análise comercial, nem Instagram).");
+  }
   throw new Error(`tipo de arquivo não suportado (${ext || "sem extensão"}).`);
 }
 
-module.exports = { ingestFile, ingestVendas, ingestConcorrentes, ingestInstagramJson, resolveLoja };
+module.exports = { ingestFile, ingestVendas, ingestConcorrentes, ingestInstagramJson, ingestAnaliseComercial, resolveLoja };

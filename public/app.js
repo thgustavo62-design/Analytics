@@ -471,6 +471,15 @@
   }
 
   // ---------- data loading ----------
+  async function loadLojasOnly() {
+    state.lojas = await getJSON("/api/lojas");
+    clear(selLoja);
+    state.lojas.forEach(function (l) { var o = document.createElement("option"); o.value = l.nome; o.textContent = l.nome; selLoja.appendChild(o); });
+    var qs = new URLSearchParams(location.search);
+    var saved = qs.get("loja") || LS.getItem("va_loja");
+    if (saved && state.lojas.some(function (l) { return l.nome === saved; })) selLoja.value = saved;
+    state.loja = selLoja.value;
+  }
   async function loadLojas() {
     state.lojas = await getJSON("/api/lojas");
     clear(selLoja);
@@ -529,11 +538,176 @@
     } catch (e) {}
   }
 
+  // ---------- Análise Comercial (Fase 2) ----------
+  var DECISAO_CLS = { ESCALAR: "d-escalar", MANTER: "d-manter", OTIMIZAR: "d-otimizar", TESTAR: "d-testar", REDUZIR: "d-reduzir", ENCERRAR: "d-encerrar", INCONCLUSIVO: "d-inconc" };
+  var GRAV_ORDEM = { critico: 0, alto: 1, medio: 2, baixo: 3 };
+
+  function acBRL(v) { return v == null ? "—" : "R$ " + brl(Math.abs(v), 0) + (v < 0 ? " neg." : ""); }
+  function acPct(v) { return v == null ? "—" : (v >= 0 ? "+" : "") + String(v).replace(".", ",") + "%"; }
+
+  async function renderAnalise(ym) {
+    state.view = "analise";
+    document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === "analise"); });
+    view.innerHTML = '<div class="empty">Carregando…</div>';
+    var url = "/api/analise-comercial/" + encodeURIComponent(state.loja) + (ym ? "/" + ym : "");
+    var d;
+    try {
+      d = await getJSON(url);
+    } catch (e) {
+      view.innerHTML =
+        '<div class="page-head"><div><h1>🧭 Análise Comercial</h1><div class="sub">' + esc(state.loja) + "</div></div></div>" +
+        '<div class="empty"><div class="big">' + esc((e.body && e.body.erro) || "Sem análise comercial ainda") + ".</div>" +
+        (EXPORT ? "" : '<p>A análise mensal é gerada por fora (tarefa agendada) e chega como um JSON — pela pasta <b>inbox</b> ou por <code>POST /analise-comercial/upload</code>. Veja <b>prompts/motor-analise-comercial.md</b>.</p>') + "</div>";
+      return;
+    }
+    var a = d.analise;
+    var meses = d.meses || [ym || d.periodo];
+    var sel = meses.map(function (m) { return '<option value="' + m + '"' + (m === d.periodo ? " selected" : "") + ">" + m + "</option>"; }).join("");
+    var m = a.meta || {};
+    var metaLine = [
+      m.gerado_em ? "gerado em " + new Date(m.gerado_em).toLocaleString("pt-BR") : null,
+      m.linhas_lidas != null ? int(m.linhas_lidas) + (m.linhas_totais ? "/" + int(m.linhas_totais) : "") + " linhas" : null,
+      m.cobertura_custo_pct != null ? "cobertura de custo " + acPct(m.cobertura_custo_pct).replace("+", "") : null,
+      m.confianca_global ? "confiança " + esc(m.confianca_global) : null,
+    ].filter(Boolean).join(" · ");
+
+    view.innerHTML =
+      '<div class="page-head"><div><h1>🧭 Análise Comercial</h1><div class="sub">' + esc(d.loja) + " · " + esc(d.periodo) +
+        (meses.length > 1 ? ' &nbsp; <select id="acMes" class="inp" style="width:auto;display:inline-block">' + sel + "</select>" : "") + "</div></div>" +
+        (EXPORT ? "" : '<button class="btn secondary" id="acBaixar">⬇ Baixar (HTML)</button>') + "</div>" +
+      (metaLine ? '<div class="note" style="margin:-8px 0 16px">' + metaLine + "</div>" : "") +
+      acDiagnostico(a) +
+      acKpis(a) +
+      '<div class="grid cols-2" style="margin-top:18px">' + acBaseline(a) + acCanais(a) + "</div>" +
+      acCampanhas(a) +
+      '<div class="grid cols-2" style="margin-top:18px">' + acRiscos(a) + acOportunidades(a) + "</div>" +
+      acAcoes(a) +
+      acCorrecoes(a) +
+      acPergunta(a);
+
+    view.querySelectorAll('[data-chart="acbaseline"]').forEach(function (host) {
+      barChart(host, (a.baseline_semanal || []).map(function (b) { return { label: b.rotulo, v: b.faturamento_medio || 0 }; }), "v");
+    });
+    var acMes = view.querySelector("#acMes");
+    if (acMes) acMes.addEventListener("change", function () { renderAnalise(acMes.value); });
+    var acB = view.querySelector("#acBaixar");
+    if (acB) acB.addEventListener("click", function () { window.location.href = "/export-analise/" + encodeURIComponent(d.loja) + "/" + d.periodo; });
+  }
+
+  function acDiagnostico(a) {
+    var dx = a.diagnostico_executivo || {};
+    var dp = dx.decisao_principal || {};
+    var chips = [
+      dp.impacto_estimado_mes != null ? "Impacto/mês: <b>" + acBRL(dp.impacto_estimado_mes) + "</b>" : null,
+      dp.custo != null ? "Custo: <b>" + acBRL(dp.custo) + "</b>" : null,
+      dp.confianca ? "Confiança: <b>" + esc(dp.confianca) + "</b>" : null,
+      dp.prazo ? "Prazo: <b>" + esc(dp.prazo) + "</b>" : null,
+    ].filter(Boolean).map(function (c) { return "<span>" + c + "</span>"; }).join("");
+    return '<div class="card ac-diag"><div class="chead"><div class="ci red">🧭</div><div><h3>Diagnóstico executivo</h3></div></div>' +
+      "<h2 style=\"font-size:19px;margin:2px 0 10px\">" + esc(dx.titulo || "—") + "</h2>" +
+      (dx.paragrafos || []).map(function (p) { return "<p style=\"margin:0 0 8px;color:var(--ink-2)\">" + esc(p) + "</p>"; }).join("") +
+      (dp.acao ? '<div class="ac-decisao"><div class="k">Decisão mais importante agora</div><div class="v">' + esc(dp.acao) + "</div>" +
+        (chips ? '<div class="ac-chips">' + chips + "</div>" : "") + "</div>" : "") + "</div>";
+  }
+  function acKpis(a) {
+    var ks = a.kpis || [];
+    if (!ks.length) return "";
+    return '<div class="summary" style="margin-top:18px">' + ks.slice(0, 4).map(function (k) {
+      var sent = k.sentido === "bom" ? "up" : k.sentido === "ruim" ? "down" : "";
+      var val = k.unidade === "BRL" ? "R$ " + brl(k.valor) : k.unidade === "%" ? pct(k.valor) : int(k.valor);
+      return '<div class="sc"><div class="body"><div class="label">' + esc(k.rotulo) + '</div><div class="big">' + val + "</div>" +
+        (k.variacao_pct != null ? '<div class="delta ' + sent + '">' + acPct(k.variacao_pct) + '</div>' : "") + "</div></div>";
+    }).join("") + "</div>";
+  }
+  function acBaseline(a) {
+    var b = a.baseline_semanal || [];
+    if (!b.length) return '<div class="card"><div class="chead"><div class="ci red">📆</div><div><h3>Baseline semanal</h3></div></div><div class="empty">sem dados</div></div>';
+    return '<div class="card"><div class="chead"><div class="ci red">📆</div><div><h3>Baseline semanal</h3><div class="cs">faturamento médio por dia da semana</div></div></div>' +
+      '<div class="chart-host" data-chart="acbaseline"></div>' +
+      '<table class="tbl" style="margin-top:12px"><thead><tr><th>Dia</th><th class="num">N</th><th class="num">Média</th><th class="num">Mediana</th><th class="num">Desvio</th><th class="num">Ticket</th></tr></thead><tbody>' +
+      b.map(function (r) {
+        return "<tr><td>" + esc(r.rotulo) + '</td><td class="num">' + int(r.n) + '</td><td class="num">R$ ' + brl(r.faturamento_medio || 0, 0) +
+          '</td><td class="num">R$ ' + brl(r.mediana || 0, 0) + '</td><td class="num">R$ ' + brl(r.desvio_padrao || 0, 0) + '</td><td class="num">R$ ' + brl(r.ticket || 0) + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
+  }
+  function acCanais(a) {
+    var c = a.canais || [];
+    if (!c.length) return '<div class="card"><div class="chead"><div class="ci conc">🧾</div><div><h3>Canais</h3></div></div><div class="empty">sem dados</div></div>';
+    return '<div class="card"><div class="chead"><div class="ci conc">🧾</div><div><h3>Canais (sem sobreposição)</h3></div></div>' +
+      '<table class="tbl"><thead><tr><th>Canal</th><th class="num">Cupons</th><th class="num">%</th><th class="num">Faturamento</th><th class="num">%</th><th class="num">Ticket</th></tr></thead><tbody>' +
+      c.map(function (r) {
+        return "<tr><td>" + esc(r.nome) + '</td><td class="num">' + int(r.cupons) + '</td><td class="num">' + (r.cupons_pct != null ? pct(r.cupons_pct) : "—") +
+          '</td><td class="num">R$ ' + brl(r.faturamento || 0, 0) + '</td><td class="num">' + (r.faturamento_pct != null ? pct(r.faturamento_pct) : "—") +
+          '</td><td class="num">R$ ' + brl(r.ticket || 0) + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
+  }
+  function acCampanhas(a) {
+    var cs = a.campanhas || [];
+    if (!cs.length) return "";
+    return '<div class="card" style="margin-top:18px"><div class="chead"><div class="ci gold">🎯</div><div><h3>Scorecard de campanhas</h3><div class="cs">a margem incremental decide, não o faturamento</div></div></div>' +
+      '<div class="scroll-x"><table class="tbl"><thead><tr><th>Campanha</th><th>Decisão</th><th class="num">Fat. incr.</th><th class="num">Margem promo</th><th class="num">Margem base</th><th class="num">Margem incr./mês</th><th class="num">Penetr.</th><th>Confiança</th></tr></thead><tbody>' +
+      cs.map(function (c) {
+        var badge = '<span class="dbadge ' + (DECISAO_CLS[c.decisao] || "d-inconc") + '">' + esc(c.decisao || "—") + "</span>";
+        return "<tr><td><b>" + esc(c.nome) + "</b>" + (c.justificativa ? '<div class="cs">' + esc(c.justificativa) + "</div>" : "") + "</td>" +
+          "<td>" + badge + '</td><td class="num">' + acPct(c.faturamento_incremental_pct) + '</td><td class="num">' + acPct(c.margem_pct_promo) +
+          '</td><td class="num">' + acPct(c.margem_pct_base) + '</td><td class="num">' + acBRL(c.margem_incremental_mes) + '</td><td class="num">' + acPct(c.penetracao_cupons_pct) +
+          "</td><td>" + esc(c.confianca || "—") + "</td></tr>";
+      }).join("") + "</tbody></table></div></div>";
+  }
+  function acRiscos(a) {
+    var rs = (a.riscos || []).slice().sort(function (x, y) { return (GRAV_ORDEM[x.gravidade] ?? 9) - (GRAV_ORDEM[y.gravidade] ?? 9); });
+    return '<div class="card"><div class="chead"><div class="ci" style="background:#fdecec;color:var(--down)">⚠️</div><div><h3>Riscos</h3></div></div>' +
+      (rs.length ? rs.map(function (r) {
+        return '<div class="ac-risco g-' + esc(r.gravidade || "baixo") + '"><div><b>' + esc(r.titulo) + "</b>" +
+          (r.evidencia ? '<div class="cs">' + esc(r.evidencia) + "</div>" : "") + "</div>" +
+          (r.valor_em_risco != null ? '<div class="ac-valor">' + acBRL(r.valor_em_risco) + "</div>" : "") + "</div>";
+      }).join("") : '<div class="empty">Nenhum risco material.</div>') + "</div>";
+  }
+  function acOportunidades(a) {
+    var os = a.oportunidades || [];
+    return '<div class="card"><div class="chead"><div class="ci" style="background:var(--ok-bg);color:var(--ok)">💰</div><div><h3>Oportunidades</h3></div></div>' +
+      (os.length ? os.map(function (o) {
+        return '<div class="insight"><div class="ii up">＋</div><div><h4>' + esc(o.titulo) + "</h4>" +
+          '<p>Impacto/mês <b>' + acBRL(o.impacto_estimado_mes) + "</b> · custo " + acBRL(o.custo) + " · confiança " + esc(o.confianca || "—") +
+          (o.premissas && o.premissas.length ? "<br><i>premissas: " + o.premissas.map(esc).join("; ") + "</i>" : "") + "</p></div></div>";
+      }).join("") : '<div class="empty">—</div>') + "</div>";
+  }
+  function acAcoes(a) {
+    var as = (a.acoes || []).slice().sort(function (x, y) { return (x.ordem || 99) - (y.ordem || 99); });
+    if (!as.length) return "";
+    return '<div class="card" style="margin-top:18px"><div class="chead"><div class="ci bulb">✅</div><div><h3>Plano de ação</h3></div></div>' +
+      '<table class="tbl"><thead><tr><th>#</th><th>Ação</th><th>Responsável</th><th class="num">Prazo</th><th class="num">Custo</th><th class="num">Impacto/mês</th></tr></thead><tbody>' +
+      as.map(function (x) {
+        return "<tr><td>" + (x.ordem || "") + "</td><td>" + esc(x.acao) + "</td><td>" + esc(x.responsavel || "—") + '</td><td class="num">' +
+          (x.prazo_dias != null ? x.prazo_dias + " d" : "—") + '</td><td class="num">' + acBRL(x.custo) + '</td><td class="num">' + acBRL(x.impacto_estimado_mes) + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
+  }
+  function acCorrecoes(a) {
+    var cs = a.correcoes || [];
+    if (!cs.length) return "";
+    return '<div class="card ac-correcoes" style="margin-top:18px"><div class="chead"><div class="ci" style="background:var(--warn-bg);color:var(--warn)">🔄</div><div><h3>O que mudou desde a última análise</h3></div></div>' +
+      cs.map(function (c) {
+        return '<div class="ac-corr"><div><span class="tag ' + (c.gravidade === "material" ? "up-price" : "conf-baixa") + '">' + esc(c.gravidade || "menor") + "</span></div>" +
+          "<div><div class=\"cs\">antes</div>" + esc(c.conclusao_anterior || "—") + "<div class=\"cs\" style=\"margin-top:6px\">agora</div><b>" + esc(c.conclusao_nova || "—") + "</b>" +
+          (c.motivo ? '<div class="cs" style="margin-top:4px">motivo: ' + esc(c.motivo) + "</div>" : "") + "</div></div>";
+      }).join("") + "</div>";
+  }
+  function acPergunta(a) {
+    var p = a.pergunta_central || {};
+    var ok = p.melhor_caminho === true;
+    return '<div class="ac-band ' + (ok ? "sim" : "nao") + '"><div class="q">No caminho atual, estamos no melhor caminho possível?</div>' +
+      '<div class="ans">' + (ok ? "SIM" : "NÃO") + "</div>" +
+      (p.motivo ? '<div class="why">' + esc(p.motivo) + "</div>" : "") +
+      (a.limitacoes && a.limitacoes.length ? '<div class="lims">Limitações: ' + a.limitacoes.map(esc).join(" · ") + "</div>" : "") + "</div>";
+  }
+
   // ---------- nav ----------
+  var VIEWS = ["painel", "analise", "upload", "historico", "config"];
   function go(v) {
     state.view = v;
     document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === v); });
     if (v === "painel") { if (state.data) renderPainel(); else loadAnalise(); }
+    else if (v === "analise") renderAnalise();
     else if (v === "upload") renderUpload();
     else if (v === "historico") renderHistorico();
     else if (v === "config") renderConfig();
@@ -542,9 +716,18 @@
   // ---------- boot ----------
   if (EXPORT) {
     document.body.classList.add("export");
-    loadLojas().catch(function (e) { view.innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
+    if (window.__EXPORT_VIEW__ === "analise") {
+      loadLojasOnly().then(function () { renderAnalise(); }).catch(function (e) { view.innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
+    } else {
+      loadLojas().catch(function (e) { view.innerHTML = '<div class="empty">' + esc(e.message) + "</div>"; });
+    }
   } else {
-    selLoja.addEventListener("change", function () { state.loja = selLoja.value; loadPeriodos(); });
+    selLoja.addEventListener("change", function () {
+      state.loja = selLoja.value;
+      LS.setItem("va_loja", state.loja);
+      if (state.view === "analise") { renderAnalise(); loadPeriodos(); }
+      else loadPeriodos();
+    });
     selPeriodo.addEventListener("change", loadAnalise);
     document.getElementById("btn-sair").addEventListener("click", function () {
       fetch("/logout", { method: "POST" }).then(function () { location.href = "/login"; });
@@ -554,11 +737,11 @@
     });
     window.addEventListener("hashchange", function () {
       var v = (location.hash || "#painel").slice(1);
-      if (["painel", "upload", "historico", "config"].indexOf(v) >= 0) go(v);
+      if (VIEWS.indexOf(v) >= 0) go(v);
     });
     loadLojas().then(function () {
       var v = (location.hash || "#painel").slice(1);
-      go(["painel", "upload", "historico", "config"].indexOf(v) >= 0 ? v : "painel");
+      go(VIEWS.indexOf(v) >= 0 ? v : "painel");
     }).catch(function (e) {
       if (e.status === 401) { location.href = "/login"; return; }
       view.innerHTML = '<div class="empty">Erro ao iniciar: ' + esc(e.message) + "</div>";

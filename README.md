@@ -37,6 +37,8 @@ Variáveis de ambiente:
 | `VA_DB_PATH` | `data/analytics.db` | caminho do SQLite |
 | `VA_INBOX` | `./inbox` | pasta observada |
 | `VA_POLL_MIN` | `5` | de quantos em quantos minutos o navegador recarrega o mês corrente |
+| `VA_ANALISES` | `data/analises` | onde ficam os JSONs do Motor de Análise Comercial |
+| `ANALISE_UPLOAD_TOKEN` | *(sem token)* | se definido, exige `X-Analise-Token` no `POST /analise-comercial/upload` |
 | `VA_NO_AUTH` | — | `1` desliga a autenticação (**só para teste local**) |
 
 `GET /healthz` responde sem login (health check).
@@ -65,6 +67,9 @@ Variáveis de ambiente:
 
 - **Painel** — 4 cartões de resumo + abas (Visão Geral · Vendas · Redes Sociais ·
   Concorrência · Categorias · Top Produtos · Tendência). Abre no **mês corrente**.
+- **Análise Comercial** — a análise profunda mensal (Fase 2): diagnóstico executivo,
+  decisão principal, KPIs, baseline semanal, scorecard de campanhas (com selo de decisão),
+  canais, riscos, oportunidades, plano de ação, "o que mudou" e a faixa final SIM/NÃO.
 - **Upload de dados** — envio manual (loja, mês, PDF, formulário do Instagram, xlsx).
 - **Histórico** — todos os meses processados, por loja; clique para abrir.
 - **Configurações** — caminho da pasta `inbox/` e log dos últimos arquivos processados.
@@ -104,6 +109,8 @@ coleta no período aparecem como "sem coleta", não somem.
 server.js            rotas + auth por senha única + estáticos; buildAnalise() (usado pelo /export)
 watcher.js           observa inbox/ (chokidar), serializa a ingestão, mantém data/inbox-log.json
 ingest.js            recebe 1 arquivo -> detecta loja pelo CNPJ, split por mês, grava no banco
+validate-analise.js  validador (sem dep) do JSON do Motor de Análise Comercial (Fase 2)
+analise-store.js     lê/grava data/analises/<loja>/analise_AAAA-MM.json (JSON quebrado vira *.INVALIDO.json)
 db.js                node:sqlite — acesso, sempre por loja/período
 schema.sql           tabelas
 parsers/vendas.js    PDF "Analítico de Vendas" -> transações + empresa (CNPJ) + validação da soma
@@ -118,7 +125,8 @@ public/              index.html (app shell) · app.js · styles.css · upload.ht
 inbox/               pasta observada (LEIA-ME.txt versionado; o resto é ignorado)
 test/                vendas.test.js (soma == Total impresso) · concorrentes.test.js (filtro de marca, datas, preços)
 data/                analytics.db · inbox-log.json · uploads/<loja>/<ano-mes>/ (gitignored)
-prompts/, schemas/   material de referência da Fase 2 (Motor de Análise Comercial) — ainda não implementada
+prompts/             motor-analise-comercial.md — system prompt + contrato da Fase 2 (referência p/ a tarefa que gera o JSON)
+schemas/             analise-comercial.example.json — exemplo do JSON (fixture dos testes)
 ```
 
 ## Testes
@@ -154,9 +162,26 @@ autoalimentação viraria só o upload manual + `POST` de um agente externo. O S
 precisa de disco persistente; senão, Postgres gerenciado. Defina `APP_PASSWORD` e
 `SESSION_SECRET`.
 
-## Fase 2 — Motor de Análise Comercial (não implementada)
+## Fase 2 — Motor de Análise Comercial
 
-Camada de análise profunda mensal gerada por LLM (ver `prompts/motor-analise-comercial.md`).
-O plano é: uma tarefa agendada externa aplica o prompt, valida contra o schema e faz
-`POST /analise-comercial/upload` (com token); o backend só recebe, guarda e serve o JSON
-em telas de scorecard. Nada disso existe ainda no código.
+Camada de análise profunda mensal (diagnóstico, decisão principal, scorecard de campanhas,
+riscos, plano de ação). **O backend não chama LLM** — ele só recebe, valida, guarda e
+serve o JSON. A geração roda **por fora**: uma tarefa agendada (Cowork/rotina) aplica o
+system prompt de `prompts/motor-analise-comercial.md` sobre os agregados e entrega o JSON
+no contrato da Parte 2. Roda para as duas lojas, separadamente.
+
+Como o JSON chega:
+
+- **Pela pasta `inbox/`** — salve um arquivo `*.json` com o conteúdo da análise (o site
+  reconhece pelo `meta` + `diagnostico_executivo`). Mesmo caminho de tudo.
+- **Por `POST /analise-comercial/upload`** — para o agente externo. Cabeçalho
+  `X-Analise-Token: <ANALISE_UPLOAD_TOKEN>` se a variável estiver definida. Corpo = o JSON.
+
+Em ambos os casos: **valida contra o schema antes de gravar**. Se falhar → responde `422`
+(ou registra o erro no log da `inbox`), guarda uma cópia `analise_AAAA-MM.INVALIDO.json`
+para inspeção e **mantém a análise anterior no ar**. `loja` vem de `meta.loja`; o mês vem
+de `meta.periodo.inicio`.
+
+Ler: `GET /api/analise-comercial/{loja}` (última) · `GET /api/analise-comercial/{loja}/{AAAA-MM}`.
+A tela **Análise Comercial** (sidebar) renderiza tudo; "Baixar (HTML)" gera o
+`.html` autocontido dessa análise (`GET /export-analise/{loja}/{AAAA-MM}`).

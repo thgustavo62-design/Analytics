@@ -23,7 +23,13 @@ O QUE JOGAR
    - Nome do arquivo com "instagram" (ex.: instagram-minas-2026-08.json)
    - Conteudo: { "loja": "Minas Farma", "periodo": "2026-08",
                  "metricas": { "visualizacoes": {"valor":"414,3 mil","delta":"112,0"}, ... } }
-   - Sem isso, use o formulario em /upload.html.
+   - Sem isso, use o formulario em Upload de dados.
+
+4) (Fase 2) Analise Comercial em JSON
+   - Qualquer .json cujo conteudo tenha "meta" + "diagnostico_executivo".
+   - Gerado por fora (tarefa agendada que aplica o prompt em
+     prompts/motor-analise-comercial.md). Vai para a tela "Analise Comercial".
+   - Se nao passar na validacao, e recusado e a analise anterior fica no ar.
 
 DICAS
 -----
