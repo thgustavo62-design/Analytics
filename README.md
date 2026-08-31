@@ -170,6 +170,7 @@ test/                vendas.test.js (soma == Total impresso) · concorrentes.tes
 data/                analytics.db · inbox-log.json · uploads/<loja>/<ano-mes>/ (gitignored)
 prompts/             motor-analise-comercial.md — system prompt + contrato da Fase 2 (referência p/ a tarefa que gera o JSON)
 schemas/             analise-comercial.example.json — exemplo do JSON (fixture dos testes)
+docs/integracoes.md  ferramentas que dá para plugar (WhatsApp, Instagram API, Postgres do ERP, túnel, backup…)
 ```
 
 ## Testes
