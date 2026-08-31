@@ -1,0 +1,62 @@
+{
+  "_nota": "Exemplo do formato de saída do Motor de Análise Comercial (Fase 2, ainda não implementada). Ver prompts/motor-analise-comercial.md. Valores fictícios.",
+  "meta": {
+    "loja": "Minas Farma",
+    "periodo": { "inicio": "2026-08-01", "fim": "2026-08-30", "dias": 30 },
+    "linhas_lidas": 18266,
+    "linhas_totais": 18271,
+    "cobertura_custo_pct": 15.0,
+    "cobertura_custo_por_categoria": { "FRALDA": 88, "LIMPEZA": 81, "LEITE": 76 },
+    "confianca_global": "alta",
+    "gerado_em": "2026-09-01T06:00:00Z"
+  },
+  "diagnostico_executivo": {
+    "titulo": "Faturamento estável, mas as campanhas de bebê estão comendo margem.",
+    "paragrafos": [
+      "R$ 478,5 mil no mês, em linha com julho. Ticket mediano R$ 41 (médio R$ 61 — puxado por medicação contínua).",
+      "As Segundas e Terças do Bebê faturam 27% acima do resto da semana, mas a margem nesses dias cai de 18,9% para 10,4%. A conta do desconto fecha negativa."
+    ],
+    "decisao_principal": {
+      "acao": "Trocar o desconto linear do Bebê por combo (fralda + lenço) com trava por cliente.",
+      "impacto_estimado_mes": 4200,
+      "custo": 0,
+      "confianca": "media",
+      "prazo": "próximo ciclo de encarte"
+    }
+  },
+  "kpis": [
+    { "chave": "faturamento", "rotulo": "Faturamento", "valor": 478517.55, "unidade": "BRL", "variacao_pct": 1.2, "sentido": "neutro" },
+    { "chave": "ticket_mediano", "rotulo": "Ticket mediano", "valor": 41.0, "unidade": "BRL", "variacao_pct": null, "sentido": "neutro" }
+  ],
+  "baseline_semanal": [
+    { "dia_semana": 0, "rotulo": "Segunda", "n": 4, "faturamento_medio": 17634, "mediana": 17464, "desvio_padrao": 1453, "cupons_medio": 281, "ticket": 62.75 }
+  ],
+  "campanhas": [
+    {
+      "id": "bebe", "nome": "Segunda e Terça do Bebê", "dias_semana": [0, 1],
+      "faturamento_incremental_pct": 27.0, "margem_incremental_mes": -586,
+      "margem_pct_promo": 10.4, "margem_pct_base": 18.9, "penetracao_cupons_pct": 6.7,
+      "cesta_delta_pct": -31, "ipp": 21, "decisao": "OTIMIZAR", "confianca": "media",
+      "justificativa": "Traz cupom extra, mas o desconto pega toda a base e a cesta do comprador de promoção é 31% menor.",
+      "baselines_usados": [
+        { "nome": "Qua/Qui", "margem_incremental_mes": -534 },
+        { "nome": "Sex/Sáb", "margem_incremental_mes": -639 }
+      ]
+    }
+  ],
+  "canais": [
+    { "nome": "Balcão puro", "cupons": 5805, "cupons_pct": 74.4, "faturamento": 325062, "faturamento_pct": 67.9, "ticket": 56.0 }
+  ],
+  "riscos": [
+    { "titulo": "Conta de convênio concentra 12% do faturamento", "gravidade": "alto", "evidencia": "empresa_id 27 com 640 cupons no mês", "valor_em_risco": 57000 }
+  ],
+  "oportunidades": [
+    { "titulo": "Migrar isca de leite para combo", "impacto_estimado_mes": 5038, "custo": 0, "confianca": "media", "premissas": ["conversão de combo 30%"] }
+  ],
+  "acoes": [
+    { "ordem": 1, "acao": "Definir combo fralda+lenço para o próximo encarte", "responsavel": "compras", "prazo_dias": 7, "custo": 0, "impacto_estimado_mes": 4200 }
+  ],
+  "correcoes": [],
+  "limitacoes": ["Cobertura de custo em 15% no geral — margem por categoria só é confiável em FRALDA, LIMPEZA e LEITE."],
+  "pergunta_central": { "melhor_caminho": false, "motivo": "As campanhas de bebê rodam no negativo de margem há dois meses seguidos." }
+}

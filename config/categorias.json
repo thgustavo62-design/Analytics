@@ -1,0 +1,12 @@
+{
+  "_nota": "Classificador heurístico por palavra-chave na DESCRIÇÃO do produto (o sistema não exporta categoria). Regras avaliadas de cima para baixo; a primeira que casa vence. 'igual' compara a descrição inteira (após upper/trim); 'contem' é substring; 'exceto' cancela a regra se qualquer termo aparecer. Edite à vontade — não precisa mexer no código.",
+  "fallback": "Medicamentos/Outros",
+  "regras": [
+    { "categoria": "Taxa de Entrega", "contem": ["TAXA DE ENTREGA"] },
+    { "categoria": "Diversos", "igual": ["DIVERSOS"] },
+    { "categoria": "Fraldas", "contem": ["FRALDA"] },
+    { "categoria": "Leite Infantil", "contem": ["LEITE"], "exceto": ["LEITE DE MAGNESIA"] },
+    { "categoria": "Suplementos", "contem": ["WHEY", "SUPLEMENTO", "POLIVITAM", "CENTRUM", "VITAMIN", "COMPLEXO B", "COLAGENO", "CREATINA", "OMEGA 3", "MULTIVITAM"] },
+    { "categoria": "Perfumaria/Higiene", "contem": ["DES. ", "SAB.", "SHAMPOO", "SH.", "COND.", "CR.", "ESMAL", "TINT.", "SABONETE", "PERFUME", "COLONIA", "HIDRATANTE", "PROTETOR SOLAR", "FIO DENTAL", "ESC. DENTAL", "MAQUIAGEM", "BATOM"] }
+  ]
+}

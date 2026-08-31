@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vermelhinha em Números</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<div class="viz-root">
+
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="brandmark">
+        <span class="wordmark" id="wordmark">Farma e Farma</span>
+        <span class="tag" id="tag">A Vermelhinha</span>
+      </div>
+      <div class="meta" id="topbar-meta">
+        <strong>Vermelhinha em Números</strong> · vendas, redes sociais e concorrência
+      </div>
+    </div>
+  </div>
+
+  <div class="shell">
+    <div class="period-row">
+      <div class="controls">
+        <label class="period" for="sel-loja">Loja</label>
+        <select id="sel-loja"></select>
+        <label class="period" for="sel-periodo">Período</label>
+        <select id="sel-periodo"></select>
+      </div>
+      <div class="controls">
+        <a class="upload-link" href="/upload.html">+ Nova análise</a>
+      </div>
+    </div>
+    <div class="period-row">
+      <div class="period" id="period-label">Carregando…</div>
+      <div class="period" id="source-label"></div>
+    </div>
+
+    <div id="empty-state" class="state-msg" hidden></div>
+
+    <div id="painel" hidden>
+      <!-- ============ VENDAS: KPIs ============ -->
+      <section id="vendas">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">Resultados de vendas</div>
+            <h2 id="vendas-titulo">—</h2>
+          </div>
+          <div class="sub" id="vendas-sub">—</div>
+        </div>
+        <div class="grid kpi-grid" id="kpi-grid"></div>
+      </section>
+
+      <!-- ============ VENDAS: gráficos ============ -->
+      <section>
+        <div class="card chart-card">
+          <div class="chead">
+            <div>
+              <h3>Faturamento por dia</h3>
+              <div class="cnote" id="daily-note"></div>
+            </div>
+            <button class="toggle-btn" data-toggle="chart-daily" aria-expanded="false">Ver tabela</button>
+          </div>
+          <div class="chart-viz chart-body" id="chart-daily-viz"></div>
+          <div class="chart-table" id="chart-daily-table"></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="grid two-col">
+          <div class="card chart-card">
+            <div class="chead">
+              <div>
+                <h3>Faturamento por dia da semana</h3>
+                <div class="cnote">Média de lançamentos e ticket aparecem ao passar o mouse.</div>
+              </div>
+              <button class="toggle-btn" data-toggle="chart-weekday" aria-expanded="false">Ver tabela</button>
+            </div>
+            <div class="chart-viz chart-body" id="chart-weekday-viz"></div>
+            <div class="chart-table" id="chart-weekday-table"></div>
+          </div>
+
+          <div class="card chart-card">
+            <div class="chead">
+              <div>
+                <h3>Faturamento por categoria</h3>
+                <div class="cnote">Classificação estimada por palavra-chave na descrição do produto — visão direcional, não substitui o cadastro de categoria do sistema.</div>
+              </div>
+              <button class="toggle-btn" data-toggle="chart-category" aria-expanded="false">Ver tabela</button>
+            </div>
+            <div class="chart-viz" id="chart-category-viz"></div>
+            <div class="chart-table" id="chart-category-table"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ INSIGHTS ============ -->
+      <section id="insights-section" hidden>
+        <div class="grid insight-grid" id="insight-grid"></div>
+      </section>
+
+      <!-- ============ TOP PRODUTOS ============ -->
+      <section>
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">Ranking</div>
+            <h2>Top 15 produtos por receita</h2>
+          </div>
+          <div class="sub">excluindo "Diversos" e "Taxa de Entrega"</div>
+        </div>
+        <div class="card" style="padding: 6px 6px 10px;">
+          <div class="scroll-x">
+            <table class="data" id="table-top-products">
+              <caption id="top-caption">Valores líquidos somados no mês.</caption>
+              <thead>
+                <tr><th>Produto</th><th>Categoria</th><th class="num">Receita</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ INSTAGRAM ============ -->
+      <section id="instagram">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">Redes sociais</div>
+            <h2 id="ig-titulo">Instagram</h2>
+          </div>
+          <div class="sub">variação vs. período anterior de 30 dias (Meta Business Suite)</div>
+        </div>
+        <div class="grid ig-grid" id="ig-grid"></div>
+        <div id="ig-empty" class="state-msg" hidden>Sem métricas de Instagram para este período.</div>
+      </section>
+
+      <!-- ============ CONCORRÊNCIA ============ -->
+      <section id="concorrencia">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">Radar de concorrência</div>
+            <h2 id="conc-titulo">Comparação de preços</h2>
+          </div>
+          <div class="sub" id="conc-sub"></div>
+        </div>
+        <div id="conc-body"></div>
+      </section>
+
+      <footer id="footer"></footer>
+    </div>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip" role="status" aria-live="polite"></div>
+
+<script src="/painel.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "_nota": "Limiares do motor de insights (seção 7 do spec). Todos configuráveis aqui, nada fixo no código.",
+  "picoDia": {
+    "acimaDaMediaPct": 0.5,
+    "_nota": "Dia com faturamento >= média diária * (1 + acimaDaMediaPct) vira card de 'dia de pico'."
+  },
+  "campanhaVsResto": {
+    "diferencaMinimaPct": 0.15,
+    "_nota": "Se |média dos dias de campanha - média do resto| / média do resto < diferencaMinimaPct, gera card questionando o efeito da campanha."
+  },
+  "diversos": {
+    "participacaoMaximaPct": 0.05,
+    "_nota": "Se a categoria Diversos passar de participacaoMaximaPct do faturamento, gera card de auditoria."
+  }
+}

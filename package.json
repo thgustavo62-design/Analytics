@@ -1,0 +1,17 @@
+{
+  "name": "vermelhinha-analytics",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Site autoalimentável de resultados (vendas + Instagram + concorrência) para Minas Farma e Farma e Farma.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^2.3.0",
+    "pdfjs-dist": "^4.10.38",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  }
+}

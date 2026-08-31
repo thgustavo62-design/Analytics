@@ -1,0 +1,9 @@
+node_modules/
+data/analytics.db
+data/analytics.db-journal
+data/analytics.db-wal
+data/uploads/
+data/analises/
+test/fixtures/*.pdf
+*.log
+.env

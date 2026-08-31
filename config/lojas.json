@@ -1,0 +1,49 @@
+{
+  "_nota": "Configuração por loja. 'diasCampanha' usa a convenção JS getDay(): 0=domingo, 1=segunda, ..., 6=sábado. 'concorrentes' alimenta os cards do radar quando não há coleta no período.",
+  "Farma e Farma": {
+    "endereco": "Av. Carlos Medeiros 499, Centro — Baixo Guandu/ES",
+    "instagram": "@farmaefarma",
+    "diasCampanha": [3, 4],
+    "campanhaNome": "Atacadão do Bebê (quartas e quintas)",
+    "concorrentes": [
+      {
+        "nome": "Rede Inova / Farmácia Circulista",
+        "handle": "@rede_inova_farmacia_circulista",
+        "nota": "Vizinha direta, na mesma avenida. Campanhas: Operação Detona Preço, Dias Imbatíveis, Dia dos Pequenos."
+      },
+      {
+        "nome": "Farmácia Indiana Baixo Guandu",
+        "handle": "@indianabaixoguandu240",
+        "nota": "Perfil institucional, sem encarte de preço. Canal de preço é o site (e-commerce, não confirmado para a loja física)."
+      },
+      {
+        "nome": "Farmácias Lavagnoli",
+        "handle": "@farmaciaslavagnoli",
+        "nota": "Regional, multi-cidade. Campanhas: Segunda do Bebê, Terça e Quarta do Leite, Quinta dos Suplementos."
+      }
+    ]
+  },
+  "Minas Farma": {
+    "endereco": "Baixo Guandu/ES",
+    "instagram": "@minasfarma",
+    "diasCampanha": [],
+    "campanhaNome": null,
+    "concorrentes": [
+      {
+        "nome": "Rede Inova / Farmácia Circulista",
+        "handle": "@rede_inova_farmacia_circulista",
+        "nota": "Concorrente direto em Baixo Guandu. Campanhas: Operação Detona Preço, Dias Imbatíveis, Dia dos Pequenos."
+      },
+      {
+        "nome": "Farmácias Lavagnoli",
+        "handle": "@farmaciaslavagnoli",
+        "nota": "Regional, multi-cidade. Campanhas: Segunda do Bebê, Terça e Quarta do Leite, Quinta dos Suplementos."
+      },
+      {
+        "nome": "Farmácia Indiana Baixo Guandu",
+        "handle": "@indianabaixoguandu240",
+        "nota": "Perfil institucional, sem encarte de preço regular."
+      }
+    ]
+  }
+}

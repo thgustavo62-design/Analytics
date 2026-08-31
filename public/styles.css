@@ -1,0 +1,298 @@
+/* ============================================================================
+   Estilos do painel — extraídos sem alteração de Vermelhinha_em_Numeros_Agosto2026.html
+   (fonte de verdade visual). Adições próprias no fim do arquivo, marcadas.
+   Fontes: Archivo / IBM Plex Sans / IBM Plex Mono via Google Fonts (carregadas no HTML).
+   ========================================================================== */
+
+html, body{ margin:0; padding:0; background:#f6f1ea; }
+@media (prefers-color-scheme: dark){ html, body{ background:#14100d; } }
+/* ============ TOKENS ============ */
+.viz-root{
+  color-scheme: light;
+  --paper:        #f6f1ea;
+  --surface:      #fffdfa;
+  --chart-surface:#fcfcfb;
+  --ink:          #1a1512;
+  --ink-2:        #52514e;
+  --muted:        #8b8177;
+  --hairline:     #e4dcd2;
+  --grid:         #e1e0d9;
+  --border:       rgba(20,14,10,0.10);
+  --brand:        #9c2436;
+  --brand-strong: #7c1c2b;
+  --brand-wash:   #f4dde0;
+  --on-brand:     #fff6f1;
+  --good:         #0ca30c;
+  --good-text:    #006300;
+  --critical:     #d03b3b;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7;
+  --s1-wash: rgba(42,120,214,.12);
+  --shadow: 0 1px 2px rgba(30,18,12,.04), 0 8px 24px -12px rgba(30,18,12,.18);
+}
+@media (prefers-color-scheme: dark){
+  :root:where(:not([data-theme="light"])) .viz-root{
+    color-scheme: dark;
+    --paper:        #14100d;
+    --surface:      #201a16;
+    --chart-surface:#1a1a19;
+    --ink:          #f8f2ec;
+    --ink-2:        #c9beb5;
+    --muted:        #8f8377;
+    --hairline:     #332a24;
+    --grid:         #2c2c2a;
+    --border:       rgba(255,247,240,0.10);
+    --brand:        #e0616f;
+    --brand-strong: #ef8790;
+    --brand-wash:   #3a1b20;
+    --on-brand:     #2b0d12;
+    --good:         #0ca30c;
+    --good-text:    #0ca30c;
+    --critical:     #e66767;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s5: #d55181; --s6: #008300; --s7: #9085e9;
+    --s1-wash: rgba(57,135,229,.16);
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"] .viz-root{
+  color-scheme: dark;
+  --paper:        #14100d;
+  --surface:      #201a16;
+  --chart-surface:#1a1a19;
+  --ink:          #f8f2ec;
+  --ink-2:        #c9beb5;
+  --muted:        #8f8377;
+  --hairline:     #332a24;
+  --grid:         #2c2c2a;
+  --border:       rgba(255,247,240,0.10);
+  --brand:        #e0616f;
+  --brand-strong: #ef8790;
+  --brand-wash:   #3a1b20;
+  --on-brand:     #2b0d12;
+  --good:         #0ca30c;
+  --good-text:    #0ca30c;
+  --critical:     #e66767;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --s5: #d55181; --s6: #008300; --s7: #9085e9;
+  --s1-wash: rgba(57,135,229,.16);
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+}
+
+.viz-root{
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  min-height: 100%;
+  padding-bottom: 64px;
+}
+.viz-root *{ box-sizing: border-box; }
+.viz-root h1, .viz-root h2, .viz-root h3{
+  font-family: "Archivo", system-ui, sans-serif;
+  text-wrap: balance;
+  margin: 0;
+}
+.viz-root .num{ font-variant-numeric: proportional-nums; }
+.viz-root .tab{ font-variant-numeric: tabular-nums; }
+.viz-root .mono{ font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+/* ============ LAYOUT SHELL ============ */
+.shell{ max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+
+.topbar{
+  background: var(--brand);
+  color: var(--on-brand);
+}
+.topbar-inner{
+  max-width: 1180px; margin: 0 auto; padding: 22px 20px;
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
+  flex-wrap: wrap;
+}
+.brandmark{ display:flex; align-items:baseline; gap: 10px; flex-wrap: wrap; }
+.brandmark .wordmark{ font-size: 26px; font-weight: 900; letter-spacing: -0.01em; }
+.brandmark .tag{
+  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .09em;
+  background: rgba(255,255,255,.18); padding: 4px 10px; border-radius: 999px;
+}
+.topbar .meta{ font-size: 13px; opacity: .92; text-align: right; line-height: 1.5; }
+.topbar .meta strong{ font-weight: 700; }
+
+.period-row{
+  display:flex; align-items:center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  padding: 14px 0 0;
+}
+.period-row .period{
+  font-size: 13px; color: var(--ink-2);
+}
+.period-row .period strong{ color: var(--ink); }
+
+section{ padding-top: 40px; }
+.section-head{ display:flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;}
+.section-head h2{ font-size: 20px; font-weight: 800; }
+.section-head .sub{ font-size: 13px; color: var(--muted); }
+.eyebrow{
+  font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--brand); margin: 0 0 6px;
+}
+
+/* ============ CARDS / GRID ============ */
+.card{
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+.grid{ display:grid; gap: 14px; }
+.kpi-grid{ grid-template-columns: repeat(4, 1fr); }
+.ig-grid{ grid-template-columns: repeat(3, 1fr); }
+.two-col{ grid-template-columns: 1.15fr 1fr; align-items: stretch; }
+.comp-grid{ grid-template-columns: repeat(3, 1fr); }
+.insight-grid{ grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 900px){
+  .kpi-grid{ grid-template-columns: repeat(2, 1fr); }
+  .ig-grid{ grid-template-columns: repeat(2, 1fr); }
+  .two-col{ grid-template-columns: 1fr; }
+  .comp-grid{ grid-template-columns: 1fr; }
+  .insight-grid{ grid-template-columns: 1fr; }
+}
+
+/* ============ STAT TILE ============ */
+.stat{ padding: 18px 18px 16px; display:flex; flex-direction: column; gap: 6px; }
+.stat .label{ font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
+.stat .value{ font-size: 28px; font-weight: 800; font-family:"Archivo",sans-serif; line-height:1.05; }
+.stat .delta{ display:flex; align-items:center; gap: 5px; font-size: 12.5px; font-weight: 700; }
+.stat .delta.up{ color: var(--good-text); }
+.stat .delta.down{ color: var(--critical); }
+.stat .delta .vs{ font-weight: 500; color: var(--muted); }
+.stat .foot{ font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+/* ============ CHART CARD ============ */
+.chart-card{ padding: 18px 18px 14px; }
+.chart-card .chead{ display:flex; align-items:flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.chart-card h3{ font-size: 15px; font-weight: 800; }
+.chart-card .cnote{ font-size: 12px; color: var(--muted); margin-top: 2px; max-width: 44ch; }
+.toggle-btn{
+  font: 600 12px "IBM Plex Sans", sans-serif; color: var(--ink-2);
+  background: var(--paper); border: 1px solid var(--hairline); border-radius: 8px;
+  padding: 5px 10px; cursor: pointer; white-space: nowrap;
+}
+.toggle-btn:hover{ border-color: var(--brand); color: var(--brand); }
+.toggle-btn:focus-visible, .viz-root a:focus-visible, .viz-root button:focus-visible{
+  outline: 2px solid var(--brand); outline-offset: 2px;
+}
+.chart-body{ background: var(--chart-surface); border-radius: 8px; }
+.chart-table{ display:none; }
+.chart-table.show{ display:block; }
+.chart-viz.hide{ display:none; }
+
+svg.chart{ display:block; width: 100%; height: auto; overflow: visible; }
+.grid-line{ stroke: var(--grid); stroke-width: 1; }
+.axis-line{ stroke: var(--hairline); stroke-width: 1; }
+.axis-label{ font: 500 10.5px "IBM Plex Sans", sans-serif; fill: var(--muted); }
+.value-label{ font: 700 11px "IBM Plex Sans", sans-serif; fill: var(--ink); }
+.peak-label{ font: 700 11px "IBM Plex Sans", sans-serif; fill: var(--brand); }
+
+.tooltip{
+  position: fixed; pointer-events: none; z-index: 40;
+  background: var(--ink); color: var(--paper);
+  font-size: 12px; line-height: 1.5; padding: 8px 10px; border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.25);
+  opacity: 0; transform: translate(-50%, -110%); transition: opacity .08s ease;
+  max-width: 220px;
+}
+.tooltip.show{ opacity: 1; }
+.tooltip .tt-title{ font-weight: 700; margin-bottom: 2px; }
+.tooltip .tt-row{ display:flex; justify-content: space-between; gap: 12px; }
+.tooltip .tt-row .tt-val{ font-weight: 700; }
+
+/* ============ LEGEND ============ */
+.legend{ display:flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 12px; }
+.legend-item{ display:flex; align-items:center; gap:6px; font-size: 12px; color: var(--ink-2); }
+.swatch{ width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+/* ============ STACKED BAR ============ */
+.stackbar{ display:flex; width: 100%; height: 34px; border-radius: 6px; overflow: hidden; }
+.stackbar .seg{ position: relative; cursor: default; }
+.stackbar .seg + .seg{ border-left: 2px solid var(--chart-surface); }
+.stackbar .seg .seg-label{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font: 700 11px "IBM Plex Sans", sans-serif; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.25);
+}
+
+/* ============ TABLE ============ */
+table.data{ width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data caption{ text-align:left; font-size:12px; color: var(--muted); padding-bottom:8px; }
+table.data th{
+  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--hairline);
+}
+table.data td{ padding: 9px 10px; border-bottom: 1px solid var(--hairline); vertical-align: middle; }
+table.data tr:last-child td{ border-bottom: none; }
+table.data td.num{ text-align: right; }
+table.data tbody tr:hover{ background: var(--paper); }
+.chip{
+  display:inline-flex; align-items:center; gap:5px; font-size: 11px; font-weight: 600;
+  padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+}
+.chip .dot{ width:6px; height:6px; border-radius:50%; }
+
+.scroll-x{ overflow-x: auto; }
+
+/* ============ INSIGHT / COMPETITOR CARDS ============ */
+.insight-card{ padding: 18px; display:flex; flex-direction: column; gap: 8px; }
+.insight-card .icon{
+  width: 30px; height: 30px; border-radius: 8px; background: var(--brand-wash); color: var(--brand);
+  display:flex; align-items:center; justify-content:center; font-size: 16px; flex: none;
+}
+.insight-card h3{ font-size: 14.5px; font-weight: 800; }
+.insight-card p{ font-size: 13px; color: var(--ink-2); line-height: 1.55; margin:0; }
+
+.comp-card{ padding: 16px; display:flex; flex-direction: column; gap: 8px; }
+.comp-card .name{ font-weight: 800; font-size: 14px; }
+.comp-card .handle{ font-size: 12.5px; color: var(--brand); font-weight: 600; }
+.comp-card .note{ font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+.pending-chip{
+  align-self: flex-start; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); background: var(--paper); border: 1px dashed var(--hairline);
+  padding: 4px 9px; border-radius: 999px; margin-top: 4px;
+}
+
+footer{
+  margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--hairline);
+  font-size: 12px; color: var(--muted); line-height: 1.7;
+}
+
+@media (prefers-reduced-motion: reduce){
+  .viz-root *{ transition: none !important; animation: none !important; }
+}
+
+/* ============================================================================
+   ADIÇÕES próprias do site autoalimentável (não estavam no arquivo de referência)
+   ========================================================================== */
+
+.controls{
+  display:flex; align-items:center; gap: 10px; flex-wrap: wrap;
+}
+.controls select{
+  font: 600 13px "IBM Plex Sans", sans-serif; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px;
+  padding: 7px 10px; cursor: pointer;
+}
+.controls a.upload-link{
+  font: 600 12px "IBM Plex Sans", sans-serif; color: var(--on-brand); text-decoration: none;
+  background: var(--brand); border-radius: 8px; padding: 8px 12px;
+}
+.badge-parcial{
+  display:inline-block; font-size: 11px; font-weight: 700; color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 12%, transparent);
+  border-radius: 6px; padding: 2px 7px; margin-left: 6px;
+}
+.state-msg{
+  padding: 48px 20px; text-align: center; color: var(--muted); font-size: 14px;
+}
+.conc-summary{
+  display:flex; gap: 20px; flex-wrap: wrap; margin-bottom: 14px; font-size: 13px; color: var(--ink-2);
+}
+.conc-summary strong{ font-size: 20px; font-family:"Archivo",sans-serif; color: var(--ink); display:block; }
+.conf-badges{ display:flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.conf-badge{ font-size: 10.5px; font-weight: 700; padding: 2px 6px; border-radius: 999px; background: var(--paper); border: 1px solid var(--hairline); color: var(--ink-2); }
