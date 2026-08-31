@@ -25,7 +25,9 @@
         "nota": "Regional, multi-cidade. Campanhas: Segunda do Bebê, Terça e Quarta do Leite, Quinta dos Suplementos."
       }
     ],
-    "horaFechamento": 22
+    "horaFechamento": 22,
+    "cnpj": "36007525000104",
+    "razaoSocial": "Drogaria Melhor Preco LTDA"
   },
   "Minas Farma": {
     "endereco": "Baixo Guandu/ES",
@@ -49,6 +51,8 @@
         "nota": "Perfil institucional, sem encarte de preço regular."
       }
     ],
-    "horaFechamento": 22
+    "horaFechamento": 22,
+    "cnpj": "31689601000349",
+    "razaoSocial": "Rede Minas Farma"
   }
 }

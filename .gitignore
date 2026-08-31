@@ -2,8 +2,12 @@ node_modules/
 data/analytics.db
 data/analytics.db-journal
 data/analytics.db-wal
+data/analytics.db-shm
 data/uploads/
 data/analises/
+data/inbox-log.json
+inbox/*
+!inbox/LEIA-ME.txt
 test/fixtures/*.pdf
 *.log
 .env

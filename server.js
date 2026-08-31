@@ -14,6 +14,8 @@ const {
   getOrCreatePeriodo,
   findPeriodo,
   getPeriodoById,
+  getFaturamento,
+  getDiasComVenda,
   listPeriodos,
   replaceVendas,
   setVendasMeta,
@@ -29,9 +31,13 @@ const { parseConcorrentes } = require("./parsers/concorrentes");
 const { classificar } = require("./classify");
 const { aggregate } = require("./aggregate");
 const { gerarInsights } = require("./insights");
+const { ingestFile } = require("./ingest");
+const { startWatcher, getLog } = require("./watcher");
 
 const PORT = process.env.PORT || 4180;
 const UPLOAD_DIR = path.join(__dirname, "data", "uploads");
+const INBOX_DIR = process.env.VA_INBOX || path.join(__dirname, "inbox");
+const POLL_MIN = Number(process.env.VA_POLL_MIN || 5);
 const LOJAS_CFG = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "lojas.json"), "utf8"));
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -285,8 +291,13 @@ app.get("/api/lojas", (req, res) => {
 app.get("/api/periodos/:loja", (req, res) => {
   const loja = req.params.loja;
   if (!LOJAS_VALIDAS.includes(loja)) return res.status(404).json({ erro: "loja desconhecida" });
-  res.json(listPeriodos(loja));
+  const agora = new Date();
+  const mesCorrente = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
+  res.json(listPeriodos(loja).map((p) => ({ ...p, atual: p.periodo === mesCorrente })));
 });
+
+// eventos da pasta inbox/ (o que foi ingerido, quando, e o que falhou)
+app.get("/api/ingest-log", (req, res) => res.json({ inbox: INBOX_DIR, pollMin: POLL_MIN, eventos: getLog() }));
 
 function norm(s) {
   return String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
@@ -298,6 +309,9 @@ function buildAnalise(loja, ano, mes) {
   const periodo = findPeriodo(loja, ano, mes);
   if (!periodo) return { status: 404, body: { erro: "sem análise para este período" } };
 
+  const agora = new Date();
+  const ehMesCorrente = ano === agora.getFullYear() && mes === agora.getMonth() + 1;
+
   const lojaCfg = LOJAS_CFG[loja] || {};
   const vendas = getVendas(periodo.id);
   if (!vendas.length) return { status: 404, body: { erro: "período sem dados de vendas" } };
@@ -308,6 +322,25 @@ function buildAnalise(loja, ano, mes) {
     diasCampanha: lojaCfg.diasCampanha || [],
   });
   const insights = gerarInsights(agg, lojaCfg);
+
+  // variação vs. mês anterior — só compara se o mês anterior estiver "cheio" (evita
+  // comparar agosto inteiro contra um julho que só tem um pedaço de dados).
+  const prevMes = mes === 1 ? 12 : mes - 1;
+  const prevAno = mes === 1 ? ano - 1 : ano;
+  const prevPer = findPeriodo(loja, prevAno, prevMes);
+  let fatAnterior = null;
+  let varPct = null;
+  if (prevPer) {
+    const diasNoMes = new Date(prevAno, prevMes, 0).getDate();
+    const diasComVenda = getDiasComVenda(prevPer.id);
+    const cheio = !prevPer.vendas_ultimo_dia_parcial && diasComVenda >= diasNoMes - 3;
+    if (cheio) {
+      fatAnterior = getFaturamento(prevPer.id);
+      varPct = fatAnterior ? Math.round(((agg.kpis.faturamento - fatAnterior) / fatAnterior) * 1000) / 10 : null;
+    }
+  }
+  agg.kpis.faturamentoMesAnterior = fatAnterior;
+  agg.kpis.varFaturamentoPct = varPct;
 
   const instagram = getInstagram(periodo.id).map((r) => ({
     label: r.rotulo, value: r.valor_exibicao, delta: r.delta_pct, extra: r.observacao || "",
@@ -341,11 +374,35 @@ function buildAnalise(loja, ano, mes) {
       if (o.abaixo_do_nosso && e.exemplos.length < 5)
         e.exemplos.push({ produto: o.produto, marca: o.marca || null, promo: o.preco_promo, nosso: o.nosso_preco_medio, confianca: o.nivel_confianca });
     }
+    // melhores ofertas: preferir % de desconto real (preço normal x promo); quando a coleta
+    // não traz preço normal, usar a comparação contra o NOSSO preço médio.
+    const comDescNormal = concRows
+      .filter((o) => o.preco_normal > 0 && o.preco_promo > 0 && o.preco_promo < o.preco_normal)
+      .map((o) => ({
+        produto: o.produto, marca: o.marca || null, concorrente: o.concorrente,
+        promo: o.preco_promo, ref: o.preco_normal, base: "normal",
+        descPct: Math.round((1 - o.preco_promo / o.preco_normal) * 100),
+        confianca: o.nivel_confianca || null,
+      }));
+    const comDescNosso = concRows
+      .filter((o) => o.abaixo_do_nosso && o.nosso_preco_medio > 0 && o.preco_promo > 0)
+      .map((o) => ({
+        produto: o.produto, marca: o.marca || null, concorrente: o.concorrente,
+        promo: o.preco_promo, ref: o.nosso_preco_medio, base: "nosso",
+        descPct: Math.round((1 - o.preco_promo / o.nosso_preco_medio) * 100),
+        confianca: o.nivel_confianca || null,
+      }));
+    const comDesc = (comDescNormal.length ? comDescNormal : comDescNosso).sort((a, b) => b.descPct - a.descPct);
+    const promos = concRows.map((o) => o.preco_promo).filter((v) => v > 0);
+
     concorrencia = {
       pending: false,
       totalOfertas: concRows.length,
       comparaveis: concRows.filter((o) => o.abaixo_do_nosso != null).length,
       abaixoDoNosso: concRows.filter((o) => !!o.abaixo_do_nosso).length,
+      mediaDescontoPct: comDesc.length ? Math.round(comDesc.reduce((s, o) => s + o.descPct, 0) / comDesc.length) : null,
+      melhorPreco: promos.length ? Math.min(...promos) : null,
+      melhoresOfertas: comDesc.slice(0, 8),
       nota: "Comparação por casamento aproximado de nome/marca do produto contra o nosso preço médio praticado no mês — leitura direcional, não é preço de tabela.",
       porConcorrente: [...porConc.values()].sort((a, b) => Number(b.temColeta) - Number(a.temColeta) || b.abaixo - a.abaixo || b.ofertas - a.ofertas),
     };
@@ -366,6 +423,8 @@ function buildAnalise(loja, ano, mes) {
         fonteNota:
           'Faturamento e categorias a partir do relatório "Analítico de Vendas". Categoria de produto é estimada por palavra-chave na descrição — visão direcional, não substitui o cadastro oficial do sistema.',
         atualizadoEm: periodo.atualizado_em,
+        aoVivo: ehMesCorrente,
+        pollMin: POLL_MIN,
       },
       kpis: agg.kpis,
       daily: agg.daily,
@@ -393,35 +452,36 @@ app.get("/api/analise/:loja/:periodo", (req, res) => {
   }
 });
 
-// --- exportação: painel autocontido em 1 arquivo .html (formato do arquivo de referência)
+// --- exportação: painel autocontido em 1 arquivo .html (abre sem servidor)
 
 const FONTS_LINK =
-  '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">';
+  '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">';
 
 function buildStandaloneHtml(analise, loja, periodo) {
   const css = fs.readFileSync(path.join(__dirname, "public", "styles.css"), "utf8");
-  const painelJs = fs.readFileSync(path.join(__dirname, "public", "painel.js"), "utf8");
+  const appJs = fs.readFileSync(path.join(__dirname, "public", "app.js"), "utf8");
   const indexHtml = fs.readFileSync(path.join(__dirname, "public", "index.html"), "utf8");
   const body = indexHtml
     .replace(/^[\s\S]*?<body>/i, "")
     .replace(/<\/body>[\s\S]*$/i, "")
-    .replace(/<script src="\/painel\.js"><\/script>/i, "");
+    .replace(/<script src="\/app\.js"><\/script>/i, "");
 
-  // dados assados + fetch stub: o painel.js roda sem alteração, "buscando" o que já está aqui.
+  // dados assados + stub de fetch: o app.js roda em modo EXPORT e "busca" o que já está aqui.
   const stub = `
+  window.__EXPORT__ = true;
   (function () {
     var DB = {
       lojas: ${JSON.stringify([{ nome: loja, endereco: analise.meta.endereco, campanhaNome: null }])},
-      periodos: ${JSON.stringify([{ ano: +periodo.slice(0, 4), mes: +periodo.slice(5, 7), periodo: periodo, temVendas: true, atualizadoEm: analise.meta.atualizadoEm }])},
+      periodos: ${JSON.stringify([{ ano: +periodo.slice(0, 4), mes: +periodo.slice(5, 7), periodo: periodo, temVendas: true, atual: false, atualizadoEm: analise.meta.atualizadoEm }])},
       analise: ${JSON.stringify(analise)}
     };
-    var _f = window.fetch ? window.fetch.bind(window) : null;
     window.fetch = function (url) {
       url = String(url);
       var data = /\\/api\\/lojas/.test(url) ? DB.lojas
         : /\\/api\\/periodos\\//.test(url) ? DB.periodos
-        : /\\/api\\/analise\\//.test(url) ? DB.analise : undefined;
-      if (data === undefined) return _f ? _f(url) : Promise.reject(new Error("offline"));
+        : /\\/api\\/analise\\//.test(url) ? DB.analise
+        : /\\/api\\/ingest-log/.test(url) ? { inbox: "", pollMin: 0, eventos: [] } : undefined;
+      if (data === undefined) return Promise.reject(new Error("offline"));
       return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve(data); } });
     };
     try { localStorage.clear(); } catch (e) {}
@@ -432,17 +492,16 @@ function buildStandaloneHtml(analise, loja, periodo) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vermelhinha em Números — ${loja} — ${analise.meta.periodoLabel}</title>
+<title>Vermelhinha Analytics — ${loja} — ${analise.meta.periodoLabel}</title>
 ${FONTS_LINK}
 <style>
 ${css}
-#controls-row{ display:none !important; }
 </style>
 </head>
-<body>
+<body class="export">
 ${body}
 <script>${stub}</script>
-<script>${painelJs}</script>
+<script>${appJs}</script>
 </body>
 </html>`;
 }
@@ -482,5 +541,7 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`Vermelhinha Analytics em http://localhost:${PORT}`);
-  console.log(`  upload:  http://localhost:${PORT}/upload.html`);
+  console.log(`  painel:  http://localhost:${PORT}/`);
+  console.log(`  inbox:   ${INBOX_DIR}  (jogue aqui o "Analítico de Vendas" .pdf e o Concorrentes_Coleta_*.xlsx)`);
+  startWatcher(INBOX_DIR);
 });

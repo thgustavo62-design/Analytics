@@ -16,6 +16,7 @@ const LINE_RE =
 const TOTAL_RE = /(?:^|\s)Total:\s*([\d.,]+)\s*$/;
 const HEADER_TS_RE = /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})\s+Pag\.:/;
 const PERIODO_RE = /Periodo de:\s*(\d{2}\/\d{2}\/\d{4})\s*a\s*(\d{2}\/\d{2}\/\d{4})/i;
+const CNPJ_RE = /^\d{14}$/;
 
 // "1.234,56" -> 1234.56
 function toFloat(s) {
@@ -76,11 +77,24 @@ async function parseVendasPdf(pdfPath, opts = {}) {
   let printedTotal = null;
   let headerTimestamp = null;
   let periodo = null;
+  let seenHeaderTs = false;
+  let razaoSocial = null;
+  let cnpj = null;
 
   for (const line of lines) {
     if (!headerTimestamp) {
       const h = line.match(HEADER_TS_RE);
-      if (h) headerTimestamp = `${h[3]}-${h[2]}-${h[1]}T${h[4]}:${h[5]}`;
+      if (h) {
+        headerTimestamp = `${h[3]}-${h[2]}-${h[1]}T${h[4]}:${h[5]}`;
+        seenHeaderTs = true;
+      }
+    }
+    // cabeçalho da empresa: primeiras linhas depois do "Pag.: 1/N"
+    if (seenHeaderTs && !cnpj) {
+      if (CNPJ_RE.test(line)) cnpj = line;
+      else if (!razaoSocial && /[A-Za-zÀ-ÿ]/.test(line) && !/ANALITICO DE VENDAS/i.test(line) && !HEADER_TS_RE.test(line)) {
+        razaoSocial = line.trim();
+      }
     }
     if (!periodo) {
       const pr = line.match(PERIODO_RE);
@@ -152,6 +166,7 @@ async function parseVendasPdf(pdfPath, opts = {}) {
 
   return {
     rows, total, printedTotal, headerTimestamp, periodo,
+    empresa: { razaoSocial, cnpj },
     lastDay, lastDayPartial, lastDayMotivo, lastDayThin,
   };
 }

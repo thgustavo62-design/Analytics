@@ -123,6 +123,15 @@ function getPeriodoById(periodoId) {
   return db.prepare("SELECT * FROM periodos WHERE id = ?").get(periodoId) || null;
 }
 
+function getFaturamento(periodoId) {
+  const row = db.prepare("SELECT COALESCE(SUM(valor_liquido), 0) AS t FROM vendas_transacoes WHERE periodo_id = ?").get(periodoId);
+  return Math.round((row.t + Number.EPSILON) * 100) / 100;
+}
+
+function getDiasComVenda(periodoId) {
+  return db.prepare("SELECT COUNT(DISTINCT data) AS n FROM vendas_transacoes WHERE periodo_id = ?").get(periodoId).n;
+}
+
 // --- instagram --------------------------------------------------------------
 
 function replaceInstagram(periodoId, metricas) {
@@ -194,6 +203,7 @@ function listPeriodos(loja) {
     mes: r.mes,
     periodo: `${r.ano}-${String(r.mes).padStart(2, "0")}`,
     atualizadoEm: r.atualizado_em,
+    linhas: r.linhas,
     temVendas: r.linhas > 0,
   }));
 }
@@ -205,6 +215,8 @@ module.exports = {
   getOrCreatePeriodo,
   findPeriodo,
   getPeriodoById,
+  getFaturamento,
+  getDiasComVenda,
   listPeriodos,
   replaceVendas,
   setVendasMeta,

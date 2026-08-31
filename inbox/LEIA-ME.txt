@@ -1,0 +1,34 @@
+PASTA DE ENTRADA — Vermelhinha Analytics
+=========================================
+
+Jogue os arquivos aqui. O site percebe sozinho e atualiza o painel — não precisa
+abrir nada, nem clicar em "enviar".
+
+O QUE JOGAR
+-----------
+1) Relatorio "Analitico de Vendas" (PDF)
+   - Exporte do sistema da farmacia (o mesmo relatorio de sempre).
+   - Pode ser o mes inteiro OU o mes-ate-hoje (para acompanhar o dia a dia).
+   - Nao precisa dizer de qual loja e: o site le o CNPJ no cabecalho e descobre
+     se e Minas Farma ou Farma e Farma.
+   - Se a soma nao bater com o "Total:" impresso no rodape, o arquivo e RECUSADO
+     (aparece no log em "Entrada de arquivos") e o painel antigo continua no ar.
+
+2) Coleta de concorrentes (Concorrentes_Coleta_AAAA-MM-DD.xlsx)
+   - Formato de 36 colunas de sempre.
+   - Vale para as duas lojas (cada uma comparada com o proprio preco).
+   - O mes vem da data no nome do arquivo.
+
+3) (opcional) Instagram em JSON
+   - Nome do arquivo com "instagram" (ex.: instagram-minas-2026-08.json)
+   - Conteudo: { "loja": "Minas Farma", "periodo": "2026-08",
+                 "metricas": { "visualizacoes": {"valor":"414,3 mil","delta":"112,0"}, ... } }
+   - Sem isso, use o formulario em /upload.html.
+
+DICAS
+-----
+- Pode deixar os arquivos aqui depois de processados; o site nao reprocessa o
+  mesmo arquivo (a menos que ele mude).
+- Um PDF que cobre varios meses vira um painel por mes automaticamente.
+- Para exportar o "Analitico de Vendas" todo dia sem pensar, crie uma Tarefa
+  Agendada do Windows que salve o arquivo direto nesta pasta.
