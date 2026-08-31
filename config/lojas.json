@@ -1,60 +1,35 @@
 {
-  "_nota": "Configuração por loja. 'diasCampanha' usa a convenção JS getDay(): 0=domingo ... 6=sábado. 'concorrentes' alimenta os cards do radar. 'horaFechamento' = hora que a loja fecha; se o relatório foi gerado nesse mesmo dia antes disso, o último dia é marcado como parcial. Ajuste se o horário real for outro. 'campanhaCategoria' = categoria-alvo da campanha propria (p/ medir incrementalidade intradiaria).",
+  "_nota": "Configuração por loja. 'campanhas[].dias' usa a convenção JS getDay(): 0=domingo, 1=segunda, ..., 6=sábado. 'campanhas[].categorias' aponta para as categorias do classificador (config/categorias.json) que a campanha promove — é o que a análise cruza (incrementalidade intradiária). 'concorrentes' alimenta o radar. 'horaFechamento' = hora que a loja fecha (p/ marcar dia parcial). 'cnpj' roteia o PDF pela loja certa.",
   "Farma e Farma": {
     "endereco": "Av. Carlos Medeiros 499, Centro — Baixo Guandu/ES",
     "instagram": "@farmaefarma",
-    "diasCampanha": [
-      3,
-      4
-    ],
-    "campanhaNome": "Atacadão do Bebê (quartas e quintas)",
-    "concorrentes": [
-      {
-        "nome": "Rede Inova / Farmácia Circulista",
-        "handle": "@rede_inova_farmacia_circulista",
-        "nota": "Vizinha direta, na mesma avenida. Campanhas: Operação Detona Preço, Dias Imbatíveis, Dia dos Pequenos."
-      },
-      {
-        "nome": "Farmácia Indiana Baixo Guandu",
-        "handle": "@indianabaixoguandu240",
-        "nota": "Perfil institucional, sem encarte de preço. Canal de preço é o site (e-commerce, não confirmado para a loja física)."
-      },
-      {
-        "nome": "Farmácias Lavagnoli",
-        "handle": "@farmaciaslavagnoli",
-        "nota": "Regional, multi-cidade. Campanhas: Segunda do Bebê, Terça e Quarta do Leite, Quinta dos Suplementos."
-      }
-    ],
-    "horaFechamento": 22,
     "cnpj": "36007525000104",
     "razaoSocial": "Drogaria Melhor Preco LTDA",
-    "campanhaCategoria": "Fraldas"
+    "horaFechamento": 22,
+    "campanhas": [
+      { "nome": "Fralda e Leite (quarta e quinta)", "dias": [3, 4], "categorias": ["Fraldas", "Leite Infantil"] },
+      { "nome": "Limpeza (sexta a domingo)", "dias": [5, 6, 0], "categorias": ["Limpeza"] }
+    ],
+    "concorrentes": [
+      { "nome": "Rede Inova / Farmácia Circulista", "handle": "@rede_inova_farmacia_circulista", "nota": "Vizinha direta, na mesma avenida. Campanhas: Operação Detona Preço, Dias Imbatíveis, Dia dos Pequenos." },
+      { "nome": "Farmácia Indiana Baixo Guandu", "handle": "@indianabaixoguandu240", "nota": "Perfil institucional, sem encarte de preço. Canal de preço é o site (e-commerce, não confirmado para a loja física)." },
+      { "nome": "Farmácias Lavagnoli", "handle": "@farmaciaslavagnoli", "nota": "Regional, multi-cidade. Campanhas: Segunda do Bebê, Terça e Quarta do Leite, Quinta dos Suplementos." }
+    ]
   },
   "Minas Farma": {
     "endereco": "Baixo Guandu/ES",
     "instagram": "@minasfarma",
-    "diasCampanha": [],
-    "campanhaNome": null,
-    "concorrentes": [
-      {
-        "nome": "Rede Inova / Farmácia Circulista",
-        "handle": "@rede_inova_farmacia_circulista",
-        "nota": "Concorrente direto em Baixo Guandu. Campanhas: Operação Detona Preço, Dias Imbatíveis, Dia dos Pequenos."
-      },
-      {
-        "nome": "Farmácias Lavagnoli",
-        "handle": "@farmaciaslavagnoli",
-        "nota": "Regional, multi-cidade. Campanhas: Segunda do Bebê, Terça e Quarta do Leite, Quinta dos Suplementos."
-      },
-      {
-        "nome": "Farmácia Indiana Baixo Guandu",
-        "handle": "@indianabaixoguandu240",
-        "nota": "Perfil institucional, sem encarte de preço regular."
-      }
-    ],
-    "horaFechamento": 22,
     "cnpj": "31689601000349",
     "razaoSocial": "Rede Minas Farma",
-    "campanhaCategoria": null
+    "horaFechamento": 22,
+    "campanhas": [
+      { "nome": "Fralda e Leite (segunda e terça)", "dias": [1, 2], "categorias": ["Fraldas", "Leite Infantil"] },
+      { "nome": "Limpeza (sexta a domingo)", "dias": [5, 6, 0], "categorias": ["Limpeza"] }
+    ],
+    "concorrentes": [
+      { "nome": "Rede Inova / Farmácia Circulista", "handle": "@rede_inova_farmacia_circulista", "nota": "Concorrente direto em Baixo Guandu. Campanhas: Operação Detona Preço, Dias Imbatíveis, Dia dos Pequenos." },
+      { "nome": "Farmácias Lavagnoli", "handle": "@farmaciaslavagnoli", "nota": "Regional, multi-cidade. Campanhas: Segunda do Bebê, Terça e Quarta do Leite, Quinta dos Suplementos." },
+      { "nome": "Farmácia Indiana Baixo Guandu", "handle": "@indianabaixoguandu240", "nota": "Perfil institucional, sem encarte de preço regular." }
+    ]
   }
 }

@@ -14,7 +14,12 @@ const FIX = [
   "C:\\Users\\Admin\\Downloads\\vendas agosto farma e farma.pdf",
 ].filter(Boolean).find((p) => fs.existsSync(p));
 
-const lojaCfg = { diasCampanha: [3, 4], campanhaCategoria: "Fraldas" };
+const lojaCfg = {
+  campanhas: [
+    { nome: "Fralda e Leite (quarta e quinta)", dias: [3, 4], categorias: ["Fraldas", "Leite Infantil"] },
+    { nome: "Limpeza (sexta a domingo)", dias: [5, 6, 0], categorias: ["Limpeza"] },
+  ],
+};
 
 test("analiseProfunda: números batem com o mês de agosto (Farma e Farma)", { skip: FIX ? false : "fixture não encontrada" }, async () => {
   const p = await parseVendasPdf(FIX);
@@ -39,9 +44,15 @@ test("analiseProfunda: números batem com o mês de agosto (Farma e Farma)", { s
   const somaCat = d.categorias.reduce((s, c) => s + c.faturamento, 0);
   assert.ok(Math.abs(somaCat - d.operacao.faturamento) < 0.05);
 
-  // campanha calculada (Fraldas, qua/qui) com 2 baselines
-  assert.ok(d.campanha && d.campanha.categoria === "Fraldas");
-  assert.equal(d.campanha.baselines.length, 2);
+  // 2 campanhas calculadas, cada uma com 2 baselines e participação intradiária
+  assert.equal(d.campanhas.length, 2);
+  for (const camp of d.campanhas) {
+    assert.equal(camp.baselines.length, 2);
+    assert.ok(Array.isArray(camp.categorias) && camp.categorias.length >= 1);
+    assert.ok(camp.participacao_categoria_nos_dias_de_campanha);
+  }
+  const limpeza = d.categorias.find((c) => c.categoria === "Limpeza");
+  assert.ok(limpeza && limpeza.faturamento > 0, "categoria Limpeza existe e tem faturamento");
 
   // canais somam ~100% dos cupons
   const somaCupPct = d.canais.reduce((s, c) => s + c.cupons_pct, 0);

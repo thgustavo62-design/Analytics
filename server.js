@@ -1,4 +1,4 @@
-// Vermelhinha Analytics — backend.
+// Analytics — backend.
 // Sobe os documentos brutos (relatório de vendas PDF, métricas do Instagram, planilha de
 // concorrentes), o backend processa e serve o painel já validado, com histórico por
 // loja/mês. Nunca lê nem escreve nada dentro de app_minasfarma/.
@@ -48,12 +48,7 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 // --- auth (senha única, ferramenta interna) ---------------------------------
 
-let APP_PASSWORD = process.env.APP_PASSWORD;
-if (!APP_PASSWORD) {
-  APP_PASSWORD = crypto.randomBytes(4).toString("hex");
-  console.warn(`\n  ⚠  APP_PASSWORD não definida no ambiente.`);
-  console.warn(`     Usando senha temporária desta sessão: ${APP_PASSWORD}\n`);
-}
+let APP_PASSWORD = process.env.APP_PASSWORD || "1234";
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 
 function sign(value) {
@@ -83,16 +78,16 @@ const app = express();
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false }));
 
-const LOGIN_PAGE = (erro) => `<!doctype html><meta charset="utf-8"><title>Entrar — Vermelhinha Analytics</title>
+const LOGIN_PAGE = (erro) => `<!doctype html><meta charset="utf-8"><title>Entrar — Analytics</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{font:16px/1.5 system-ui,sans-serif;background:#f4f1ec;color:#2b2b2b;display:grid;place-items:center;min-height:100vh;margin:0}
+<style>body{font:16px/1.5 system-ui,sans-serif;background:#f4f5f7;color:#1f2430;display:grid;place-items:center;min-height:100vh;margin:0}
 form{background:#fff;padding:32px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);width:min(340px,90vw)}
-h1{font-size:18px;margin:0 0 4px}p.sub{margin:0 0 20px;color:#8a8378;font-size:13px}
-input{width:100%;padding:10px 12px;border:1px solid #d9d2c7;border-radius:8px;font-size:15px;box-sizing:border-box}
-button{margin-top:14px;width:100%;padding:10px;border:0;border-radius:8px;background:#c62828;color:#fff;font-size:15px;font-weight:600;cursor:pointer}
-.err{color:#c62828;font-size:13px;margin-top:10px}</style>
+h1{font-size:18px;margin:0 0 4px}p.sub{margin:0 0 20px;color:#8a909c;font-size:13px}
+input{width:100%;padding:10px 12px;border:1px solid #e0e3e8;border-radius:8px;font-size:15px;box-sizing:border-box}
+button{margin-top:14px;width:100%;padding:10px;border:0;border-radius:8px;background:#d81f2a;color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+.err{color:#d81f2a;font-size:13px;margin-top:10px}</style>
 <form method="post" action="/login">
-<h1>Vermelhinha Analytics</h1><p class="sub">Ferramenta interna — Nova7</p>
+<h1>📊 Analytics</h1><p class="sub">Minas Farma · Farma e Farma</p>
 <input type="password" name="senha" placeholder="Senha" autofocus autocomplete="current-password">
 <button type="submit">Entrar</button>
 ${erro ? '<div class="err">Senha incorreta.</div>' : ""}
@@ -297,7 +292,7 @@ app.get("/api/lojas", (req, res) => {
       nome,
       endereco: LOJAS_CFG[nome]?.endereco || null,
       instagram: LOJAS_CFG[nome]?.instagram || null,
-      campanhaNome: LOJAS_CFG[nome]?.campanhaNome || null,
+      campanhas: LOJAS_CFG[nome]?.campanhas || [],
     }))
   );
 });
@@ -392,7 +387,6 @@ function buildAnalise(loja, ano, mes) {
   const agg = aggregate(vendas, {
     lastDay: periodo.vendas_ultimo_dia,
     lastDayPartial: !!periodo.vendas_ultimo_dia_parcial,
-    diasCampanha: lojaCfg.diasCampanha || [],
   });
   const insights = gerarInsights(agg, lojaCfg, vendas);
 
@@ -565,7 +559,7 @@ function buildStandaloneHtml(analise, loja, periodo) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vermelhinha Analytics — ${loja} — ${analise.meta.periodoLabel}</title>
+<title>Analytics — ${loja} — ${analise.meta.periodoLabel}</title>
 ${FONTS_LINK}
 <style>
 ${css}
@@ -587,7 +581,7 @@ app.get("/export/:loja/:periodo", (req, res) => {
     const r = buildAnalise(loja, +m[1], +m[2]);
     if (r.status !== 200) return res.status(r.status).send(r.body.erro || "não encontrado");
     const slug = periodoSlug(+m[1], +m[2]);
-    const filename = `vermelhinha-${loja.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${slug}.html`;
+    const filename = `analytics-${loja.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${slug}.html`;
     res
       .type("html")
       .set("Content-Disposition", `attachment; filename="${filename}"`)
@@ -681,7 +675,7 @@ function verificacaoAnaliseComercial() {
 }
 
 app.listen(PORT, () => {
-  console.log(`Vermelhinha Analytics em http://localhost:${PORT}`);
+  console.log(`Analytics em http://localhost:${PORT}`);
   console.log(`  painel:  http://localhost:${PORT}/`);
   console.log(`  inbox:   ${INBOX_DIR}  (jogue aqui o "Analítico de Vendas" .pdf e o Concorrentes_Coleta_*.xlsx)`);
   if (podeGerar()) {

@@ -1,6 +1,7 @@
 // Agregados "profundos" para o Motor de Análise Comercial: tudo que os Passos 1–8 do
 // prompt precisam, calculado de forma DETERMINÍSTICA (o LLM interpreta, não faz conta).
-// Entrada: linhas de vendas de UMA loja/mês (já com .categoria, e emp_id/cli_id se houver).
+// Entrada: linhas de vendas de UMA loja/mês (já com .categoria, e emp_id/cli_id se houver),
+// mais o calendário de campanhas e a coleta de concorrentes do período.
 
 const WD = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -22,22 +23,22 @@ function weekdayOf(iso) {
 }
 const zeros = (s) => !s || /^0+$/.test(String(s).trim());
 
-// agrupa por lançamento -> { total, itens, data, dow, usuario, emp_id, cli_id, temTaxaEntrega, temCampanha }
-function cupons(rows, campanhaCat) {
+// agrupa por lançamento (cupom)
+function agruparCupons(rows) {
   const map = new Map();
   for (const r of rows) {
     if (!map.has(r.lancamento)) {
       map.set(r.lancamento, {
         lanc: r.lancamento, total: 0, itens: 0, data: r.data, dow: weekdayOf(r.data),
         usuario: r.usuario || null, emp_id: r.emp_id || null, cli_id: r.cli_id || null,
-        temTaxaEntrega: false, temCampanhaCat: false, aVista: 0, aPrazo: 0,
+        temTaxaEntrega: false, aVista: 0, aPrazo: 0, porCat: {},
       });
     }
     const c = map.get(r.lancamento);
     c.total += r.valor_liquido;
     c.itens += 1;
+    c.porCat[r.categoria] = (c.porCat[r.categoria] || 0) + r.valor_liquido;
     if (/TAXA DE ENTREGA/i.test(r.descricao)) c.temTaxaEntrega = true;
-    if (campanhaCat && r.categoria === campanhaCat) c.temCampanhaCat = true;
     if (r.forma_pagto === "A VISTA") c.aVista += r.valor_liquido;
     else if (r.forma_pagto === "A PRAZO") c.aPrazo += r.valor_liquido;
   }
@@ -45,7 +46,6 @@ function cupons(rows, campanhaCat) {
 }
 
 function porDiaSemana(cs) {
-  // primeiro soma por data, depois estatística por dia da semana
   const porData = new Map();
   for (const c of cs) {
     if (!porData.has(c.data)) porData.set(c.data, { fat: 0, cupons: 0, dow: c.dow });
@@ -54,14 +54,11 @@ function porDiaSemana(cs) {
     d.cupons += 1;
   }
   const buckets = {};
-  for (const [, d] of porData) {
-    (buckets[d.dow] = buckets[d.dow] || []).push(d);
-  }
+  for (const [, d] of porData) (buckets[d.dow] = buckets[d.dow] || []).push(d);
   return [1, 2, 3, 4, 5, 6, 0].map((dow) => {
     const dias = buckets[dow] || [];
     const fats = dias.map((x) => x.fat);
-    const cups = dias.map((x) => x.cupons);
-    const nCupons = cups.reduce((a, b) => a + b, 0);
+    const nCupons = dias.reduce((a, x) => a + x.cupons, 0);
     const fatTot = fats.reduce((a, b) => a + b, 0);
     return {
       dia_semana: dow,
@@ -70,28 +67,42 @@ function porDiaSemana(cs) {
       faturamento_medio: round2(fats.length ? fatTot / fats.length : 0),
       mediana: round2(mediana(fats)),
       desvio_padrao: round2(desvioPadrao(fats)),
-      cupons_medio: cups.length ? Math.round(nCupons / cups.length) : 0,
+      cupons_medio: dias.length ? Math.round(nCupons / dias.length) : 0,
       ticket: round2(nCupons ? fatTot / nCupons : 0),
     };
   });
 }
 
-// participação da categoria de campanha no faturamento DO PRÓPRIO DIA (método correto
-// de incrementalidade — neutraliza o dia da semana). Devolve média para um conjunto de dows.
-function participacaoCategoriaPorDia(cs, campanhaCat, dows) {
+// participação de um conjunto de CATEGORIAS no faturamento DO PRÓPRIO DIA, média sobre um
+// conjunto de dias-da-semana. Neutraliza o efeito do dia da semana (método correto de
+// incrementalidade — Passo 3 do prompt).
+function participacaoPorDia(cs, categorias, dows) {
   const porData = new Map();
   for (const c of cs) {
     if (!dows.includes(c.dow)) continue;
     if (!porData.has(c.data)) porData.set(c.data, { total: 0, cat: 0 });
     const d = porData.get(c.data);
     d.total += c.total;
-    // aproximação: o cupom conta para a categoria se tiver ao menos 1 item dela
-    if (c.temCampanhaCat) d.cat += c.total;
+    for (const cat of categorias) d.cat += c.porCat[cat] || 0;
   }
   const parts = [...porData.values()].filter((d) => d.total > 0).map((d) => d.cat / d.total);
   return {
     dias: parts.length,
     participacao_media_pct: parts.length ? round1((parts.reduce((a, b) => a + b, 0) / parts.length) * 100) : null,
+  };
+}
+
+function faturamentoMedioDias(cs, dows) {
+  const porData = new Map();
+  for (const c of cs) {
+    if (!dows.includes(c.dow)) continue;
+    porData.set(c.data, (porData.get(c.data) || 0) + c.total);
+  }
+  const fats = [...porData.values()];
+  return {
+    dias: fats.length,
+    faturamento_medio: round2(fats.length ? fats.reduce((a, b) => a + b, 0) / fats.length : 0),
+    desvio_padrao: round2(desvioPadrao(fats)),
   };
 }
 
@@ -102,12 +113,42 @@ function topN(map, total, n) {
     .slice(0, n);
 }
 
-function analiseProfunda(rows, opts = {}) {
-  const { lojaCfg = {}, rowsMesAnterior = null } = opts;
-  const campanhaCat = lojaCfg.campanhaCategoria || null;
-  const diasCampanha = Array.isArray(lojaCfg.diasCampanha) ? lojaCfg.diasCampanha : [];
+// resumo da coleta de concorrentes (linhas de concorrencia_ofertas do período)
+function resumoConcorrencia(concRows) {
+  if (!concRows || !concRows.length) return null;
+  const porConc = new Map();
+  for (const o of concRows) {
+    const k = o.concorrente || "(?)";
+    if (!porConc.has(k)) porConc.set(k, { concorrente: k, ofertas: 0, comparaveis: 0, abaixo: 0, exemplos: [] });
+    const e = porConc.get(k);
+    e.ofertas += 1;
+    if (o.abaixo_do_nosso != null) {
+      e.comparaveis += 1;
+      if (o.abaixo_do_nosso) {
+        e.abaixo += 1;
+        if (e.exemplos.length < 6)
+          e.exemplos.push({ produto: o.produto, categoria: o.categoria || null, promo: o.preco_promo, nosso: o.nosso_preco_medio });
+      }
+    }
+  }
+  return {
+    total_ofertas: concRows.length,
+    comparaveis: concRows.filter((o) => o.abaixo_do_nosso != null).length,
+    abaixo_do_nosso: concRows.filter((o) => !!o.abaixo_do_nosso).length,
+    por_concorrente: [...porConc.values()].sort((a, b) => b.abaixo - a.abaixo || b.ofertas - a.ofertas),
+    nota: "casamento aproximado de nome/marca contra o nosso preço médio praticado no mês — direcional",
+  };
+}
 
-  const cs = cupons(rows, campanhaCat);
+/**
+ * @param {Array} rows  linhas de vendas (uma loja/mês), já com .categoria
+ * @param {object} opts { lojaCfg, rowsMesAnterior, concorrencia }
+ */
+function analiseProfunda(rows, opts = {}) {
+  const { lojaCfg = {}, rowsMesAnterior = null, concorrencia = null } = opts;
+  const campanhasCfg = Array.isArray(lojaCfg.campanhas) ? lojaCfg.campanhas : [];
+
+  const cs = agruparCupons(rows);
   const faturamento = round2(cs.reduce((s, c) => s + c.total, 0));
   const nCupons = cs.length;
   const totaisCupom = cs.map((c) => c.total);
@@ -115,10 +156,7 @@ function analiseProfunda(rows, opts = {}) {
 
   // Pareto: quantos SKUs fazem 80% do faturamento
   const porSku = new Map();
-  for (const r of rows) {
-    const k = r.descricao;
-    porSku.set(k, (porSku.get(k) || 0) + r.valor_liquido);
-  }
+  for (const r of rows) porSku.set(r.descricao, (porSku.get(r.descricao) || 0) + r.valor_liquido);
   const skuVals = [...porSku.values()].sort((a, b) => b - a);
   let acc = 0;
   let pareto80 = 0;
@@ -142,7 +180,7 @@ function analiseProfunda(rows, opts = {}) {
     .map(([categoria, e]) => ({ categoria, faturamento: round2(e.fat), participacao_pct: round1((e.fat / faturamento) * 100), cupons: e.lancs.size }))
     .sort((a, b) => b.faturamento - a.faturamento);
 
-  // canais sem sobreposição: convênio (emp_id != 0) / delivery (taxa entrega, sem convênio) / balcão
+  // canais sem sobreposição: convênio / delivery / balcão
   const canalAcc = { "Convênio": { fat: 0, cupons: 0 }, "Delivery (taxa de entrega)": { fat: 0, cupons: 0 }, "Balcão": { fat: 0, cupons: 0 } };
   for (const c of cs) {
     const conv = !zeros(c.emp_id);
@@ -157,10 +195,8 @@ function analiseProfunda(rows, opts = {}) {
       faturamento: round2(v.fat), faturamento_pct: round1((v.fat / faturamento) * 100),
       ticket: round2(v.fat / v.cupons),
     }));
-  const cuponsTaxaEntrega = cs.filter((c) => c.temTaxaEntrega).length;
-  const cuponsTaxaEConvenio = cs.filter((c) => c.temTaxaEntrega && !zeros(c.emp_id)).length;
 
-  // concentração por cliente e por convênio (empresa)
+  // concentração por cliente e por convênio
   const cliMap = new Map();
   const empMap = new Map();
   for (const c of cs) {
@@ -189,29 +225,32 @@ function analiseProfunda(rows, opts = {}) {
     }))
     .sort((a, b) => b.faturamento - a.faturamento);
 
-  // campanha própria — incrementalidade intradiária com 2 baselines
-  let campanha = null;
-  if (diasCampanha.length && campanhaCat) {
-    const outros = [1, 2, 3, 4, 5, 6, 0].filter((d) => !diasCampanha.includes(d));
-    // baseline 1: dias úteis fora da campanha; baseline 2: fim de semana (5=sex,6=sáb,0=dom)
-    const base1 = outros.filter((d) => d >= 1 && d <= 4);
-    const base2 = outros.filter((d) => d === 5 || d === 6 || d === 0);
-    campanha = {
-      categoria: campanhaCat,
-      dias_semana: diasCampanha,
-      promo: participacaoCategoriaPorDia(cs, campanhaCat, diasCampanha),
+  // campanhas — incrementalidade intradiária, com 2 baselines, por campanha configurada
+  const campanhas = campanhasCfg.map((camp) => {
+    const dias = Array.isArray(camp.dias) ? camp.dias : [];
+    const cats = Array.isArray(camp.categorias) ? camp.categorias : [];
+    const outros = [1, 2, 3, 4, 5, 6, 0].filter((d) => !dias.includes(d));
+    const uteis = outros.filter((d) => d >= 1 && d <= 4);
+    const fds = outros.filter((d) => d === 5 || d === 6 || d === 0);
+    return {
+      nome: camp.nome,
+      dias_semana: dias,
+      categorias: cats,
+      participacao_categoria_nos_dias_de_campanha: participacaoPorDia(cs, cats, dias),
       baselines: [
-        { nome: "dias úteis fora da campanha", ...participacaoCategoriaPorDia(cs, campanhaCat, base1.length ? base1 : outros) },
-        { nome: "sexta a domingo", ...participacaoCategoriaPorDia(cs, campanhaCat, base2.length ? base2 : outros) },
+        { nome: "dias fora da campanha (úteis)", ...participacaoPorDia(cs, cats, uteis.length ? uteis : outros) },
+        { nome: "dias fora da campanha (sex–dom)", ...participacaoPorDia(cs, cats, fds.length ? fds : outros) },
       ],
+      faturamento_dias_campanha: faturamentoMedioDias(cs, dias),
+      faturamento_dias_fora: faturamentoMedioDias(cs, outros),
     };
-  }
+  });
 
   const diversosCat = categorias.find((c) => c.categoria === "Diversos");
 
   let mesAnterior = null;
   if (rowsMesAnterior && rowsMesAnterior.length) {
-    const csP = cupons(rowsMesAnterior, null);
+    const csP = agruparCupons(rowsMesAnterior);
     const fatP = round2(csP.reduce((s, c) => s + c.total, 0));
     mesAnterior = { faturamento: fatP, cupons: csP.length, ticket_medio: round2(fatP / csP.length) };
   }
@@ -229,17 +268,18 @@ function analiseProfunda(rows, opts = {}) {
     },
     baseline_semanal: porDiaSemana(cs),
     categorias,
-    campanha,
+    campanhas,
     canais,
     delivery_check: {
-      cupons_com_taxa_entrega: cuponsTaxaEntrega,
-      desses_que_sao_convenio: cuponsTaxaEConvenio,
+      cupons_com_taxa_entrega: cs.filter((c) => c.temTaxaEntrega).length,
+      desses_que_sao_convenio: cs.filter((c) => c.temTaxaEntrega && !zeros(c.emp_id)).length,
       nota: "cupons com taxa de entrega NÃO são necessariamente delivery ao consumidor final",
     },
     concentracao_cliente: topN(cliMap, faturamento, 8),
     concentracao_convenio: topN(empMap, faturamento, 8),
     operadores,
     diversos: diversosCat ? { valor: diversosCat.faturamento, pct: round1(diversosCat.participacao_pct), cupons: diversosCat.cupons } : null,
+    concorrencia: resumoConcorrencia(concorrencia),
     mes_anterior: mesAnterior,
   };
 }

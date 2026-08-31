@@ -9,7 +9,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const { getVendas, findPeriodo } = require("./db");
+const { getVendas, getConcorrencia, findPeriodo } = require("./db");
 const { analiseProfunda } = require("./analytics-deep");
 const { validate } = require("./validate-analise");
 const analiseStore = require("./analise-store");
@@ -79,23 +79,33 @@ async function gerarAnalise(loja, ano, mes, opts = {}) {
   const pAno = mes === 1 ? ano - 1 : ano;
   const perAnt = findPeriodo(loja, pAno, pMes);
   const rowsAnt = perAnt ? getVendas(perAnt.id) : null;
+  const concRows = getConcorrencia(periodo.id);
 
-  const deep = analiseProfunda(rows, { lojaCfg: LOJAS_CFG[loja], rowsMesAnterior: rowsAnt });
+  const deep = analiseProfunda(rows, { lojaCfg: LOJAS_CFG[loja], rowsMesAnterior: rowsAnt, concorrencia: concRows });
   const anterior = opts.anterior || analiseStore.read(loja, ymSlug(pAno, pMes)) || null;
 
   const AnthropicNS = require("@anthropic-ai/sdk");
   const Anthropic = AnthropicNS.default || AnthropicNS;
   const client = new Anthropic();
 
+  const cal = (LOJAS_CFG[loja].campanhas || [])
+    .map((c) => `- ${c.nome}: dias ${JSON.stringify(c.dias)} (0=dom..6=sáb), categorias ${JSON.stringify(c.categorias)}`)
+    .join("\n") || "(sem campanha própria configurada)";
+
   const baseUser =
     `Loja: ${loja}\n` +
     `Período: ${ymSlug(ano, mes)} (${deep.operacao.cupons} cupons, ${rows.length} linhas de venda). ` +
     `Cobertura de custo: não disponível (não há tabela de custo) — trate margem como não medida.\n\n` +
+    `CALENDÁRIO PROMOCIONAL PRÓPRIO (avalie CADA campanha, uma por uma, pelo método intradiário):\n${cal}\n\n` +
+    `Os agregados já trazem, por campanha, a participação da(s) categoria(s) no faturamento do próprio dia ` +
+    `(campanha x 2 baselines) e o faturamento médio dos dias de campanha vs. fora. Também trazem a coleta de ` +
+    `concorrentes do mês (ofertas confirmadas, quantas abaixo do nosso preço médio, exemplos). Cruze: se um ` +
+    `concorrente está sistematicamente abaixo numa categoria que a gente promove, isso muda a leitura da campanha.\n\n` +
     `DADOS AGREGADOS (já calculados — não refaça a conta, interprete e decida):\n` +
     JSON.stringify(deep, null, 1) +
-    `\n\nCalendário promocional: ${JSON.stringify({ dias_campanha_js_getday: LOJAS_CFG[loja].diasCampanha || [], campanha: LOJAS_CFG[loja].campanhaNome || null })}\n\n` +
-    (anterior ? `ANÁLISE ANTERIOR (para comparar conclusão por conclusão):\n${JSON.stringify(anterior)}\n\n` : `Não há análise anterior.\n\n`) +
-    `Gere a análise de ${loja} para ${ymSlug(ano, mes)} no schema da PARTE 2.`;
+    `\n\n` +
+    (anterior ? `ANÁLISE ANTERIOR (compare conclusão por conclusão; registre o que mudou em 'correcoes'):\n${JSON.stringify(anterior)}\n\n` : `Não há análise anterior.\n\n`) +
+    `Gere a análise de ${loja} para ${ymSlug(ano, mes)} no schema da PARTE 2. Em 'campanhas[]' deve haver uma entrada por campanha do calendário acima.`;
 
   const messages = [{ role: "user", content: baseUser }];
   let doc = null;

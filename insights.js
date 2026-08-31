@@ -49,32 +49,36 @@ function gerarInsights(agg, loja = {}, vendas = null) {
     }
   }
 
-  // 2 · Dias de campanha vs. resto da semana
-  const dc = Array.isArray(loja.diasCampanha) ? loja.diasCampanha : [];
-  if (dc.length && diasCompletos.length >= 6) {
-    const camp = diasCompletos.filter((d) => dc.includes(weekdayOf(d.data)));
-    const resto = diasCompletos.filter((d) => !dc.includes(weekdayOf(d.data)));
-    if (camp.length >= 2 && resto.length >= 2) {
-      const mCamp = camp.reduce((s, d) => s + d.v, 0) / camp.length;
+  // 2 · Cada campanha própria vs. resto da semana
+  const campanhas = Array.isArray(loja.campanhas) ? loja.campanhas : [];
+  if (diasCompletos.length >= 6) {
+    for (const camp of campanhas) {
+      const dias = Array.isArray(camp.dias) ? camp.dias : [];
+      if (!dias.length) continue;
+      const emCamp = diasCompletos.filter((d) => dias.includes(weekdayOf(d.data)));
+      const resto = diasCompletos.filter((d) => !dias.includes(weekdayOf(d.data)));
+      if (emCamp.length < 2 || resto.length < 2) continue;
+      const mCamp = emCamp.reduce((s, d) => s + d.v, 0) / emCamp.length;
       const mResto = resto.reduce((s, d) => s + d.v, 0) / resto.length;
       const dif = mResto > 0 ? (mCamp - mResto) / mResto : 0;
-      const nome = loja.campanhaNome || "a campanha própria";
+      const nome = camp.nome || "campanha própria";
+      const curto = nome.split(" (")[0];
       if (Math.abs(dif) < c.campanhaVsResto.diferencaMinimaPct) {
         cards.push({
           icon: "◆",
-          title: `${loja.campanhaNome ? loja.campanhaNome.split(" (")[0] : "Campanha própria"} não muda o patamar do dia`,
+          title: `${curto} não muda o patamar do dia`,
           body:
-            `Média dos dias de ${nome}: ${brl(mCamp)}. Média do resto da semana: ${brl(mResto)} — diferença de ` +
-            `${(dif * 100).toFixed(1).replace(".", ",")}%, dentro do ruído. Vale medir se a campanha puxa fluxo ` +
-            `incremental ou apenas mantém o ritmo normal da loja (comparar participação da categoria no dia, não o total).`,
+            `Média dos dias de ${nome.toLowerCase()}: ${brl(mCamp)}. Resto da semana: ${brl(mResto)} — diferença de ` +
+            `${(dif * 100).toFixed(1).replace(".", ",")}%, dentro do ruído. A campanha mantém o ritmo, não puxa fluxo extra ` +
+            `mensurável (o que decide é a margem incremental de ${(camp.categorias || []).join("/")}, não o total do dia).`,
         });
       } else if (dif >= c.campanhaVsResto.diferencaMinimaPct) {
         cards.push({
           icon: "◆",
-          title: `Dias de ${nome} faturam ${(dif * 100).toFixed(0)}% acima do resto da semana`,
+          title: `Dias de ${curto} faturam ${(dif * 100).toFixed(0)}% acima do resto da semana`,
           body:
-            `Média nesses dias: ${brl(mCamp)} vs. ${brl(mResto)} nos demais. O sinal é positivo — confirme com a ` +
-            `margem incremental da categoria (faturar mais no dia não garante lucro maior se o desconto pega toda a base).`,
+            `${brl(mCamp)} vs. ${brl(mResto)} nos demais. Sinal positivo — confirme com a margem incremental de ` +
+            `${(camp.categorias || []).join("/")} (faturar mais no dia não garante lucro se o desconto pega toda a base).`,
         });
       }
     }

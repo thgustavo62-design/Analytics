@@ -1,4 +1,4 @@
-/* Vermelhinha Analytics — app shell + dashboard. Vanilla JS, gráficos SVG à mão.
+/* Analytics — app shell + dashboard. Vanilla JS, gráficos SVG à mão.
    Dados: GET /api/lojas, /api/periodos/:loja, /api/analise/:loja/:AAAA-MM. */
 (function () {
   "use strict";
@@ -334,7 +334,7 @@
         '<div class="sub">' + esc(d.loja) + " · " + cap(d.meta.periodoLabel) + " · visão de vendas, redes sociais e concorrência</div></div>" +
         (EXPORT ? "" : '<button class="btn" id="btn-baixar">⬇ Baixar painel (HTML)</button>') + "</div>" +
       summaryCards(d) + tabBar() + '<div id="tabc">' + tabContent(d) + "</div>" +
-      '<div class="app-foot"><span>Vermelhinha Analytics v1.0</span><span class="sep">|</span>' +
+      '<div class="app-foot"><span>Analytics v1.0</span><span class="sep">|</span>' +
         "<span>Dados atualizados em " + upd + "</span><span class=\"sep\">|</span>" +
         "<span>Categoria estimada por palavra-chave.</span><span class=\"sep\">|</span>" +
         "<span>Dia parcial excluído dos gráficos de tendência.</span><span class=\"sep\">|</span><span>❤️ Minas Farma &amp; Farma e Farma</span></div>";

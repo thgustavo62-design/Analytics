@@ -68,3 +68,17 @@ CREATE TABLE IF NOT EXISTS concorrencia_ofertas (
   abaixo_do_nosso  INTEGER             -- 1/0/NULL
 );
 CREATE INDEX IF NOT EXISTS ix_conc_periodo ON concorrencia_ofertas(periodo_id);
+
+-- Fase 2: análise comercial mensal (JSON do Motor). Guardado no banco para não se perder
+-- se os arquivos forem mexidos; data/analises/*.json é só um espelho/exportação.
+CREATE TABLE IF NOT EXISTS analises_comerciais (
+  id         INTEGER PRIMARY KEY,
+  loja_id    INTEGER NOT NULL REFERENCES lojas(id),
+  ano        INTEGER NOT NULL,
+  mes        INTEGER NOT NULL,
+  gerado_em  TEXT,                  -- meta.gerado_em do JSON
+  json       TEXT NOT NULL,         -- o documento inteiro
+  criado_em  TEXT NOT NULL,
+  atualizado_em TEXT NOT NULL,
+  UNIQUE(loja_id, ano, mes)
+);

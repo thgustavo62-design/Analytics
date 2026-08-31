@@ -1,11 +1,12 @@
-# Vermelhinha Analytics
+# Analytics
 
-Site **autoalimentável** de resultados para **Minas Farma** e **Farma e Farma**
-("A Vermelhinha"), Baixo Guandu/ES. Você joga os documentos brutos numa pasta
-(`inbox/`) — relatório de vendas (PDF), planilha de concorrentes, e (opcional)
-métricas do Instagram — e o site percebe sozinho, processa e mostra o painel de
-vendas + redes sociais + concorrência, com o **mês corrente ao vivo** e histórico por
-loja/mês. Nada para baixar, nada para clicar.
+Site **autoalimentável** de resultados para **Minas Farma** e **Farma e Farma**,
+Baixo Guandu/ES. Você joga os documentos brutos numa pasta (`inbox/`) — relatório de
+vendas (PDF), planilha de concorrentes, e (opcional) métricas do Instagram — e o site
+percebe sozinho, processa e mostra o painel de vendas + redes sociais + concorrência,
+com o **mês corrente ao vivo** e histórico por loja/mês. Nada para baixar, nada para
+clicar. Uma vez por mês gera também a **Análise Comercial** (diagnóstico + decisões),
+cruzando as vendas com os concorrentes e com o calendário de campanhas de cada loja.
 
 Projeto **independente** do `app_minasfarma/`. Não lê nem escreve nada lá dentro.
 
@@ -13,15 +14,18 @@ Projeto **independente** do `app_minasfarma/`. Não lê nem escreve nada lá den
 
 - **Node.js** (>= 22; testado no 24) + **Express**. Sem Python.
 - **SQLite** via `node:sqlite` (módulo nativo — sem build nativo, sem `better-sqlite3`).
+  Tudo fica no banco (`data/analytics.db`): vendas, Instagram, concorrência e as
+  **análises comerciais** (não se perdem se os arquivos forem mexidos).
 - **PDF:** `pdfjs-dist` (JS puro). **Planilhas:** `xlsx` (SheetJS). **Watcher:** `chokidar`.
+- **Análise Comercial:** `@anthropic-ai/sdk` (opt-in por `ANTHROPIC_API_KEY`).
 - Frontend: HTML/CSS/JS puro (sem framework, sem build). App shell com sidebar + abas.
 
 ## Rodar local
 
 ```bash
 npm install
-APP_PASSWORD=suasenha npm start
-# http://localhost:4180  — deixe rodando; é o servidor "sempre ligado"
+npm start
+# http://localhost:4180  — senha 1234 — deixe rodando; é o servidor "sempre ligado"
 ```
 
 Depois é só **jogar os arquivos em `C:\Sistema Marketing\inbox`** (veja `inbox/LEIA-ME.txt`).
@@ -32,7 +36,7 @@ Variáveis de ambiente:
 | Var | Default | Uso |
 |---|---|---|
 | `PORT` | `4180` | porta HTTP |
-| `APP_PASSWORD` | *(gera uma temporária e mostra no console)* | senha única da ferramenta |
+| `APP_PASSWORD` | `1234` | senha única da ferramenta |
 | `SESSION_SECRET` | *(aleatória por boot)* | assina o cookie de sessão; defina em produção |
 | `VA_DB_PATH` | `data/analytics.db` | caminho do SQLite |
 | `VA_INBOX` | `./inbox` | pasta observada |
@@ -93,6 +97,34 @@ duro**: "Loção Nivea" não casa com "FLETOP LOCAO", "Colgate Tripla Ação" n�
 nome) — o painel diz isso e mostra o nível de confiança de cada oferta. Concorrentes sem
 coleta no período aparecem como "sem coleta", não somem.
 
+### Calendário de campanhas (`config/lojas.json` → `campanhas`)
+
+Cada loja tem seu calendário próprio; a análise avalia **cada campanha separadamente**,
+pelo método intradiário (participação da(s) categoria(s) no faturamento do próprio dia,
+campanha vs. 2 baselines — neutraliza o efeito do dia da semana).
+
+| Loja | Campanha | Dias | Categorias |
+|---|---|---|---|
+| Minas Farma | Fralda e Leite | segunda e terça | Fraldas, Leite Infantil |
+| Minas Farma | Limpeza | sexta a domingo | Limpeza |
+| Farma e Farma | Fralda e Leite | quarta e quinta | Fraldas, Leite Infantil |
+| Farma e Farma | Limpeza | sexta a domingo | Limpeza |
+
+"Limpeza" virou uma categoria própria (`config/categorias.json`), separada de
+Perfumaria/Higiene, justamente para essa medição. Ajuste os dias/categorias em
+`config/lojas.json` — não precisa mexer no código.
+
+### Como as análises cruzam os dados
+
+`analytics-deep.js` monta (de forma determinística) tudo que a Análise Comercial precisa e
+que o painel não mostra: ticket **médio E mediano**, itens por compra, SKUs distintos,
+curva de Pareto, baseline semanal **com desvio padrão e N**, participação intradiária de
+cada campanha (com 2 baselines), canais **Convênio / Delivery / Balcão** (cruzando `Emp.ID`
+com taxa de entrega), concentração por **cliente** e por **convênio**, dispersão por
+**operador**, e o **resumo da coleta de concorrentes do mês** (quantas ofertas abaixo do
+nosso preço médio, por concorrente, com exemplos). O modelo recebe esse pacote + o
+calendário de campanhas e **só interpreta e decide** — nunca faz conta sobre a base.
+
 ## Regras não-negociáveis (implementadas)
 
 - Minas Farma e Farma e Farma nunca são somadas juntas — toda agregação passa por
@@ -105,6 +137,10 @@ coleta no período aparecem como "sem coleta", não somem.
   gráfico de tendência**, mantido só na tabela.
 - Oferta de concorrente só entra na comparação se `Status validação = Confirmada` e não
   expirada; o nível de confiança aparece como badge.
+- Análise Comercial fica **no banco** (`analises_comerciais`) — apagar os arquivos em
+  `data/analises/` não perde nada; eles são só espelho/exportação.
+- Modelo da análise **nunca faz aritmética sobre a base bruta** — `analytics-deep.js`
+  agrega, o LLM interpreta os agregados.
 
 ## Estrutura
 
@@ -113,9 +149,10 @@ server.js            rotas + auth por senha única + estáticos; buildAnalise() 
 watcher.js           observa inbox/ (chokidar), serializa a ingestão, mantém data/inbox-log.json
 ingest.js            recebe 1 arquivo -> detecta loja pelo CNPJ, split por mês, grava no banco
 validate-analise.js  validador (sem dep) do JSON do Motor de Análise Comercial (Fase 2)
-analise-store.js     lê/grava data/analises/<loja>/analise_AAAA-MM.json (JSON quebrado vira *.INVALIDO.json)
+analise-store.js     grava a análise no banco (analises_comerciais) + espelho em data/analises/*.json
 analytics-deep.js    agregados profundos p/ o Motor (ticket mediano, baseline c/ desvio, incrementalidade
-                     intradiária, canais convênio/delivery, concentração cliente/convênio, operadores)
+                     intradiária por campanha, canais convênio/delivery, concentração cliente/convênio,
+                     operadores, resumo da coleta de concorrentes)
 motor.js             gera o JSON via API da Anthropic a partir dos agregados profundos (opt-in por ANTHROPIC_API_KEY)
 db.js                node:sqlite — acesso, sempre por loja/período
 schema.sql           tabelas
@@ -168,24 +205,23 @@ autoalimentação viraria só o upload manual + `POST` de um agente externo. O S
 precisa de disco persistente; senão, Postgres gerenciado. Defina `APP_PASSWORD` e
 `SESSION_SECRET`.
 
-## Fase 2 — Motor de Análise Comercial
+## Fase 2 — Análise Comercial
 
-Camada de análise profunda mensal (diagnóstico, decisão principal, scorecard de campanhas,
-riscos, plano de ação). **O backend não chama LLM** — ele só recebe, valida, guarda e
-serve o JSON. A geração roda **por fora**: uma tarefa agendada (Cowork/rotina) aplica o
-system prompt de `prompts/motor-analise-comercial.md` sobre os agregados e entrega o JSON
-no contrato da Parte 2. Roda para as duas lojas, separadamente.
+Análise profunda mensal (diagnóstico, decisão principal, scorecard de campanhas, riscos,
+plano de ação, "o que mudou", faixa SIM/NÃO). Fica **no banco** (`analises_comerciais`),
+uma por loja/mês.
 
 Como o JSON chega — três caminhos, do mais automático ao mais manual:
 
 1. **O próprio site gera** (se `ANTHROPIC_API_KEY` estiver no ambiente). `analytics-deep.js`
-   monta os agregados (ticket médio E mediano, baseline semanal com desvio padrão, participação
-   intradiária da categoria de campanha, canais convênio/delivery/balcão, concentração por
-   cliente e por convênio, dispersão por operador) e `motor.js` chama a API — o modelo só
-   **interpreta e decide** (nunca faz conta sobre a base). Dispara: no botão **"Gerar análise
-   agora"** da tela; automático depois de um ingest de vendas do mês corrente/anterior
-   (`AUTO_ANALISE=0` desliga); e numa verificação diária. Modelo em `ANALISE_MODEL`
-   (padrão `claude-opus-5`; `claude-sonnet-5` sai mais barato). Custa alguns centavos por rodada.
+   monta os agregados profundos (ver "Como as análises cruzam os dados" acima) — incluindo o
+   **cruzamento vendas × concorrentes × calendário de campanhas de cada loja** — e `motor.js`
+   chama a API passando **só os agregados + o calendário**; o modelo interpreta e decide, no
+   contrato da Parte 2 (`prompts/motor-analise-comercial.md`), com uma entrada em `campanhas[]`
+   por campanha do calendário. Valida com `validate-analise.js` (1 retry). Dispara: botão
+   **"Gerar análise agora" / "Regerar"** na tela; automático após ingest de vendas do mês
+   corrente/anterior (`AUTO_ANALISE=0` desliga); verificação diária. Modelo em `ANALISE_MODEL`
+   (padrão `claude-opus-5`; `claude-sonnet-5` sai mais barato). Alguns centavos por rodada.
 2. **Pela pasta `inbox/`** — salve um `*.json` com o conteúdo da análise (reconhecido pelo
    `meta` + `diagnostico_executivo`). Para quem gera por fora (Cowork/rotina).
 3. **Por `POST /analise-comercial/upload`** — para um agente externo. Cabeçalho

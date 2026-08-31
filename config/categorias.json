@@ -1,5 +1,5 @@
 {
-  "_nota": "Classificador heurístico por palavra-chave na DESCRIÇÃO do produto (o sistema não exporta categoria). Regras avaliadas de cima para baixo; a primeira que casa vence. 'igual' = descrição inteira (após upper/trim); 'contem' = substring; 'exceto' cancela a regra se qualquer termo aparecer. Esta é a lista da rodada manual validada (painel de agosto). É só uma leitura direcional — ajuste os termos aqui conforme for conferindo contra o cadastro real, sem mexer no código.",
+  "_nota": "Classificador heurístico por palavra-chave na DESCRIÇÃO do produto (o sistema não exporta categoria). Regras avaliadas de cima para baixo; a primeira que casa vence. 'igual' = descrição inteira (após upper/trim); 'contem' = substring; 'exceto' cancela a regra se qualquer termo aparecer. É leitura direcional — ajuste os termos aqui, sem mexer no código. 'Limpeza' foi separada de Perfumaria/Higiene porque é categoria de campanha (sexta a domingo nas duas lojas).",
   "fallback": "Medicamentos/Outros",
   "regras": [
     { "categoria": "Taxa de Entrega", "contem": ["TAXA DE ENTREGA"] },
@@ -7,6 +7,9 @@
     { "categoria": "Fraldas", "contem": ["FRALDA"] },
     { "categoria": "Leite Infantil", "contem": ["LEITE"], "exceto": ["LEITE DE MAGNESIA"] },
     { "categoria": "Suplementos", "contem": ["WHEY", "SUPLEMENTO", "POLIVITAM", "CENTRUM", "VITAMIN", "COMPLEXO B", "COLAGENO", "CREATINA", "OMEGA 3", "MULTIVITAM"] },
+    { "categoria": "Limpeza", "contem": [
+      "DETERGENTE", "LAVA ROUPAS", "LAVA-ROUPAS", "LAVA LOUCAS", "LAVA-LOUÇAS", "SABAO EM PO", "SABÃO EM PÓ", "SABAO EM BARRA", "SABÃO EM BARRA", "SABAO DE COCO", "SABÃO DE COCO", "SABAO GLICERINADO", "AMACIANTE", "DESINFETANTE", "AGUA SANITARIA", "ÁGUA SANITÁRIA", "ALVEJANTE", "CLORO GEL", "LIMPADOR", "MULTIUSO", "MULTI USO", "MULTI-USO", "LUSTRA MOVEIS", "LUSTRA-MÓVEIS", "SAPONACEO", "SAPONÁCEO", "CERA LIQUIDA", "CERA LÍQUIDA", "DESENGORDURANTE", "LIMPA VIDRO", "LIMPA-VIDRO", "LIMPA VIDROS", "TIRA MANCHA", "TIRA-MANCHAS", "PALHA DE ACO", "PALHA DE AÇO", "ESPONJA DE ACO", "ESPONJA MULTIUSO", "PANO DE CHAO", "PANO DE CHÃO", "PEDRA SANITARIA", "PEDRA SANITÁRIA", "ODORIZADOR", "DESODORIZADOR DE AMBIENTE", "INSETICIDA", "RAID ", "NAFTALINA", "ANTIMOFO", "SACO DE LIXO", "SACO P/ LIXO", "GUARDANAPO", "PAPEL TOALHA"
+    ] },
     { "categoria": "Perfumaria/Higiene", "contem": ["DES. ", "SAB.", "SHAMPOO", "SH.", "COND.", "CR.", "ESMAL", "TINT.", "SABONETE", "PERFUME", "COLONIA", "HIDRATANTE", "PROTETOR SOLAR", "FIO DENTAL", "ESC. DENTAL", "MAQUIAGEM", "BATOM"] }
   ]
 }

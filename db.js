@@ -186,6 +186,39 @@ function getConcorrencia(periodoId) {
   return db.prepare("SELECT * FROM concorrencia_ofertas WHERE periodo_id = ?").all(periodoId);
 }
 
+// --- análise comercial (Fase 2) — guardada no banco ----------------------
+
+function saveAnaliseComercial(loja, ano, mes, doc) {
+  const lid = lojaId(loja);
+  const ts = nowIso();
+  const geradoEm = (doc && doc.meta && doc.meta.gerado_em) || ts;
+  db.prepare(
+    `INSERT INTO analises_comerciais (loja_id, ano, mes, gerado_em, json, criado_em, atualizado_em)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(loja_id, ano, mes) DO UPDATE SET
+       gerado_em = excluded.gerado_em, json = excluded.json, atualizado_em = excluded.atualizado_em`
+  ).run(lid, ano, mes, geradoEm, JSON.stringify(doc), ts, ts);
+}
+
+function getAnaliseComercial(loja, ano, mes) {
+  const lid = lojaId(loja);
+  const row = db.prepare("SELECT json FROM analises_comerciais WHERE loja_id = ? AND ano = ? AND mes = ?").get(lid, ano, mes);
+  if (!row) return null;
+  try {
+    return JSON.parse(row.json);
+  } catch {
+    return null;
+  }
+}
+
+function listAnalisesComerciais(loja) {
+  const lid = lojaId(loja);
+  return db
+    .prepare("SELECT ano, mes, gerado_em, atualizado_em FROM analises_comerciais WHERE loja_id = ? ORDER BY ano DESC, mes DESC")
+    .all(lid)
+    .map((r) => ({ ano: r.ano, mes: r.mes, periodo: `${r.ano}-${String(r.mes).padStart(2, "0")}`, geradoEm: r.gerado_em, atualizadoEm: r.atualizado_em }));
+}
+
 // --- períodos --------------------------------------------------------------
 
 function findPeriodo(loja, ano, mes) {
@@ -229,4 +262,7 @@ module.exports = {
   getInstagram,
   replaceConcorrencia,
   getConcorrencia,
+  saveAnaliseComercial,
+  getAnaliseComercial,
+  listAnalisesComerciais,
 };
