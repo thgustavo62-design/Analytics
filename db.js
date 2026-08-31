@@ -18,6 +18,18 @@ db.exec("PRAGMA journal_mode = WAL;");
 db.exec("PRAGMA foreign_keys = ON;");
 db.exec(fs.readFileSync(SCHEMA_PATH, "utf8"));
 
+// migrações leves: colunas adicionadas depois do primeiro deploy. ALTER falha se a coluna
+// já existe — engolimos esse erro específico.
+for (const stmt of [
+  "ALTER TABLE periodos ADD COLUMN vendas_ultimo_dia_motivo TEXT",
+]) {
+  try {
+    db.exec(stmt);
+  } catch (e) {
+    if (!/duplicate column name/i.test(e.message)) throw e;
+  }
+}
+
 for (const nome of LOJAS_VALIDAS) {
   db.prepare("INSERT OR IGNORE INTO lojas (nome) VALUES (?)").run(nome);
 }
@@ -93,12 +105,13 @@ function getVendas(periodoId) {
 function setVendasMeta(periodoId, meta = {}) {
   db.prepare(
     `UPDATE periodos SET
-       vendas_ultimo_dia = ?, vendas_ultimo_dia_parcial = ?,
+       vendas_ultimo_dia = ?, vendas_ultimo_dia_parcial = ?, vendas_ultimo_dia_motivo = ?,
        vendas_total_impresso = ?, vendas_fonte_gerada_em = ?, atualizado_em = ?
      WHERE id = ?`
   ).run(
     meta.lastDay ?? null,
     meta.lastDayPartial == null ? null : meta.lastDayPartial ? 1 : 0,
+    meta.lastDayMotivo ?? null,
     meta.printedTotal ?? null,
     meta.geradoEm ?? null,
     nowIso(),

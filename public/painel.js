@@ -392,16 +392,34 @@
       "<div><strong>" + conc.totalOfertas + "</strong> ofertas no total</div>";
     body.appendChild(summary);
 
+    if (conc.nota) {
+      var nota = document.createElement("div");
+      nota.className = "note";
+      nota.style.cssText = "font-size:12px;color:var(--muted);margin-bottom:12px";
+      nota.textContent = conc.nota;
+      body.appendChild(nota);
+    }
+
     var grid2 = document.createElement("div");
     grid2.className = "grid comp-grid";
     conc.porConcorrente.forEach(function (e) {
       var card = document.createElement("div");
       card.className = "card comp-card";
+      if (!e.temColeta) {
+        card.innerHTML =
+          '<div class="name">' + e.concorrente + "</div>" +
+          (e.handle ? '<div class="handle">' + e.handle + "</div>" : "") +
+          (e.nota ? '<div class="note">' + e.nota + "</div>" : "") +
+          '<div class="pending-chip">Sem coleta neste período</div>';
+        grid2.appendChild(card);
+        return;
+      }
       var exemplos = (e.exemplos || []).map(function (x) {
         return "<li>" + x.produto + " — <strong>R$ " + fmtBRL(x.promo) + "</strong> vs. nosso R$ " + fmtBRL(x.nosso) + "</li>";
       }).join("");
       card.innerHTML =
         '<div class="name">' + e.concorrente + "</div>" +
+        (e.handle ? '<div class="handle">' + e.handle + "</div>" : "") +
         '<div class="note"><strong>' + e.abaixo + "</strong> de " + e.comparaveis + " ofertas comparáveis abaixo do nosso preço · " + e.ofertas + " ofertas coletadas</div>" +
         '<div class="conf-badges">' +
           '<span class="conf-badge">Alta: ' + e.confianca.Alta + "</span>" +
@@ -512,23 +530,26 @@
     emptyState.hidden = true;
     painel.hidden = false;
 
+    var baixar = document.getElementById("btn-baixar");
+    if (baixar) baixar.href = "/export/" + encodeURIComponent(d.loja) + "/" + d.periodo;
+
     document.getElementById("wordmark").textContent = d.loja;
     document.getElementById("tag").textContent = d.loja === "Farma e Farma" ? "A Vermelhinha" : "";
     document.getElementById("topbar-meta").innerHTML =
       (d.meta.endereco ? d.meta.endereco + "<br>" : "") +
       "<strong>Vermelhinha em Números</strong> · vendas, redes sociais e concorrência";
 
-    var parcialTxt = d.meta.diaParcial
-      ? " · " + d.meta.diaParcial.dia + " é dia parcial (relatório gerado " +
-        (d.meta.diaParcial.geradoEm || "").replace("T", " ") + ") e foi excluído do gráfico de tendência"
+    var dp = d.meta.diaParcial;
+    var parcialTxt = dp
+      ? " · " + dp.dia + " é dia parcial" + (dp.motivo ? " (" + dp.motivo + ")" : "") + " — fora do gráfico de tendência"
       : "";
     document.getElementById("period-label").innerHTML = "Período: <strong>" + d.meta.periodoLabel + "</strong>" + parcialTxt;
     document.getElementById("source-label").textContent = "Fonte: Analítico de Vendas (sistema) · Meta Business Suite (Instagram)";
 
     document.getElementById("vendas-titulo").textContent = d.meta.periodoLabel[0].toUpperCase() + d.meta.periodoLabel.slice(1) + " fechou em R$ " + fmtBRL(d.kpis.faturamento);
     document.getElementById("vendas-sub").textContent = fmtInt(d.kpis.vendas) + " vendas registradas no período";
-    document.getElementById("daily-note").textContent = d.meta.diaParcial
-      ? "Dia " + d.meta.diaParcial.dia.slice(8) + " está truncado no relatório — fica só na tabela, fora da linha de tendência."
+    document.getElementById("daily-note").textContent = dp
+      ? "Dia " + dp.dia.slice(8) + " está truncado no relatório" + (dp.motivo ? " — " + dp.motivo : "") + ". Fica só na tabela, fora da linha de tendência."
       : "";
     document.getElementById("top-caption").textContent = "Valores líquidos somados em " + d.meta.periodoLabel + ".";
     document.getElementById("ig-titulo").textContent = "Instagram — " + d.meta.periodoLabel;

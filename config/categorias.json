@@ -1,5 +1,5 @@
 {
-  "_nota": "Classificador heurístico por palavra-chave na DESCRIÇÃO do produto (o sistema não exporta categoria). Regras avaliadas de cima para baixo; a primeira que casa vence. 'igual' compara a descrição inteira (após upper/trim); 'contem' é substring; 'exceto' cancela a regra se qualquer termo aparecer. Edite à vontade — não precisa mexer no código.",
+  "_nota": "Classificador heurístico por palavra-chave na DESCRIÇÃO do produto (o sistema não exporta categoria). Regras avaliadas de cima para baixo; a primeira que casa vence. 'igual' = descrição inteira (após upper/trim); 'contem' = substring; 'exceto' cancela a regra se qualquer termo aparecer. Esta é a lista da rodada manual validada (painel de agosto). É só uma leitura direcional — ajuste os termos aqui conforme for conferindo contra o cadastro real, sem mexer no código.",
   "fallback": "Medicamentos/Outros",
   "regras": [
     { "categoria": "Taxa de Entrega", "contem": ["TAXA DE ENTREGA"] },

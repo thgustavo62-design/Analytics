@@ -34,6 +34,8 @@ Variáveis de ambiente:
 | `VA_DB_PATH` | `data/analytics.db` | caminho do SQLite |
 | `VA_NO_AUTH` | — | `1` desliga a autenticação (**só para teste local**) |
 
+`GET /healthz` responde sem login (para health check do provedor de hospedagem).
+
 ## Fluxo
 
 1. `/upload.html` — escolhe loja + mês/ano, anexa o que tiver:
@@ -44,8 +46,27 @@ Variáveis de ambiente:
    - **Concorrentes (xlsx)** — `Concorrentes_Coleta_AAAA-MM-DD.xlsx` (formato padrão de 36
      colunas). Opcional; sem ele, o painel mostra a seção "pendente".
 2. O backend processa e grava. **Se a soma das transações do PDF não bater com o "Total:"
-   impresso no rodapé, a análise é recusada** (nada é gravado) — regra de ouro do domínio.
-3. `/` — painel, com seletor de loja e período no topo.
+   impresso no rodapé, a análise é recusada** (nada é gravado, período não é criado) — regra
+   de ouro do domínio.
+3. `/` — painel, com seletor de loja e período no topo, e botão **"Baixar painel (HTML)"**
+   que gera um arquivo `.html` autocontido (mesmo formato do painel manual antigo — abre
+   sem servidor, dá para mandar por e-mail/WhatsApp). Rota: `GET /export/{loja}/{AAAA-MM}`.
+
+### Cobertura do parser de vendas
+
+Testado contra os 10 relatórios "Analítico de Vendas" reais em `C:\Users\Admin\Downloads\`
+(de 1.391 a 72.480 linhas) — todos reconciliam **exatamente** com o "Total:" impresso.
+Trata: coluna `Nº Cx` ausente, valores negativos de `ARREDONDAMENTO`, e detecção de dia
+parcial (hora de fechamento por loja em `config/lojas.json` → `horaFechamento`). Rejeita
+com mensagem clara PDFs que não são esse relatório (extrato bancário, NF-e, etc.).
+
+### Radar de concorrência
+
+Casa `Produto` + `Marca` da planilha com o que a loja vendeu no mês. A **Marca é filtro
+duro**: "Loção Nivea" não casa com "FLETOP LOCAO", "Colgate Tripla Ação" não casa com
+"COREGA ... TRIPLA ACAO". Ainda assim é leitura **direcional** (casamento aproximado de
+nome) — o painel diz isso e mostra o nível de confiança de cada oferta. Concorrentes sem
+coleta no período aparecem como "sem coleta", não somem.
 
 ## Regras não-negociáveis (implementadas)
 
@@ -75,7 +96,7 @@ insights.js          3 regras automáticas -> cards (config/insights.json)
 match.js             casamento de nome de produto (Jaccard de tokens), portado do app_minasfarma
 config/              categorias.json · insights.json · lojas.json (dias de campanha, cards de concorrente)
 public/              index.html (painel) · upload.html · painel.js · styles.css
-test/vendas.test.js  regressão: soma == Total impresso nos PDFs reais de agosto/2026
+test/                vendas.test.js (soma == Total impresso) · concorrentes.test.js (filtro de marca, datas, preços)
 data/                analytics.db + uploads/<loja>/<ano-mes>/ (gitignored)
 prompts/, schemas/   material de referência da Fase 2 (Motor de Análise Comercial) — ainda não implementada
 ```

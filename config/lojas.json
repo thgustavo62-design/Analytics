@@ -1,9 +1,12 @@
 {
-  "_nota": "Configuração por loja. 'diasCampanha' usa a convenção JS getDay(): 0=domingo, 1=segunda, ..., 6=sábado. 'concorrentes' alimenta os cards do radar quando não há coleta no período.",
+  "_nota": "Configuração por loja. 'diasCampanha' usa a convenção JS getDay(): 0=domingo ... 6=sábado. 'concorrentes' alimenta os cards do radar. 'horaFechamento' = hora que a loja fecha; se o relatório foi gerado nesse mesmo dia antes disso, o último dia é marcado como parcial. Ajuste se o horário real for outro.",
   "Farma e Farma": {
     "endereco": "Av. Carlos Medeiros 499, Centro — Baixo Guandu/ES",
     "instagram": "@farmaefarma",
-    "diasCampanha": [3, 4],
+    "diasCampanha": [
+      3,
+      4
+    ],
     "campanhaNome": "Atacadão do Bebê (quartas e quintas)",
     "concorrentes": [
       {
@@ -21,7 +24,8 @@
         "handle": "@farmaciaslavagnoli",
         "nota": "Regional, multi-cidade. Campanhas: Segunda do Bebê, Terça e Quarta do Leite, Quinta dos Suplementos."
       }
-    ]
+    ],
+    "horaFechamento": 22
   },
   "Minas Farma": {
     "endereco": "Baixo Guandu/ES",
@@ -44,6 +48,7 @@
         "handle": "@indianabaixoguandu240",
         "nota": "Perfil institucional, sem encarte de preço regular."
       }
-    ]
+    ],
+    "horaFechamento": 22
   }
 }

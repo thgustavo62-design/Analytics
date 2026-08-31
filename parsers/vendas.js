@@ -68,7 +68,8 @@ async function extractLines(pdfPath) {
  *   lastDay: string|null, lastDayPartial: boolean
  * }>}
  */
-async function parseVendasPdf(pdfPath) {
+async function parseVendasPdf(pdfPath, opts = {}) {
+  const closingHour = opts.closingHour ?? 20; // hora em que a loja normalmente fecha
   const lines = await extractLines(pdfPath);
 
   const rows = [];
@@ -123,22 +124,36 @@ async function parseVendasPdf(pdfPath) {
     throw new Error("Linha 'Total:' não encontrada no PDF — não dá para validar a soma. NÃO publicar.");
   }
 
-  // Dia parcial: se o relatório foi gerado dentro do período coberto e ainda no horário
-  // comercial, o último dia com dados está truncado.
+  // Dia parcial: o último dia com dados está truncado quando o relatório foi extraído
+  // naquele mesmo dia (a) ainda dentro do horário comercial, ou (b) antes do fim do
+  // período que o relatório declara cobrir.
   const datas = [...new Set(rows.map((r) => r.data))].sort();
   const lastDay = datas[datas.length - 1];
   let lastDayPartial = false;
+  let lastDayMotivo = null;
   if (headerTimestamp) {
     const [genDate, genTime] = headerTimestamp.split("T");
     const genHour = parseInt(genTime.slice(0, 2), 10);
-    if (genDate <= lastDay || genDate === lastDay) {
-      if (genDate === lastDay && genHour < 20) lastDayPartial = true;
+    if (genDate === lastDay && genHour < closingHour) {
+      lastDayPartial = true;
+      lastDayMotivo = `relatório gerado às ${genTime}, antes do fechamento (${closingHour}h)`;
+    } else if (periodo && genDate === lastDay && lastDay < periodo.fim) {
+      lastDayPartial = true;
+      lastDayMotivo = `relatório vai até ${lastDay}, antes do fim do período declarado (${periodo.fim})`;
     }
-    // relatório gerado antes do fim do período declarado => último dia presente é parcial
-    if (periodo && genDate < periodo.fim && genDate === lastDay) lastDayPartial = true;
   }
 
-  return { rows, total, printedTotal, headerTimestamp, periodo, lastDay, lastDayPartial };
+  // corroboração: o último dia fatura bem menos que a mediana dos demais?
+  const porDia = {};
+  for (const r of rows) porDia[r.data] = (porDia[r.data] || 0) + r.valor_liquido;
+  const outros = Object.entries(porDia).filter(([d]) => d !== lastDay).map(([, v]) => v).sort((a, b) => a - b);
+  const medianaOutros = outros.length ? outros[Math.floor(outros.length / 2)] : 0;
+  const lastDayThin = medianaOutros > 0 && porDia[lastDay] < medianaOutros * 0.4;
+
+  return {
+    rows, total, printedTotal, headerTimestamp, periodo,
+    lastDay, lastDayPartial, lastDayMotivo, lastDayThin,
+  };
 }
 
 module.exports = { parseVendasPdf, LINE_RE, toFloat, isoDate };

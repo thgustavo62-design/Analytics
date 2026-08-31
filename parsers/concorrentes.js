@@ -11,6 +11,7 @@ const COLS = {
   concorrente: { nomes: ["concorrente"], idx: 2 },
   categoria: { nomes: ["categoria"], idx: 6 },
   produto: { nomes: ["produto"], idx: 8 },
+  marca: { nomes: ["marca"], idx: 9 },
   preco_normal: { nomes: ["preco normal"], idx: 15 },
   preco_promo: { nomes: ["preco promo"], idx: 16 },
   validade: { nomes: ["validade"], idx: 28 },
@@ -100,7 +101,10 @@ function parseConcorrentes(xlsxPath, nossosProdutos = [], opts = {}) {
     }
 
     const precoPromo = parsePreco(row[idx.preco_promo]);
-    const m = candidatos.length ? bestMatch(String(produto), candidatos, { minScore: 0.4, minOverlap: 2 }) : null;
+    const marca = row[idx.marca] ? String(row[idx.marca]).trim() : null;
+    const m = candidatos.length
+      ? bestMatch(String(produto), candidatos, { minScore: 0.5, minOverlap: 2, brand: marca })
+      : null;
     const nossoPreco = m ? m.match.precoMedio : null;
     let abaixo = null;
     if (precoPromo != null && nossoPreco != null) abaixo = precoPromo < nossoPreco;
@@ -109,6 +113,7 @@ function parseConcorrentes(xlsxPath, nossosProdutos = [], opts = {}) {
       concorrente: String(row[idx.concorrente] ?? "").trim() || "(não informado)",
       categoria: row[idx.categoria] ? String(row[idx.categoria]).trim() : null,
       produto: String(produto).trim(),
+      marca: marca,
       preco_normal: parsePreco(row[idx.preco_normal]),
       preco_promo: precoPromo,
       validade: row[idx.validade] ? String(row[idx.validade]).trim() : null,

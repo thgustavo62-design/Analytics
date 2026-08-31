@@ -36,17 +36,22 @@ function scorePair(queryTokens, brandTokens, candTokenSet) {
 
 // candidates: [{ name, ...qualquer coisa }]. Devolve o melhor candidato + score, ou null.
 // minScore/minOverlap evitam falso-positivo em palavra genérica ("CREME" sozinho).
+// opts.brand: se informado (ex.: coluna "Marca" da planilha de concorrentes), vira filtro
+// DURO — o candidato só entra se contiver todos os tokens da marca. Mata casamento errado
+// tipo "Loção Nivea" -> "FLETOP LOCAO" ou "Colgate Tripla Ação" -> "COREGA ... TRIPLA ACAO".
 function bestMatch(text, candidates, opts = {}) {
-  const minScore = opts.minScore ?? 0.45;
+  const minScore = opts.minScore ?? 0.4;
   const minOverlap = opts.minOverlap ?? 2;
   const queryTokens = new Set(tokens(text));
-  const brandTokens = tokens(text).slice(0, 1);
+  const brandHard = opts.brand != null && String(opts.brand).trim() !== "";
+  const brandTokens = brandHard ? tokens(opts.brand) : tokens(text).slice(0, 1);
 
   let best = null;
   let bestScore = 0;
   let bestOverlap = 0;
   for (const c of candidates) {
     const set = c._tokens || (c._tokens = new Set(tokens(c.name)));
+    if (brandHard && brandTokens.length && !brandTokens.every((t) => set.has(t))) continue;
     const { score, overlap } = scorePair(queryTokens, brandTokens, set);
     if (score > bestScore) {
       bestScore = score;

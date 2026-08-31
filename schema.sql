@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS periodos (
   atualizado_em TEXT NOT NULL,
   vendas_ultimo_dia        TEXT,      -- 'AAAA-MM-DD' do último dia com venda no relatório
   vendas_ultimo_dia_parcial INTEGER, -- 1/0: esse dia está truncado
+  vendas_ultimo_dia_motivo TEXT,     -- por que foi marcado como parcial
   vendas_total_impresso    REAL,     -- "Total:" lido do rodapé do PDF (auditoria)
   vendas_fonte_gerada_em   TEXT,     -- timestamp do cabeçalho "Pag.: 1/N"
   UNIQUE(loja_id, ano, mes)

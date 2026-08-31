@@ -88,6 +88,7 @@ button{margin-top:14px;width:100%;padding:10px;border:0;border-radius:8px;backgr
 ${erro ? '<div class="err">Senha incorreta.</div>' : ""}
 </form>`;
 
+app.get("/healthz", (req, res) => res.json({ ok: true, lojas: LOJAS_VALIDAS }));
 app.get("/login", (req, res) => res.type("html").send(LOGIN_PAGE(req.query.erro)));
 app.post("/login", (req, res) => {
   if ((req.body.senha || "") === APP_PASSWORD) {
@@ -146,7 +147,8 @@ function salvarBruto(loja, ano, mes, originalname, buffer) {
 // Fase 1: parseia o PDF (lança se a soma não bater) — ANTES de tocar no banco.
 async function parseVendasFile(loja, ano, mes, file) {
   const savedPath = salvarBruto(loja, ano, mes, file.originalname, file.buffer);
-  const parsed = await parseVendasPdf(savedPath);
+  const closingHour = LOJAS_CFG[loja]?.horaFechamento ?? 22;
+  const parsed = await parseVendasPdf(savedPath, { closingHour });
   parsed.rows = parsed.rows.map((r) => ({ ...r, categoria: classificar(r.descricao) }));
   return parsed;
 }
@@ -156,10 +158,17 @@ function persistirVendas(periodoId, parsed) {
   setVendasMeta(periodoId, {
     lastDay: parsed.lastDay,
     lastDayPartial: parsed.lastDayPartial,
+    lastDayMotivo: parsed.lastDayMotivo,
     printedTotal: parsed.printedTotal,
     geradoEm: parsed.headerTimestamp,
   });
-  return { linhas: parsed.rows.length, total: parsed.total, printedTotal: parsed.printedTotal, lastDayPartial: parsed.lastDayPartial };
+  return {
+    linhas: parsed.rows.length,
+    total: parsed.total,
+    printedTotal: parsed.printedTotal,
+    lastDayPartial: parsed.lastDayPartial,
+    lastDayMotivo: parsed.lastDayMotivo,
+  };
 }
 
 function processarConcorrentes(periodoId, loja, ano, mes, file) {
@@ -279,76 +288,79 @@ app.get("/api/periodos/:loja", (req, res) => {
   res.json(listPeriodos(loja));
 });
 
-app.get("/api/analise/:loja/:periodo", (req, res) => {
-  try {
-    const loja = req.params.loja;
-    if (!LOJAS_VALIDAS.includes(loja)) return res.status(404).json({ erro: "loja desconhecida" });
-    const m = String(req.params.periodo).match(/^(\d{4})-(\d{2})$/);
-    if (!m) return res.status(400).json({ erro: "período deve ser AAAA-MM" });
-    const ano = +m[1];
-    const mes = +m[2];
+function norm(s) {
+  return String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
+}
 
-    const periodo = findPeriodo(loja, ano, mes);
-    if (!periodo) return res.status(404).json({ erro: "sem análise para este período" });
+// Monta a resposta completa da análise. Retorna { status, body }.
+function buildAnalise(loja, ano, mes) {
+  if (!LOJAS_VALIDAS.includes(loja)) return { status: 404, body: { erro: "loja desconhecida" } };
+  const periodo = findPeriodo(loja, ano, mes);
+  if (!periodo) return { status: 404, body: { erro: "sem análise para este período" } };
 
-    const lojaCfg = LOJAS_CFG[loja] || {};
-    const vendas = getVendas(periodo.id);
-    if (!vendas.length) return res.status(404).json({ erro: "período sem dados de vendas" });
+  const lojaCfg = LOJAS_CFG[loja] || {};
+  const vendas = getVendas(periodo.id);
+  if (!vendas.length) return { status: 404, body: { erro: "período sem dados de vendas" } };
 
-    const agg = aggregate(vendas, {
-      lastDay: periodo.vendas_ultimo_dia,
-      lastDayPartial: !!periodo.vendas_ultimo_dia_parcial,
-      diasCampanha: lojaCfg.diasCampanha || [],
-    });
-    const insights = gerarInsights(agg, lojaCfg);
+  const agg = aggregate(vendas, {
+    lastDay: periodo.vendas_ultimo_dia,
+    lastDayPartial: !!periodo.vendas_ultimo_dia_parcial,
+    diasCampanha: lojaCfg.diasCampanha || [],
+  });
+  const insights = gerarInsights(agg, lojaCfg);
 
-    const igRows = getInstagram(periodo.id);
-    const instagram = igRows.map((r) => ({
-      label: r.rotulo,
-      value: r.valor_exibicao,
-      delta: r.delta_pct,
-      extra: r.observacao || "",
-    }));
+  const instagram = getInstagram(periodo.id).map((r) => ({
+    label: r.rotulo, value: r.valor_exibicao, delta: r.delta_pct, extra: r.observacao || "",
+  }));
 
-    const concRows = getConcorrencia(periodo.id);
-    let concorrencia;
-    if (!concRows.length) {
-      concorrencia = { pending: true, competitors: lojaCfg.concorrentes || [] };
-    } else {
-      const porConc = new Map();
-      for (const o of concRows) {
-        if (!porConc.has(o.concorrente))
-          porConc.set(o.concorrente, { concorrente: o.concorrente, ofertas: 0, comparaveis: 0, abaixo: 0, confianca: { Alta: 0, Média: 0, Baixa: 0 }, exemplos: [] });
-        const e = porConc.get(o.concorrente);
-        e.ofertas++;
-        if (o.abaixo_do_nosso != null) {
-          e.comparaveis++;
-          if (o.abaixo_do_nosso) e.abaixo++;
-        }
-        const nc = o.nivel_confianca || "";
-        if (/alta/i.test(nc)) e.confianca.Alta++;
-        else if (/m[eé]dia/i.test(nc)) e.confianca["Média"]++;
-        else if (/baixa/i.test(nc)) e.confianca.Baixa++;
-        if (o.abaixo_do_nosso && e.exemplos.length < 5)
-          e.exemplos.push({ produto: o.produto, promo: o.preco_promo, nosso: o.nosso_preco_medio, confianca: o.nivel_confianca });
-      }
-      concorrencia = {
-        pending: false,
-        totalOfertas: concRows.length,
-        comparaveis: concRows.filter((o) => o.abaixo_do_nosso != null).length,
-        abaixoDoNosso: concRows.filter((o) => !!o.abaixo_do_nosso).length,
-        porConcorrente: [...porConc.values()].sort((a, b) => b.abaixo - a.abaixo || b.ofertas - a.ofertas),
-      };
+  const concRows = getConcorrencia(periodo.id);
+  const cfgConc = lojaCfg.concorrentes || [];
+  let concorrencia;
+  if (!concRows.length) {
+    concorrencia = { pending: true, competitors: cfgConc };
+  } else {
+    // começa por TODOS os concorrentes configurados; preenche o que a coleta trouxe.
+    const porConc = new Map();
+    for (const c of cfgConc) {
+      porConc.set(norm(c.nome), { concorrente: c.nome, handle: c.handle || null, nota: c.nota || null,
+        temColeta: false, ofertas: 0, comparaveis: 0, abaixo: 0, confianca: { Alta: 0, "Média": 0, Baixa: 0 }, exemplos: [] });
     }
+    for (const o of concRows) {
+      const key = norm(o.concorrente);
+      if (!porConc.has(key))
+        porConc.set(key, { concorrente: o.concorrente, handle: null, nota: null,
+          temColeta: false, ofertas: 0, comparaveis: 0, abaixo: 0, confianca: { Alta: 0, "Média": 0, Baixa: 0 }, exemplos: [] });
+      const e = porConc.get(key);
+      e.temColeta = true;
+      e.ofertas++;
+      if (o.abaixo_do_nosso != null) { e.comparaveis++; if (o.abaixo_do_nosso) e.abaixo++; }
+      const nc = o.nivel_confianca || "";
+      if (/alta/i.test(nc)) e.confianca.Alta++;
+      else if (/m[eé]dia/i.test(nc)) e.confianca["Média"]++;
+      else if (/baixa/i.test(nc)) e.confianca.Baixa++;
+      if (o.abaixo_do_nosso && e.exemplos.length < 5)
+        e.exemplos.push({ produto: o.produto, marca: o.marca || null, promo: o.preco_promo, nosso: o.nosso_preco_medio, confianca: o.nivel_confianca });
+    }
+    concorrencia = {
+      pending: false,
+      totalOfertas: concRows.length,
+      comparaveis: concRows.filter((o) => o.abaixo_do_nosso != null).length,
+      abaixoDoNosso: concRows.filter((o) => !!o.abaixo_do_nosso).length,
+      nota: "Comparação por casamento aproximado de nome/marca do produto contra o nosso preço médio praticado no mês — leitura direcional, não é preço de tabela.",
+      porConcorrente: [...porConc.values()].sort((a, b) => Number(b.temColeta) - Number(a.temColeta) || b.abaixo - a.abaixo || b.ofertas - a.ofertas),
+    };
+  }
 
-    res.json({
+  return {
+    status: 200,
+    body: {
       loja,
       periodo: periodoSlug(ano, mes),
       meta: {
         periodoLabel: `${MESES_PT[mes]} de ${ano}`,
         endereco: lojaCfg.endereco || null,
         diaParcial: periodo.vendas_ultimo_dia_parcial
-          ? { dia: periodo.vendas_ultimo_dia, geradoEm: periodo.vendas_fonte_gerada_em }
+          ? { dia: periodo.vendas_ultimo_dia, geradoEm: periodo.vendas_fonte_gerada_em, motivo: periodo.vendas_ultimo_dia_motivo }
           : null,
         totalImpresso: periodo.vendas_total_impresso,
         fonteNota:
@@ -365,16 +377,108 @@ app.get("/api/analise/:loja/:periodo", (req, res) => {
       insights,
       instagram,
       concorrencia,
-    });
+    },
+  };
+}
+
+app.get("/api/analise/:loja/:periodo", (req, res) => {
+  try {
+    const m = String(req.params.periodo).match(/^(\d{4})-(\d{2})$/);
+    if (!m) return res.status(400).json({ erro: "período deve ser AAAA-MM" });
+    const r = buildAnalise(req.params.loja, +m[1], +m[2]);
+    res.status(r.status).json(r.body);
   } catch (e) {
     console.error("[api/analise]", e);
     res.status(500).json({ erro: e.message });
   }
 });
 
+// --- exportação: painel autocontido em 1 arquivo .html (formato do arquivo de referência)
+
+const FONTS_LINK =
+  '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">';
+
+function buildStandaloneHtml(analise, loja, periodo) {
+  const css = fs.readFileSync(path.join(__dirname, "public", "styles.css"), "utf8");
+  const painelJs = fs.readFileSync(path.join(__dirname, "public", "painel.js"), "utf8");
+  const indexHtml = fs.readFileSync(path.join(__dirname, "public", "index.html"), "utf8");
+  const body = indexHtml
+    .replace(/^[\s\S]*?<body>/i, "")
+    .replace(/<\/body>[\s\S]*$/i, "")
+    .replace(/<script src="\/painel\.js"><\/script>/i, "");
+
+  // dados assados + fetch stub: o painel.js roda sem alteração, "buscando" o que já está aqui.
+  const stub = `
+  (function () {
+    var DB = {
+      lojas: ${JSON.stringify([{ nome: loja, endereco: analise.meta.endereco, campanhaNome: null }])},
+      periodos: ${JSON.stringify([{ ano: +periodo.slice(0, 4), mes: +periodo.slice(5, 7), periodo: periodo, temVendas: true, atualizadoEm: analise.meta.atualizadoEm }])},
+      analise: ${JSON.stringify(analise)}
+    };
+    var _f = window.fetch ? window.fetch.bind(window) : null;
+    window.fetch = function (url) {
+      url = String(url);
+      var data = /\\/api\\/lojas/.test(url) ? DB.lojas
+        : /\\/api\\/periodos\\//.test(url) ? DB.periodos
+        : /\\/api\\/analise\\//.test(url) ? DB.analise : undefined;
+      if (data === undefined) return _f ? _f(url) : Promise.reject(new Error("offline"));
+      return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve(data); } });
+    };
+    try { localStorage.clear(); } catch (e) {}
+  })();`;
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vermelhinha em Números — ${loja} — ${analise.meta.periodoLabel}</title>
+${FONTS_LINK}
+<style>
+${css}
+#controls-row{ display:none !important; }
+</style>
+</head>
+<body>
+${body}
+<script>${stub}</script>
+<script>${painelJs}</script>
+</body>
+</html>`;
+}
+
+app.get("/export/:loja/:periodo", (req, res) => {
+  try {
+    const m = String(req.params.periodo).match(/^(\d{4})-(\d{2})$/);
+    if (!m) return res.status(400).send("período deve ser AAAA-MM");
+    const loja = req.params.loja;
+    const r = buildAnalise(loja, +m[1], +m[2]);
+    if (r.status !== 200) return res.status(r.status).send(r.body.erro || "não encontrado");
+    const slug = periodoSlug(+m[1], +m[2]);
+    const filename = `vermelhinha-${loja.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${slug}.html`;
+    res
+      .type("html")
+      .set("Content-Disposition", `attachment; filename="${filename}"`)
+      .send(buildStandaloneHtml(r.body, loja, slug));
+  } catch (e) {
+    console.error("[export]", e);
+    res.status(500).send(e.message);
+  }
+});
+
 // páginas + assets (atrás da sessão)
 app.use(express.static(path.join(__dirname, "public")));
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+
+// tratador de erro final — multer e afins caem aqui sem passar pelo try/catch das rotas
+app.use((err, req, res, next) => {
+  if (err && err.name === "MulterError") {
+    const msg = err.code === "LIMIT_FILE_SIZE" ? "Arquivo grande demais (máx. 30 MB)." : `Upload inválido: ${err.message}`;
+    return res.status(400).json({ erro: msg });
+  }
+  console.error("[erro]", err);
+  res.status(500).json({ erro: (err && err.message) || "erro interno" });
+});
 
 app.listen(PORT, () => {
   console.log(`Vermelhinha Analytics em http://localhost:${PORT}`);
