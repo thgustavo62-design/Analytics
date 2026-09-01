@@ -184,6 +184,11 @@ function persistirVendas(periodoId, parsed, loja) {
     } catch (e) {
       console.error("[upload] cesta:", e.message);
     }
+    try {
+      require("./intelligence").rodarDeteccao(loja);
+    } catch (e) {
+      console.error("[upload] detecção de sinais:", e.message);
+    }
   }
   return {
     linhas: parsed.rows.length,
@@ -517,6 +522,174 @@ app.delete("/api/marketing/:loja/campaigns/:id", (req, res) => {
   if (!c || c.loja !== req.params.loja) return res.status(404).json({ erro: "campanha não encontrada" });
   dbCat.removerCampanha(+req.params.id);
   res.json({ ok: true });
+});
+
+// --- Fases 5–12: camada de Inteligência (detectores + War Room + investigação + decisão + padrões + ontologia + ask + editorial) ---
+const intel = require("./intelligence");
+const investigar = require("./intelligence/investigar");
+const padroesEng = require("./intelligence/padroes");
+const ontologia2 = require("./intelligence/ontologia2");
+const askEng = require("./ask");
+const editorialEng = require("./editorial");
+
+function ctxOntologia(loja, ym) {
+  const m = String(ym || "").match(/^(\d{4})-(\d{2})$/);
+  let per = m ? findPeriodo(loja, +m[1], +m[2]) : null;
+  if (!per) {
+    const ps = listPeriodos(loja).filter((p) => p.temVendas);
+    if (ps.length) per = findPeriodo(loja, ps[0].ano, ps[0].mes);
+  }
+  if (!per) return null;
+  return {
+    periodo: `${per.ano}-${String(per.mes).padStart(2, "0")}`,
+    vendasRows: getVendas(per.id),
+    concRows: getConcorrencia(per.id),
+    lojaCfg: LOJAS_CFG[loja] || {},
+    analiseComercial: analiseStore.read(loja, `${per.ano}-${String(per.mes).padStart(2, "0")}`),
+  };
+}
+
+app.get("/api/intelligence/:loja/war-room", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    res.json(intel.warRoom(req.params.loja));
+  } catch (e) {
+    console.error("[war-room]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+app.post("/api/intelligence/:loja/detect", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    res.json(intel.rodarDeteccao(req.params.loja, { persistir: req.query.dry !== "1" }));
+  } catch (e) {
+    console.error("[detect]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+app.get("/api/intelligence/:loja/signals", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  res.json(dbCat.listSinais(req.params.loja, { status: req.query.status, classe: req.query.classe, tipo: req.query.tipo, limite: +req.query.limite || 200 }));
+});
+app.get("/api/intelligence/:loja/signals/:id", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const s = dbCat.getSinal(+req.params.id);
+  if (!s) return res.status(404).json({ erro: "sinal não encontrado" });
+  res.json(s);
+});
+app.patch("/api/intelligence/:loja/signals/:id", express.json({ limit: "256kb" }), (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    res.json(dbCat.setSinalStatus(+req.params.id, String(req.body.status || "")));
+  } catch (e) {
+    res.status(400).json({ erro: e.message });
+  }
+});
+
+// Fase 6 — investigação
+app.post("/api/intelligence/:loja/investigate", express.json({ limit: "256kb" }), (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const b = req.body || {};
+    const r = b.gravar
+      ? investigar.investigarEGravar(req.params.loja, { pergunta: b.pergunta, sinalId: b.sinalId })
+      : investigar.investigar(req.params.loja, { pergunta: b.pergunta, sinalId: b.sinalId });
+    res.status(r && r.erro ? 404 : 200).json(r);
+  } catch (e) {
+    console.error("[investigate]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+app.get("/api/intelligence/:loja/investigations", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  res.json(dbCat.listInvestigacoes(req.params.loja));
+});
+app.get("/api/intelligence/:loja/investigations/:id", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const i = dbCat.getInvestigacao(+req.params.id);
+  if (!i) return res.status(404).json({ erro: "investigação não encontrada" });
+  res.json(i);
+});
+
+// Fase 9 — decisões / ações / resultados
+app.get("/api/intelligence/:loja/decisions", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  res.json(dbCat.listDecisoes(req.params.loja));
+});
+app.get("/api/intelligence/:loja/decisions/:id", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const d = dbCat.getDecisao(+req.params.id);
+  if (!d || d.loja !== req.params.loja) return res.status(404).json({ erro: "decisão não encontrada" });
+  res.json({ ...d, semelhantes: padroesEng.semelhantes(req.params.loja, { sinalTipos: (d.sinais || []).map((sid) => { const s = dbCat.getSinal(+sid); return s && s.tipo; }).filter(Boolean), tipoDecisao: d.tipo }) });
+});
+app.post("/api/intelligence/:loja/decisions", express.json({ limit: "512kb" }), (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const b = req.body || {};
+  if (!b.titulo) return res.status(400).json({ erro: "titulo obrigatório" });
+  const id = dbCat.criarDecisao(req.params.loja, b);
+  res.json(dbCat.getDecisao(id));
+});
+app.post("/api/intelligence/:loja/decisions/:id/outcomes", express.json({ limit: "256kb" }), (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const d = dbCat.getDecisao(+req.params.id);
+  if (!d || d.loja !== req.params.loja) return res.status(404).json({ erro: "decisão não encontrada" });
+  dbCat.addResultado(+req.params.id, req.body || {});
+  const padrao = padroesEng.aprenderComDecisao(+req.params.id);
+  res.json({ decisao: dbCat.getDecisao(+req.params.id), padrao });
+});
+app.patch("/api/intelligence/:loja/actions/:id", express.json({ limit: "128kb" }), (req, res) => {
+  if (!lojaOk(req, res)) return;
+  dbCat.setAcaoStatus(+req.params.id, String((req.body || {}).status || "pendente"));
+  res.json({ ok: true });
+});
+
+// Fase 10 — padrões
+app.get("/api/intelligence/:loja/patterns", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  res.json(padroesEng.panorama(req.params.loja));
+});
+
+// Fase 7 — ontologia persistida
+app.get("/api/intelligence/:loja/ontology", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  res.json(dbCat.getOntologiaPersistida(req.params.loja));
+});
+app.post("/api/intelligence/:loja/ontology/sync", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const c = ctxOntologia(req.params.loja, req.query.periodo);
+    if (!c) return res.status(404).json({ erro: "sem período com vendas" });
+    res.json(ontologia2.sincronizarOntologia(req.params.loja, c.periodo, c));
+  } catch (e) {
+    console.error("[ontology/sync]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// Fase 11 — Ask Analytics
+app.post("/api/intelligence/:loja/ask", express.json({ limit: "256kb" }), async (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const r = await askEng.perguntar(req.params.loja, { pergunta: (req.body || {}).pergunta });
+    res.status(r && r.erro ? 400 : 200).json(r);
+  } catch (e) {
+    console.error("[ask]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// Fase 12 — Editorial (pauta 7 dias)
+app.get("/api/intelligence/:loja/editorial-plan", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const r = editorialEng.planoSemanal(req.params.loja, { inicio: req.query.inicio });
+    res.status(r && r.erro ? 404 : 200).json(r);
+  } catch (e) {
+    console.error("[editorial-plan]", e);
+    res.status(500).json({ erro: e.message });
+  }
 });
 
 // --- Fase 2: Motor de Análise Comercial (o backend só recebe/valida/guarda/serve o JSON) ---

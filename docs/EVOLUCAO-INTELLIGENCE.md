@@ -21,16 +21,17 @@ plano de fases. Atualizado a cada fase concluída.
 | Marketing (Fase 2) | `marketing-product-analytics.js` | Janelas por produto, tendência, days-of-cover, margem, classes, Opportunity Score, do-not-promote, substituição, estoque parado. |
 | Campanhas (Fase 3) | `campanhas.js` + tabelas `campanhas`/`campanha_produtos`/`campanha_resultados` | Eficiência do calendário, Campaign Builder, Offer Simulator. |
 | Cesta (Fase 4) | `basket.js` + tabela `cesta_pares` | Support/confidence/lift, centralidade, combos. |
-| Servidor | `server.js` | Auth por senha (`1234`), `buildAnalise()`, exports `.html`, verificação diária. ~40 rotas (inclui `/api/marketing/...`). |
+| Inteligência (Fases 5–12) | `intelligence/*` + `ask.js` + `editorial.js` + tabelas `intel_*` / `ontology_*` | Detectores → sinais priorizados (evidência + dedupe), War Room, investigação "Por quê?", memória de decisão, padrões, ontologia persistida, Ask, pauta editorial de 7 dias. Roda na ingestão. Ver [`intelligence.md`](./intelligence.md). |
+| Servidor | `server.js` | Auth por senha (`1234`), `buildAnalise()`, exports `.html`, verificação diária. ~75 rotas (inclui `/api/marketing/...` e `/api/intelligence/...`). |
 
 ### Frontend (`public/`, vanilla JS + SVG à mão, sem build)
-- `app.js` (~1150 linhas): app shell, roteamento por hash, gráficos SVG, grafo de Conexões, tela de Análise Comercial, tela de Marketing.
-- Telas: **Painel** (abas), **Marketing** (Produtos/Recomendados/Não anunciar/Estoque parado/Cestas & Combos/Eficiência/Montar campanha/Simulador), **Conexões** (grafo radial), **Análise Comercial**, **Upload**, **Histórico**, **Configurações**.
+- `app.js` (~1400 linhas): app shell, roteamento por hash, gráficos SVG, grafo de Conexões, telas de Análise Comercial, Marketing e Intelligence.
+- Telas: **Painel** (abas), **Marketing** (Produtos/Recomendados/Não anunciar/Estoque parado/Cestas & Combos/Eficiência/Montar campanha/Simulador), **Intelligence** (War Room/Sinais/Investigações/Decisões/Padrões/Pauta 7 dias/Perguntar), **Conexões** (grafo radial), **Análise Comercial**, **Upload**, **Histórico**, **Configurações**.
 
 ### Config
-`config/lojas.json` (cnpj, `horaFechamento`, `concorrentes[]`, **`campanhas[{nome,dias,categorias}]`**), `config/categorias.json`, `config/insights.json`, `config/catalogo.json`, `config/marketing-stock.json`, `config/opportunity-score.json`, `config/basket-analysis.json`.
+`config/lojas.json` (cnpj, `horaFechamento`, `concorrentes[]`, **`campanhas[{nome,dias,categorias}]`**), `config/categorias.json`, `config/insights.json`, `config/catalogo.json`, `config/marketing-stock.json`, `config/opportunity-score.json`, `config/basket-analysis.json`, `config/intelligence.json`.
 
-### Testes: 40 (`node --test`), fixtures = PDFs reais de agosto/2026.
+### Testes: 52 (`node --test`), fixtures = PDFs reais de agosto/2026.
 
 ---
 
@@ -111,14 +112,14 @@ uma dessas fontes sem mexer no código.
 | **2 · Marketing Product Intelligence** ✅ | `marketing-product-analytics.js`: unidades/receita 7/14/30/60/90d, venda média diária, tendência, days-of-cover (`config/marketing-stock.json`), margem (se houver custo), classificações (HERO/TRAFEGO/OPORTUNIDADE/GIRO_URGENTE/PROTEGIDO/COMPLEMENTAR/DEFESA), Opportunity Score com **componentes** (`config/opportunity-score.json`), `do-not-promote`, motor de substituição, estoque parado → ações. | novo módulo + `config/*.json` + rotas `/api/marketing/...` + testes. |
 | **3 · Campaigns** ✅ | Campanha vira entidade (`campanhas`/`campanha_produtos`/`campanha_resultados`), importa de `config/lojas.json`. Eficiência (EFFICIENCY_SCORE/DEMAND_LIFT, SELL_THROUGH/MARGIN_SACRIFICE/STOCK_IMPACT quando há estoque/custo), **Campaign Builder**, **Simulador de oferta** (cenários conservador/provável/agressivo). | migrations + `campanhas.js` + rotas + tela **Marketing**. |
 | **4 · Basket** ✅ | Market Basket por cupom (`data+lancamento`): support/confidence/lift (pares; trios preparados, sem amostra ainda), com mínimos configuráveis (incl. mínimo por produto isolado, contra ruído). Combos inteligentes (cesta + classe/cobertura/margem da Fase 2). | `basket.js` + `config/basket-analysis.json` + materialização + testes. |
-| **5 · Intelligence Foundation** | `intelligence_events`, `intelligence_signals`, `intelligence_evidence`. Detectores determinísticos (CREATIVE_FATIGUE, COMPETITOR_PRICE_ATTACK, CATEGORY_DECLINE/GROWTH, STOCK_RISK, STAGNANT_STOCK, CAMPAIGN_OVER/UNDERPERFORMANCE, DEMAND_ANOMALY, MARKETING/CROSS_SELL_OPPORTUNITY, CONTRADICTION). Severidade e `confidence` por regra quantitativa. Priority Engine. | `intelligence/` (novo dir) + `config/intelligence.json` + rotas `/api/intelligence/...`. |
-| **6 · Investigation** | `investigations` + `hypotheses` + contradiction engine + evidence lineage + endpoint "Por quê?" (árvore navegável). | módulos + rotas + tela **Investigations**. |
-| **7 · Ontology 2.0** | Persistir o grafo (nós/arestas com `strength`/`confidence`/temporalidade). Novos tipos (PRODUTO, MARCA, SUBCATEGORIA, CRIATIVO, CONTEUDO, INSTAGRAM_POST, WHATSAPP, …). Grafo com zoom/pan/busca/foco/profundidade, física simples opcional. | evolui `ontologia.js` + `app.js` (grafo). |
-| **8 · War Room** | Tela **INTELLIGENCE → War Room** (fundo escuro, denso, sóbrio): status, prioridade #1, Threat Map, Opportunity Map, situação da categoria. IDs human-readable (`SIG-000193`, `THR-000031`, …). | nova tela + design tokens escuros isolados. |
-| **9 · Decision Memory** | `decisions`/`actions`/`outcomes` + timeline + "situação semelhante aconteceu em…". | migrations + módulos + tela **Decisions**. |
-| **10 · Pattern Engine** | `intelligence_patterns` (amostra mínima), aprendizado por outcome. | `patterns.js` + testes. |
-| **11 · Ask Analytics** | Interface de pergunta estruturada → contexto agregado (nunca base bruta) → resposta no formato analista (conclusão/evidências/hipóteses/confiança/ação/monitorar). | rota + tela + prompt. |
-| **12 · Editorial Intelligence** | Campanha recomendada, **Pauta de 7 dias** (produto vem do motor determinístico; IA só ajuda hook/CTA), briefing. | `editorial.js` + tela. |
+| **5 · Intelligence Foundation** ✅ | `intel_eventos`, `intel_sinais`, `intel_evidencias`. Detectores determinísticos (COMPETITOR_PRICE_ATTACK, CATEGORY_DECLINE/GROWTH, STOCK_RISK, STAGNANT_STOCK, CAMPAIGN_OVER/UNDERPERFORMANCE, DEMAND_ANOMALY, CROSS_SELL/MARKETING_OPPORTUNITY, CREATIVE_FATIGUE, CONTRADICTION). Severidade e `confianca` por regra quantitativa. Priority Engine (`prioridade 0..100`). | `intelligence/` (novo dir) + `config/intelligence.json` + rotas `/api/intelligence/...`. |
+| **6 · Investigation** ✅ | `intel_investigacoes` + `intel_hipoteses` + biblioteca de hipóteses por assunto + evidence lineage + endpoint "Por quê?". | `intelligence/investigar.js` + rotas + aba **Investigações**. |
+| **7 · Ontology 2.0** ✅ | Grafo persistido (`ontology_nodes`/`ontology_edges` com `forca`/`confianca`/`valid_from`). Novos tipos PRODUTO/MARCA + arestas `combina` (cesta) e `sobre` (sinal). | `intelligence/ontologia2.js` (usa `ontologia.js` intacto) + rotas. |
+| **8 · War Room** ✅ | Aba **Intelligence → War Room** (bloco escuro, tokens isolados em `.warroom`): KPIs, prioridade #1, Threat/Opportunity Map, contradições, situação por categoria. IDs `SIG-/THR-/OPP-/CON-000000`. | `intelligence.warRoom()` + tela + CSS escuro isolado. |
+| **9 · Decision Memory** ✅ | `intel_decisoes`/`intel_acoes`/`intel_resultados` + "situação semelhante já aconteceu em…". | `db.js` + rotas + aba **Decisões**. |
+| **10 · Pattern Engine** ✅ | `intel_padroes` (chave "(tipos de sinal) => (tipo de decisão)", amostra mínima 3), aprende quando um resultado é medido. | `intelligence/padroes.js` + testes. |
+| **11 · Ask Analytics** ✅ | `POST /api/intelligence/:loja/ask` → contexto agregado (nunca base bruta) → resposta formato analista (conclusão/evidências/hipóteses/confiança/ação/monitorar). Determinístico; IA opcional só narra. | `ask.js` + aba **Perguntar**. |
+| **12 · Editorial Intelligence** ✅ | `GET /api/intelligence/:loja/editorial-plan` — **Pauta de 7 dias** (produto e ângulo do motor; CTA de template; IA só lapidaria hook/CTA). | `editorial.js` + aba **Pauta 7 dias**. |
 
 Config nova (§77): `config/opportunity-score.json`, `config/threat-score.json`,
 `config/marketing-stock.json`, `config/basket-analysis.json`, `config/intelligence.json`.
@@ -281,5 +282,54 @@ Offer Simulator com 3 cenários, CRUD de campanhas com o calendário já importa
 **Limitações / pendências:** sem feed de estoque/custo/preço, days-of-cover, margem,
 sell-through, MARGIN_SACRIFICE/STOCK_IMPACT e risco de ruptura no simulador continuam `null` —
 por desenho, não por bug. A cesta de 1 mês fica magra com o limite de amostra pensado para 90d
-(vai naturalmente enriquecer conforme mais meses entrarem). Fases 5–12 (Intelligence Foundation
-em diante) seguem no plano da seção 6.
+(vai naturalmente enriquecer conforme mais meses entrarem).
+
+### Fases 5–12 — Camada de Inteligência ✅ (2026-09-01)
+
+Feitas em lote ("faça as outras fases"). Documento dedicado: [`intelligence.md`](./intelligence.md).
+Roda automaticamente após cada ingestão de vendas (`ingest.js` e `server.js persistirVendas`
+chamam `intelligence.rodarDeteccao(loja)`); manual em `POST /api/intelligence/:loja/detect`.
+
+**Migrations (idempotentes):** `intel_eventos`, `intel_sinais` (+`UNIQUE(loja_id,dedupe_key)`),
+`intel_evidencias`, `intel_investigacoes`, `intel_hipoteses`, `intel_decisoes`, `intel_acoes`,
+`intel_resultados`, `intel_padroes` (+`UNIQUE(loja_id,chave)`), `ontology_nodes`, `ontology_edges`.
+
+**Módulos novos:** `intelligence/contexto.js` (pacote determinístico da loja — reúne Fase 2/3/4
++ concorrência + Instagram + histórico + momentum de categoria 14d×14d; recua 1 dia se o último
+dia de venda é parcial), `intelligence/detectores.js` (11 detectores com limiar em
+`config/intelligence.json`; sem o feed necessário, não dispara e reporta em `indisponivel[]`),
+`intelligence/priorizacao.js` (Priority Engine 0..100: severidade, confiança, impacto,
+recência com meia-vida, acionabilidade), `intelligence/index.js` (`rodarDeteccao` com dedupe/
+reabertura/resolução + `warRoom`), `intelligence/investigar.js` (Fase 6 — biblioteca de
+hipóteses por assunto, cada uma vira suportada/refutada/inconclusiva com evidência),
+`intelligence/ontologia2.js` (Fase 7 — persiste + enriquece o grafo de `ontologia.js`),
+`intelligence/padroes.js` (Fase 10 — aprende de decisão+resultado), `ask.js` (Fase 11),
+`editorial.js` (Fase 12). `db.js` ganhou ~25 helpers (`upsertSinal`, `resolverSinaisAusentes`,
+`codigoIntel`, investigações/decisões/ações/resultados/padrões, `getOntologiaPersistida`).
+
+**IDs human-readable:** `SIG-/THR-/OPP-/CON-/INV-/DEC-/PAT-000000`, derivados do id numérico.
+
+**Rotas novas:** `/api/intelligence/:loja/{war-room, detect, signals[/:id], investigate,
+investigations[/:id], decisions[/:id][/outcomes], actions/:id, patterns, ontology[/sync], ask,
+editorial-plan}`.
+
+**Frontend:** nova seção de sidebar **🧠 Intelligence** (`renderIntelligence` em `app.js`) com
+abas War Room (bloco escuro, tokens isolados em `.warroom`), Sinais, Investigações, Decisões,
+Padrões, Pauta 7 dias, Perguntar. "Por quê?" em qualquer sinal abre a investigação inline.
+Nenhuma tela existente foi alterada.
+
+**Testes:** `test/intelligence.test.js` (12) — Priority Engine monotônico; dedupe (2ª rodada 0
+novos); todo sinal com evidência (campo+fonte); sem feed de custo/estoque não inventa sinal;
+sinal que some é resolvido; War Room; investigação com veredito+evidência e persistência;
+roteamento de pergunta livre; decisão→resultado→padrão + semelhantes; ontologia 2.0 persiste e
+é idempotente; Ask no formato analista sem inventar; Editorial de 7 dias com evidência.
+**52 testes no total, todos passando.**
+
+**Verificado E2E (HTTP):** upload do PDF de agosto → detecção roda na ingestão (22 sinais);
+War Room, signals, editorial-plan e ask respondendo com dados reais; nav com o item Intelligence.
+
+**Limitações:** sinais que dependem de estoque/custo (STOCK_RISK real, impacto de margem),
+Instagram (CREATIVE_FATIGUE) e coleta de concorrência (COMPETITOR_PRICE_ATTACK) só disparam
+quando esses feeds existem — reportados em `indisponivel[]`, nunca forjados. A narração por IA
+no Ask é opt-in (`ANTHROPIC_API_KEY`); sem chave, resposta 100% determinística. O "é queda da
+loja inteira?" na investigação só conclui com 2+ meses de histórico.

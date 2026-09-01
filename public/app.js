@@ -1152,13 +1152,203 @@
     });
   }
 
+  // ---------- Intelligence (Fases 5–12) ----------
+  var itl = { tab: "warroom", cache: {} };
+  var ITL_TABS = [
+    ["warroom", "War Room"], ["sinais", "Sinais"], ["investigacoes", "Investigações"],
+    ["decisoes", "Decisões"], ["padroes", "Padrões"], ["pauta", "Pauta 7 dias"], ["perguntar", "Perguntar"],
+  ];
+  function itlGet(url, noCache) {
+    if (!noCache && itl.cache[url]) return Promise.resolve(itl.cache[url]);
+    return getJSON(url).then(function (d) { itl.cache[url] = d; return d; });
+  }
+  function sevPill(s) {
+    var cls = s.classe === "AMEACA" ? "thr" : s.classe === "OPORTUNIDADE" ? "opp" : s.classe === "CONTRADICAO" ? "con" : "sig";
+    return '<span class="itl-badge ' + cls + '">' + esc(s.codigo || s.classe) + "</span>";
+  }
+  function sinalCard(s) {
+    return '<div class="itl-sig" data-sig="' + s.id + '">' +
+      '<div class="itl-sig-h">' + sevPill(s) + '<b>' + esc(s.titulo) + "</b><span class=\"itl-prio\">P" + Math.round(s.prioridade) + "</span></div>" +
+      (s.resumo ? '<div class="itl-sig-r">' + esc(s.resumo) + "</div>" : "") +
+      '<div class="itl-sig-m">sev ' + (s.severidade != null ? s.severidade.toFixed(2) : "—") + " · conf " + (s.confianca != null ? s.confianca.toFixed(2) : "—") +
+      (s.impacto_estimado ? " · ~R$ " + int(s.impacto_estimado) + "/mês" : "") + " · " + esc(s.status) + "</div>" +
+      '<div class="itl-sig-a"><button data-act="why" data-id="' + s.id + '">Por quê?</button>' +
+      '<button data-act="obs" data-id="' + s.id + '">Observando</button>' +
+      '<button data-act="res" data-id="' + s.id + '">Resolver</button>' +
+      '<button data-act="dec" data-id="' + s.id + '">Virar decisão</button></div>' +
+      '<div class="itl-why" id="why-' + s.id + '" hidden></div></div>';
+  }
+  function renderIntelligence() {
+    state.view = "intelligence";
+    document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === "intelligence"); });
+    if (!state.loja) { view.innerHTML = '<div class="empty">Escolha uma loja.</div>'; return; }
+    view.innerHTML =
+      '<div class="page-head"><div><h1>🧠 Intelligence</h1><div class="sub">' + esc(state.loja) + " · sinais, ameaças, oportunidades e decisões — tudo com evidência e prioridade. A IA só narra o que o backend calculou.</div></div>" +
+      '<button class="btn" id="itlDetect">↻ Rodar detecção</button></div>' +
+      '<div class="tabs" id="itlTabs">' + ITL_TABS.map(function (t) { return '<button data-itab="' + t[0] + '"' + (t[0] === itl.tab ? ' class="active"' : "") + ">" + t[1] + "</button>"; }).join("") + "</div>" +
+      '<div id="itlBody"><div class="empty">Carregando…</div></div>';
+    view.querySelector("#itlDetect").addEventListener("click", function () {
+      var b = this; b.disabled = true; b.textContent = "Rodando…";
+      fetch("/api/intelligence/" + encodeURIComponent(state.loja) + "/detect", { method: "POST" }).then(function (r) { return r.json(); }).then(function () {
+        itl.cache = {}; renderIntelligence();
+      }).finally(function () { b.disabled = false; b.textContent = "↻ Rodar detecção"; });
+    });
+    view.querySelectorAll("[data-itab]").forEach(function (b) { b.addEventListener("click", function () { itl.tab = b.getAttribute("data-itab"); renderIntelligence(); }); });
+    itlBody();
+  }
+  async function itlBody() {
+    var host = view.querySelector("#itlBody");
+    var L = encodeURIComponent(state.loja);
+    try {
+      if (itl.tab === "warroom") {
+        var w = await itlGet("/api/intelligence/" + L + "/war-room", true);
+        host.innerHTML = warRoomHtml(w);
+        wireSigActions(host);
+      } else if (itl.tab === "sinais") {
+        var arr = await itlGet("/api/intelligence/" + L + "/signals?limite=200", true);
+        host.innerHTML = arr.length ? '<div class="itl-grid">' + arr.map(sinalCard).join("") + "</div>" : '<div class="empty">Nenhum sinal. Rode a detecção.</div>';
+        wireSigActions(host);
+      } else if (itl.tab === "investigacoes") {
+        var arr = await itlGet("/api/intelligence/" + L + "/investigations", true);
+        host.innerHTML = '<div class="card">' + (arr.length ? '<table class="tbl"><thead><tr><th>#</th><th>Pergunta</th><th>Conclusão</th><th class="num">Conf</th><th>Hip.</th></tr></thead><tbody>' +
+          arr.map(function (i) { return "<tr><td>" + i.codigo + "</td><td>" + esc(i.pergunta) + "</td><td>" + esc(i.conclusao || "—") + '</td><td class="num">' + (i.confianca == null ? "—" : i.confianca) + "</td><td>" + i.n_hip + "</td></tr>"; }).join("") + "</tbody></table>" : '<div class="empty">Nenhuma investigação ainda — use "Por quê?" num sinal.</div>') + "</div>";
+      } else if (itl.tab === "decisoes") {
+        host.innerHTML = await decisoesHtml(L);
+        wireDecisoes(host, L);
+      } else if (itl.tab === "padroes") {
+        var arr = await itlGet("/api/intelligence/" + L + "/patterns", true);
+        host.innerHTML = '<div class="card"><div class="cs" style="margin-bottom:8px">O que costuma funcionar — aprendido das decisões que tiveram resultado medido.</div>' +
+          (arr.length ? '<table class="tbl"><thead><tr><th>Padrão</th><th class="num">Amostra</th><th>Leitura</th></tr></thead><tbody>' +
+            arr.map(function (p) { return "<tr><td>" + esc(p.chave) + '</td><td class="num">' + p.amostra_n + "</td><td>" + esc(p.leitura) + "</td></tr>"; }).join("") + "</tbody></table>" : '<div class="empty">Sem padrões ainda — registre decisões e seus resultados.</div>') + "</div>";
+      } else if (itl.tab === "pauta") {
+        var p = await itlGet("/api/intelligence/" + L + "/editorial-plan", true);
+        host.innerHTML = pautaHtml(p);
+      } else if (itl.tab === "perguntar") {
+        host.innerHTML = perguntarForm();
+        wirePerguntar(L);
+      }
+    } catch (e) {
+      host.innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>";
+    }
+  }
+  function warRoomHtml(w) {
+    if (w.erro) return '<div class="empty">' + esc(w.erro) + "</div>";
+    var k = w.kpis;
+    var p1 = w.prioridade_1;
+    return '<div class="warroom">' +
+      '<div class="wr-top">' +
+        '<div class="wr-kpi"><span>Faturamento do mês</span><b>' + (k.faturamento_mes == null ? "—" : "R$ " + brl(k.faturamento_mes)) + "</b>" + (k.var_faturamento_pct == null ? "" : '<i class="' + (k.var_faturamento_pct >= 0 ? "up" : "down") + '">' + (k.var_faturamento_pct >= 0 ? "▲" : "▼") + " " + Math.abs(k.var_faturamento_pct) + "%</i>") + "</div>" +
+        '<div class="wr-kpi"><span>Sinais abertos</span><b>' + k.sinais_abertos + "</b></div>" +
+        '<div class="wr-kpi thr"><span>Ameaças</span><b>' + k.ameacas_abertas + "</b></div>" +
+        '<div class="wr-kpi opp"><span>Oportunidades</span><b>' + k.oportunidades_abertas + "</b></div>" +
+      "</div>" +
+      (p1 ? '<div class="wr-p1"><div class="wr-p1-tag">PRIORIDADE #1 · ' + esc(p1.codigo) + ' · P' + Math.round(p1.prioridade) + '</div><div class="wr-p1-t">' + esc(p1.titulo) + "</div><div class=\"wr-p1-r\">" + esc(p1.resumo || "") + '</div><button class="wr-btn" data-act="why" data-id="' + p1.id + '">Por quê?</button> <button class="wr-btn" data-act="dec" data-id="' + p1.id + '">Virar decisão</button><div class="itl-why" id="why-' + p1.id + '" hidden></div></div>' : '<div class="wr-p1 calm">Sem prioridade urgente. Operação dentro do esperado.</div>') +
+      '<div class="wr-cols">' +
+        '<div class="wr-col"><h3>🔴 Threat Map</h3>' + (w.threat_map.length ? w.threat_map.map(miniSig).join("") : '<div class="wr-empty">nada</div>') + "</div>" +
+        '<div class="wr-col"><h3>🟢 Opportunity Map</h3>' + (w.opportunity_map.length ? w.opportunity_map.map(miniSig).join("") : '<div class="wr-empty">nada</div>') + "</div>" +
+      "</div>" +
+      (w.contradicoes.length ? '<div class="wr-col wr-con"><h3>⚠ Contradições</h3>' + w.contradicoes.map(miniSig).join("") + "</div>" : "") +
+      '<div class="wr-cat"><h3>Situação por categoria</h3><table class="wr-tbl"><thead><tr><th>Categoria</th><th>Receita 30d</th><th>2 semanas</th><th>Estado</th></tr></thead><tbody>' +
+        w.situacao_categorias.map(function (c) { return "<tr><td>" + esc(c.categoria) + (c.sob_pressao ? ' <span class="wr-flag">concorrência</span>' : "") + "</td><td>R$ " + brl(c.receita_30d) + "</td><td>" + (c.var_pct == null ? "—" : (c.var_pct > 0 ? "+" : "") + c.var_pct + "%") + '</td><td class="st-' + c.estado.replace(/[^A-Z]/gi, "") + '">' + esc(c.estado) + "</td></tr>"; }).join("") +
+      "</tbody></table></div>" +
+      '<div class="wr-foot">gerado ' + new Date(w.gerado_em).toLocaleString("pt-BR") + (w.feeds && (!w.feeds.estoque || !w.feeds.custo) ? " · sem feed de " + [!w.feeds.estoque && "estoque", !w.feeds.custo && "custo"].filter(Boolean).join("/") + " — sinais dependentes ficam limitados" : "") + "</div>" +
+      "</div>";
+  }
+  function miniSig(s) {
+    return '<div class="wr-sig" data-sig="' + s.id + '"><span class="wr-prio">P' + Math.round(s.prioridade) + "</span> " + esc(s.titulo) +
+      ' <button class="wr-x" data-act="why" data-id="' + s.id + '">?</button><div class="itl-why" id="why-' + s.id + '" hidden></div></div>';
+  }
+  function wireSigActions(host) {
+    host.addEventListener("click", async function (ev) {
+      var b = ev.target.closest("[data-act]");
+      if (!b) return;
+      var id = b.getAttribute("data-id"), act = b.getAttribute("data-act");
+      var L = encodeURIComponent(state.loja);
+      if (act === "why") {
+        var box = host.querySelector("#why-" + id);
+        if (box.hidden) {
+          box.hidden = false; box.innerHTML = "investigando…";
+          try {
+            var r = await fetch("/api/intelligence/" + L + "/investigate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sinalId: +id, gravar: true }) }).then(function (x) { return x.json(); });
+            box.innerHTML = '<div class="itl-why-c"><b>' + esc(r.conclusao || "") + '</b> <span class="cs">(conf ' + (r.confianca || 0) + ")</span></div>" +
+              "<ul>" + (r.hipoteses || []).map(function (h) { return '<li><span class="hv ' + esc(h.veredito) + '">' + esc(h.veredito) + "</span> " + esc(h.texto) + "</li>"; }).join("") + "</ul>";
+          } catch (e) { box.innerHTML = '<span class="cs">' + esc(e.message) + "</span>"; }
+        } else box.hidden = true;
+      } else if (act === "obs" || act === "res") {
+        await fetch("/api/intelligence/" + L + "/signals/" + id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: act === "obs" ? "observando" : "resolvido" }) });
+        itl.cache = {}; renderIntelligence();
+      } else if (act === "dec") {
+        var titulo = prompt("Título da decisão:", "");
+        if (!titulo) return;
+        await fetch("/api/intelligence/" + L + "/decisions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ titulo: titulo, tipo: "OUTRO", sinais: [+id] }) });
+        itl.tab = "decisoes"; itl.cache = {}; renderIntelligence();
+      }
+    });
+  }
+  async function decisoesHtml(L) {
+    var arr = await itlGet("/api/intelligence/" + L + "/decisions", true);
+    return '<div class="card"><div class="chead"><div class="ci red">D</div><div><h3>Memória de decisão</h3><div class="cs">o que foi decidido, por quê, e o que deu</div></div></div>' +
+      (arr.length ? arr.map(function (d) {
+        return '<div class="itl-dec" data-dec="' + d.id + '"><div><b>' + d.codigo + " · " + esc(d.titulo) + '</b> <span class="cs">' + esc(d.tipo || "") + " · " + new Date(d.decidido_em).toLocaleDateString("pt-BR") + " · " + d.n_acoes + " ação(ões) · " + d.n_result + " resultado(s)</span></div>" +
+          '<button data-act="outcome" data-id="' + d.id + '">+ resultado</button></div>';
+      }).join("") : '<div class="empty">Nenhuma decisão registrada — use "Virar decisão" num sinal.</div>') + "</div>";
+  }
+  function wireDecisoes(host, L) {
+    host.addEventListener("click", async function (ev) {
+      var b = ev.target.closest('[data-act="outcome"]'); if (!b) return;
+      var id = b.getAttribute("data-id");
+      var metrica = prompt("Métrica (ex.: itens_por_cupom, faturamento_categoria):", "");
+      if (!metrica) return;
+      var antes = parseFloat(prompt("Valor ANTES:", "") || "");
+      var depois = parseFloat(prompt("Valor DEPOIS:", "") || "");
+      var vd = depois > antes ? "POSITIVO" : depois < antes ? "NEGATIVO" : "NEUTRO";
+      await fetch("/api/intelligence/" + L + "/decisions/" + id + "/outcomes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ metrica: metrica, antes: antes, depois: depois, veredito: vd }) });
+      itl.cache = {}; renderIntelligence();
+    });
+  }
+  function pautaHtml(p) {
+    if (p.erro) return '<div class="empty">' + esc(p.erro) + "</div>";
+    return feedsAviso(p) + '<div class="card"><div class="chead"><div class="ci gold">📅</div><div><h3>Pauta dos próximos 7 dias — ' + esc(state.loja) + '</h3><div class="cs">produto e ângulo saem do motor; CTA é sugestão de template</div></div></div>' +
+      p.dias.map(function (d) {
+        return '<div class="pauta-dia"><div class="pauta-h"><b>' + d.data + " · " + d.dia_semana + '</b> <span class="chip">' + esc(d.tema) + "</span></div>" +
+          '<table class="tbl"><tbody>' + d.produtos.map(function (pr) {
+            return "<tr><td><b>" + esc(pr.descricao) + '</b><div class="cs">' + esc(pr.angulo) + '</div></td><td class="cs">' + esc(pr.cta_sugestao) + '</td><td class="num">' + scoreBar(pr.opportunity) + "</td></tr>";
+          }).join("") + "</tbody></table></div>";
+      }).join("") +
+      (p.evitar && p.evitar.length ? '<div class="cs" style="margin-top:8px">Evitar nos posts: ' + p.evitar.map(function (e) { return esc(e.descricao); }).join(", ") + "</div>" : "") +
+      '<ul class="cs" style="margin:8px 0 0 18px">' + p.observacoes.map(function (o) { return "<li>" + esc(o) + "</li>"; }).join("") + "</ul></div>";
+  }
+  function perguntarForm() {
+    return '<div class="card form-card"><form id="askForm"><label class="f">Pergunte em português (ex.: "por que fraldas caiu?", "o que anuncio essa semana?", "a campanha de limpeza vale a pena?")</label>' +
+      '<input class="inp" name="q" placeholder="sua pergunta" autocomplete="off"><button class="btn" type="submit" style="margin-top:10px">Perguntar</button></form><div id="askOut" style="margin-top:14px"></div></div>';
+  }
+  function wirePerguntar(L) {
+    view.querySelector("#askForm").addEventListener("submit", async function (ev) {
+      ev.preventDefault();
+      var q = ev.target.q.value.trim(); if (!q) return;
+      var out = view.querySelector("#askOut"); out.innerHTML = '<div class="empty">pensando…</div>';
+      try {
+        var r = await fetch("/api/intelligence/" + L + "/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pergunta: q }) }).then(function (x) { return x.json(); });
+        if (r.erro) throw new Error(r.erro);
+        out.innerHTML = '<div class="card"><div class="cs">fonte: ' + esc(r.fonte) + " · confiança " + (r.confianca == null ? "—" : r.confianca) + "</div>" +
+          '<p style="font-size:15px"><b>' + esc(r.conclusao) + "</b></p>" +
+          (r.evidencias && r.evidencias.length ? '<div class="cs">Evidências</div><ul class="cs" style="margin:4px 0 8px 18px">' + r.evidencias.map(function (e) { return "<li>" + esc(e.campo) + ": " + esc(String(e.valor)) + (e.extra ? " (" + esc(e.extra) + ")" : "") + (e.periodo ? ' <i>' + esc(e.periodo) + "</i>" : "") + "</li>"; }).join("") + "</ul>" : "") +
+          (r.hipoteses && r.hipoteses.length ? '<div class="cs">Hipóteses</div><ul class="cs" style="margin:4px 0 8px 18px">' + r.hipoteses.map(function (h) { return '<li><span class="hv ' + (h.veredito || "") + '">' + esc(h.veredito || "") + "</span> " + esc(h.texto) + "</li>"; }).join("") + "</ul>" : "") +
+          (r.acao_sugerida ? '<div class="cs">Ação: ' + esc(r.acao_sugerida) + "</div>" : "") +
+          (r.monitorar ? '<div class="cs">Monitorar: ' + esc(r.monitorar) + "</div>" : "") +
+          (r.nota_ia ? '<div class="cs" style="color:var(--warn)">' + esc(r.nota_ia) + "</div>" : "") + "</div>";
+      } catch (e) { out.innerHTML = '<div class="result err">' + esc(e.message) + "</div>"; }
+    });
+  }
+
   // ---------- nav ----------
-  var VIEWS = ["painel", "marketing", "conexoes", "analise", "upload", "historico", "config"];
+  var VIEWS = ["painel", "marketing", "intelligence", "conexoes", "analise", "upload", "historico", "config"];
   function go(v) {
     state.view = v;
     document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === v); });
     if (v === "painel") { if (state.data) renderPainel(); else loadAnalise(); }
     else if (v === "marketing") { mkt.cache = {}; renderMarketing(); }
+    else if (v === "intelligence") { itl.cache = {}; renderIntelligence(); }
     else if (v === "conexoes") renderConexoes();
     else if (v === "analise") renderAnalise();
     else if (v === "upload") renderUpload();
@@ -1186,12 +1376,14 @@
       if (state.view === "analise") { renderAnalise(); loadPeriodos(); }
       else if (state.view === "conexoes") { renderConexoes(); loadPeriodos(); }
       else if (state.view === "marketing") { mkt.cache = {}; loadPeriodos().then(function () { renderMarketing(); }); }
+      else if (state.view === "intelligence") { itl.cache = {}; loadPeriodos().then(function () { renderIntelligence(); }); }
       else loadPeriodos();
     });
     selPeriodo.addEventListener("change", function () {
       state.periodo = selPeriodo.value;
       if (state.view === "conexoes") { state.conexoesFocus = null; renderConexoes(selPeriodo.value); }
       else if (state.view === "marketing") { mkt.cache = {}; renderMarketing(); }
+      else if (state.view === "intelligence") { itl.cache = {}; renderIntelligence(); }
       else loadAnalise();
     });
     document.getElementById("btn-sair").addEventListener("click", function () {

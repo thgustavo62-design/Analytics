@@ -1,0 +1,27 @@
+{
+  "_nota": "Fases 5–12. Limiares dos detectores determinísticos + pesos do Priority Engine. Nenhum número aqui é 'inventado' pela IA — são cortes de negócio, editáveis sem tocar no código. Cada detector só dispara com amostra suficiente; sem o feed necessário, ele se marca 'indisponível' e não gera sinal falso.",
+  "prioridade": {
+    "_nota": "prioridade 0..100 = 100 * (peso.severidade*sev + peso.confianca*conf + peso.impacto*impactoNorm + peso.recencia*recencia + peso.acionabilidade*acion) / soma(pesos). impactoNorm = min(1, impacto_estimado_mensal / impacto_teto).",
+    "pesos": { "severidade": 0.30, "confianca": 0.20, "impacto": 0.25, "recencia": 0.10, "acionabilidade": 0.15 },
+    "impacto_teto_mensal": 20000,
+    "meia_vida_dias": 14
+  },
+  "detectores": {
+    "COMPETITOR_PRICE_ATTACK": { "min_ofertas_abaixo": 3, "severidade_por_oferta": 0.12, "severidade_max": 0.9 },
+    "CATEGORY_DECLINE":  { "queda_pct_min": 12, "receita_min_categoria_30d": 800, "severidade_base": 0.45 },
+    "CATEGORY_GROWTH":   { "alta_pct_min": 15, "receita_min_categoria_30d": 800 },
+    "STOCK_RISK":        { "usa_cobertura_do_marketing_stock": true, "severidade_base": 0.6 },
+    "STAGNANT_STOCK":    { "min_itens": 1, "severidade_base": 0.3 },
+    "CAMPAIGN_UNDERPERFORMANCE": { "lift_min_aceitavel": 1.08, "severidade_base": 0.5 },
+    "CAMPAIGN_OVERPERFORMANCE":  { "lift_excelente": 1.5 },
+    "DEMAND_ANOMALY":    { "tendencia_pct_abs_min": 40, "unid_30d_min": 20, "severidade_base": 0.35 },
+    "CROSS_SELL_OPPORTUNITY": { "lift_min": 2.0, "confianca_min": 0.5 },
+    "MARKETING_OPPORTUNITY": { "opportunity_min": 68, "confianca_min": 0.45 },
+    "CREATIVE_FATIGUE":  { "queda_pct_min": 20, "metricas": ["alcance", "interacoes", "visualizacoes"] },
+    "CONTRADICTION":     { "severidade_base": 0.4 }
+  },
+  "codigos": { "SINAL": "SIG", "AMEACA": "THR", "OPORTUNIDADE": "OPP", "CONTRADICAO": "CON", "investigacao": "INV", "decisao": "DEC", "padrao": "PAT", "hipotese": "HYP" },
+  "padroes": { "amostra_minima": 3 },
+  "editorial": { "dias_plano": 7, "produtos_por_dia": 3 },
+  "ask": { "max_contexto_produtos": 40, "usa_ia_se_tiver_chave": true }
+}

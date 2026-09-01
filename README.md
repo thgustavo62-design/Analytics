@@ -97,6 +97,21 @@ Variáveis de ambiente:
   - Números que dependem de estoque/custo/preço (ainda sem feed) aparecem `null` com aviso
     explícito — nunca estimados. Ver [`docs/marketing-opportunity.md`](docs/marketing-opportunity.md)
     e [`docs/campaign-engine.md`](docs/campaign-engine.md).
+- **Intelligence** (Fases 5–12 — camada de decisão; roda sozinha a cada ingestão de vendas):
+  - *War Room* (bloco escuro) — KPIs do mês, **Prioridade #1**, Threat Map, Opportunity Map,
+    contradições, situação por categoria (momentum de 2 semanas + flag de concorrência).
+  - *Sinais* — todos os sinais detectados, com código (`SIG-/THR-/OPP-/CON-000000`),
+    prioridade 0–100, severidade, confiança e evidência. Ações: "Por quê?", Observando,
+    Resolver, "Virar decisão".
+  - *Investigações* — a árvore de hipóteses de "Por quê?" (cada uma suportada/refutada/
+    inconclusiva, com a evidência).
+  - *Decisões* — memória: o que foi decidido, os sinais que motivaram, as ações e o
+    resultado medido (antes/depois).
+  - *Padrões* — o que costuma funcionar, aprendido das decisões que tiveram resultado.
+  - *Pauta 7 dias* — plano editorial: produto e ângulo saem do motor; CTA é template.
+  - *Perguntar* — pergunta em português → resposta no formato analista (conclusão,
+    evidências, hipóteses, confiança, ação, o que monitorar). Determinística; a IA só
+    narra se houver `ANTHROPIC_API_KEY`. Ver [`docs/intelligence.md`](docs/intelligence.md).
 - **Conexões** — mapa de objetos interligados (estilo Palantir): loja, categorias, canais,
   campanhas, concorrentes, sinais e os achados da Análise Comercial, todos como nós de um
   grafo ligados pelo que cada um toca (categoria ↔ campanha que a promove, concorrente ↔
@@ -188,6 +203,10 @@ catalogo.js          catálogo de produto por EAN (Fase 1): popula de vendas + i
 marketing-product-analytics.js  Fase 2: janelas por produto, tendência, days-of-cover, margem, classes, Opportunity Score
 campanhas.js         Fase 3: eficiência do calendário, Campaign Builder, Offer Simulator
 basket.js            Fase 4: cesta (support/confidence/lift), centralidade, combos
+intelligence/        Fases 5–12: contexto.js · detectores.js · priorizacao.js · index.js (rodarDeteccao/warRoom) ·
+                     investigar.js · ontologia2.js · padroes.js
+ask.js               Fase 11: pergunta em PT -> contexto agregado -> resposta formato analista (IA opcional só narra)
+editorial.js         Fase 12: pauta editorial de 7 dias (produto do motor, CTA de template)
 db.js                node:sqlite — acesso, sempre por loja/período
 schema.sql           tabelas
 parsers/vendas.js    PDF "Analítico de Vendas" -> transações + empresa (CNPJ) + validação da soma
@@ -198,10 +217,10 @@ aggregate.js         transações -> KPIs, série diária, dia da semana, catego
 insights.js          3 regras automáticas -> cards (config/insights.json)
 match.js             casamento de nome de produto (Jaccard de tokens + marca), portado do app_minasfarma
 config/              categorias.json · insights.json · lojas.json (cnpj, dias de campanha, horaFechamento, concorrentes) ·
-                     catalogo.json · marketing-stock.json · opportunity-score.json · basket-analysis.json
-public/              index.html (app shell) · app.js (Painel/Marketing/Conexões/Análise/Upload/Histórico/Config) · styles.css
+                     catalogo.json · marketing-stock.json · opportunity-score.json · basket-analysis.json · intelligence.json
+public/              index.html (app shell) · app.js (Painel/Marketing/Intelligence/Conexões/Análise/Upload/Histórico/Config) · styles.css
 inbox/               pasta observada (LEIA-ME.txt versionado; o resto é ignorado) — inclui Estoque_/Custo_/Precos_*.xlsx
-test/                vendas.test.js · catalogo.test.js · marketing-product.test.js · basket.test.js · campanhas.test.js · concorrentes.test.js
+test/                vendas · catalogo · marketing-product · basket · campanhas · intelligence · concorrentes (.test.js)
 data/                analytics.db · inbox-log.json · uploads/<loja>/<ano-mes>/ (gitignored)
 prompts/             motor-analise-comercial.md — system prompt + contrato da Fase 2 (referência p/ a tarefa que gera o JSON)
 schemas/             analise-comercial.example.json — exemplo do JSON (fixture dos testes)
@@ -209,6 +228,7 @@ docs/integracoes.md  ferramentas que dá para plugar (WhatsApp, Instagram API, P
 docs/EVOLUCAO-INTELLIGENCE.md  mapa vivo da evolução p/ Marketing Intelligence & Decision Engine (fases, migrations, riscos)
 docs/marketing-opportunity.md  referência do Opportunity Score, classes e do-not-promote (Fase 2)
 docs/campaign-engine.md        referência de eficiência, Campaign Builder e Offer Simulator (Fase 3)
+docs/intelligence.md           referência da camada de inteligência: detectores, War Room, investigação, decisão, padrões, Ask, editorial (Fases 5–12)
 ```
 
 ## Testes

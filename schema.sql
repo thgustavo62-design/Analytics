@@ -203,6 +203,160 @@ CREATE TABLE IF NOT EXISTS cesta_pares (
 CREATE INDEX IF NOT EXISTS ix_cesta_loja ON cesta_pares(loja_id, janela_fim);
 
 -- ============================================================================
+-- FASES 5–12 — Camada de Inteligência (determinística; a IA só narra o que já foi calculado)
+-- ============================================================================
+
+-- Log append-only do que o motor observou (auditoria + histórico de reabertura de sinal).
+CREATE TABLE IF NOT EXISTS intel_eventos (
+  id         INTEGER PRIMARY KEY,
+  loja_id    INTEGER NOT NULL REFERENCES lojas(id),
+  tipo       TEXT NOT NULL,          -- DETECCAO_RODOU | SINAL_ABERTO | SINAL_REABERTO | SINAL_RESOLVIDO | DECISAO_REGISTRADA | ...
+  ref_tabela TEXT,
+  ref_id     INTEGER,
+  payload    TEXT,                   -- JSON livre
+  criado_em  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_intel_eventos_loja ON intel_eventos(loja_id, criado_em);
+
+-- Sinais / ameaças / oportunidades / contradições — a saída dos detectores.
+CREATE TABLE IF NOT EXISTS intel_sinais (
+  id            INTEGER PRIMARY KEY,
+  loja_id       INTEGER NOT NULL REFERENCES lojas(id),
+  classe        TEXT NOT NULL,       -- SINAL | AMEACA | OPORTUNIDADE | CONTRADICAO
+  tipo          TEXT NOT NULL,       -- COMPETITOR_PRICE_ATTACK | CATEGORY_DECLINE | STOCK_RISK | ...
+  titulo        TEXT NOT NULL,
+  resumo        TEXT,
+  severidade    REAL NOT NULL DEFAULT 0,   -- 0..1
+  confianca     REAL NOT NULL DEFAULT 0,   -- 0..1
+  impacto_estimado REAL,              -- R$/mês estimado (pode ser NULL)
+  prioridade    REAL NOT NULL DEFAULT 0,   -- 0..100 (Priority Engine)
+  entidade_tipo TEXT,                 -- categoria | produto | campanha | concorrente | loja
+  entidade_ref  TEXT,
+  periodo       TEXT,                 -- 'AAAA-MM' ou faixa
+  status        TEXT NOT NULL DEFAULT 'aberto',  -- aberto | observando | resolvido | descartado
+  dedupe_key    TEXT NOT NULL,
+  primeira_vez  TEXT NOT NULL,
+  ultima_vez    TEXT NOT NULL,
+  ocorrencias   INTEGER NOT NULL DEFAULT 1,
+  resolvido_em  TEXT,
+  criado_em     TEXT NOT NULL,
+  atualizado_em TEXT NOT NULL,
+  UNIQUE(loja_id, dedupe_key)
+);
+CREATE INDEX IF NOT EXISTS ix_intel_sinais_loja ON intel_sinais(loja_id, status, prioridade);
+
+-- Evidência de cada sinal (lineage: campo, valor, fonte, período).
+CREATE TABLE IF NOT EXISTS intel_evidencias (
+  id         INTEGER PRIMARY KEY,
+  sinal_id   INTEGER NOT NULL REFERENCES intel_sinais(id) ON DELETE CASCADE,
+  campo      TEXT NOT NULL,
+  valor      TEXT,
+  fonte      TEXT,                    -- tabela/consulta/módulo de origem
+  periodo    TEXT,
+  criado_em  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_intel_evid_sinal ON intel_evidencias(sinal_id);
+
+-- Fase 6 — investigações ("Por quê?") + hipóteses.
+CREATE TABLE IF NOT EXISTS intel_investigacoes (
+  id          INTEGER PRIMARY KEY,
+  loja_id     INTEGER NOT NULL REFERENCES lojas(id),
+  pergunta    TEXT NOT NULL,
+  sinal_id    INTEGER REFERENCES intel_sinais(id),
+  status      TEXT NOT NULL DEFAULT 'aberta',  -- aberta | concluida
+  conclusao   TEXT,
+  confianca   REAL,
+  criado_em   TEXT NOT NULL,
+  atualizado_em TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS intel_hipoteses (
+  id             INTEGER PRIMARY KEY,
+  investigacao_id INTEGER NOT NULL REFERENCES intel_investigacoes(id) ON DELETE CASCADE,
+  texto          TEXT NOT NULL,
+  veredito       TEXT NOT NULL DEFAULT 'inconclusiva', -- suportada | refutada | inconclusiva
+  confianca      REAL NOT NULL DEFAULT 0,
+  evidencias_json TEXT,
+  criado_em      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_intel_hip_inv ON intel_hipoteses(investigacao_id);
+
+-- Fase 9 — memória de decisão.
+CREATE TABLE IF NOT EXISTS intel_decisoes (
+  id           INTEGER PRIMARY KEY,
+  loja_id      INTEGER NOT NULL REFERENCES lojas(id),
+  titulo       TEXT NOT NULL,
+  contexto     TEXT,
+  tipo         TEXT,                  -- CAMPANHA | PRECO | ESTOQUE | EDITORIAL | OUTRO
+  sinais_json  TEXT,                  -- ids de sinais que motivaram
+  decidido_por TEXT,
+  decidido_em  TEXT NOT NULL,
+  criado_em    TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS intel_acoes (
+  id          INTEGER PRIMARY KEY,
+  decisao_id  INTEGER NOT NULL REFERENCES intel_decisoes(id) ON DELETE CASCADE,
+  texto       TEXT NOT NULL,
+  responsavel TEXT,
+  prazo       TEXT,
+  status      TEXT NOT NULL DEFAULT 'pendente'  -- pendente | feita | cancelada
+);
+CREATE TABLE IF NOT EXISTS intel_resultados (
+  id          INTEGER PRIMARY KEY,
+  decisao_id  INTEGER NOT NULL REFERENCES intel_decisoes(id) ON DELETE CASCADE,
+  metrica     TEXT NOT NULL,
+  antes       REAL,
+  depois      REAL,
+  unidade     TEXT,
+  veredito    TEXT,                   -- POSITIVO | NEUTRO | NEGATIVO | INCONCLUSIVO
+  avaliado_em TEXT NOT NULL,
+  nota        TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_intel_acoes_dec ON intel_acoes(decisao_id);
+CREATE INDEX IF NOT EXISTS ix_intel_result_dec ON intel_resultados(decisao_id);
+
+-- Fase 10 — padrões aprendidos (o que costuma funcionar).
+CREATE TABLE IF NOT EXISTS intel_padroes (
+  id             INTEGER PRIMARY KEY,
+  loja_id        INTEGER NOT NULL REFERENCES lojas(id),
+  chave          TEXT NOT NULL,        -- ex.: "STAGNANT_STOCK+combo" ou "CATEGORY_DECLINE+campanha"
+  descricao      TEXT,
+  amostra_n      INTEGER NOT NULL DEFAULT 0,
+  sucessos       INTEGER NOT NULL DEFAULT 0,
+  taxa_sucesso   REAL,
+  ultima_ocorrencia TEXT,
+  atualizado_em  TEXT NOT NULL,
+  UNIQUE(loja_id, chave)
+);
+
+-- Fase 7 — ontologia persistida (nós/arestas com força, confiança e temporalidade).
+CREATE TABLE IF NOT EXISTS ontology_nodes (
+  id         INTEGER PRIMARY KEY,
+  loja_id    INTEGER NOT NULL REFERENCES lojas(id),
+  chave      TEXT NOT NULL,            -- id lógico do nó ("cat:Limpeza", "prod:7891...")
+  tipo       TEXT NOT NULL,            -- loja|categoria|subcategoria|produto|marca|canal|campanha|concorrente|criativo|conteudo|sinal|...
+  rotulo     TEXT NOT NULL,
+  atributos_json TEXT,
+  visto_em   TEXT NOT NULL,
+  atualizado_em TEXT NOT NULL,
+  UNIQUE(loja_id, chave)
+);
+CREATE TABLE IF NOT EXISTS ontology_edges (
+  id         INTEGER PRIMARY KEY,
+  loja_id    INTEGER NOT NULL REFERENCES lojas(id),
+  de_chave   TEXT NOT NULL,
+  para_chave TEXT NOT NULL,
+  tipo       TEXT NOT NULL,            -- vende|promove|pressiona|afeta|combina|sobre|causa|...
+  forca      REAL NOT NULL DEFAULT 0.5,
+  confianca  REAL NOT NULL DEFAULT 0.5,
+  valid_from TEXT,
+  valid_to   TEXT,
+  atributos_json TEXT,
+  atualizado_em TEXT NOT NULL,
+  UNIQUE(loja_id, de_chave, para_chave, tipo)
+);
+CREATE INDEX IF NOT EXISTS ix_ontology_edges_loja ON ontology_edges(loja_id, de_chave);
+
+-- ============================================================================
 
 -- Fase 2: análise comercial mensal (JSON do Motor). Guardado no banco para não se perder
 -- se os arquivos forem mexidos; data/analises/*.json é só um espelho/exportação.

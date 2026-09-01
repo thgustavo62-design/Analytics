@@ -113,9 +113,18 @@ async function ingestVendas(filePath, { lojaForcada = null } = {}) {
     console.error("[ingest] cesta:", e.message);
   }
 
+  // Fases 5–12: roda os detectores de sinal com o contexto novo
+  let intel = null;
+  try {
+    intel = require("./intelligence").rodarDeteccao(loja);
+  } catch (e) {
+    console.error("[ingest] detecção de sinais:", e.message);
+  }
+
   return {
     tipo: "vendas",
     cesta: cesta && !cesta.erro ? { pares: cesta.pares.length, cupons: cesta.total_cupons } : null,
+    inteligencia: intel && !intel.erro ? { sinais: intel.total, novos: intel.novos, resolvidos: intel.resolvidos } : null,
     loja,
     empresa: parsed.empresa,
     arquivoTotal: parsed.total,

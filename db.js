@@ -590,6 +590,239 @@ function getCestaPares(loja, { produtoId, limite } = {}) {
   return { janela: { inicio: ult.janela_ini, fim: ult.janela_fim }, pares };
 }
 
+// --- Fases 5–12: camada de inteligência ------------------------------------
+
+const _INTEL_CFG = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "config", "intelligence.json"), "utf8"));
+  } catch {
+    return { codigos: {} };
+  }
+})();
+
+// id human-readable estável (deriva do id numérico — autoincrement é estável).
+function codigoIntel(chave, id) {
+  const pref = (_INTEL_CFG.codigos && _INTEL_CFG.codigos[chave]) || String(chave || "X").slice(0, 3).toUpperCase();
+  return `${pref}-${String(id).padStart(6, "0")}`;
+}
+
+function registrarEventoIntel(loja, tipo, { refTabela = null, refId = null, payload = null } = {}) {
+  db.prepare("INSERT INTO intel_eventos (loja_id, tipo, ref_tabela, ref_id, payload, criado_em) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(lojaId(loja), tipo, refTabela, refId, payload ? JSON.stringify(payload) : null, nowIso());
+}
+
+// cria ou atualiza um sinal por (loja, dedupe_key). Se estava resolvido e voltou a ser
+// detectado, reabre. Sempre regrava as evidências.
+function upsertSinal(loja, s) {
+  const lid = lojaId(loja);
+  const ts = nowIso();
+  const ex = db.prepare("SELECT * FROM intel_sinais WHERE loja_id = ? AND dedupe_key = ?").get(lid, s.dedupe_key);
+  let id;
+  let reaberto = false;
+  if (!ex) {
+    const info = db
+      .prepare(
+        `INSERT INTO intel_sinais
+          (loja_id, classe, tipo, titulo, resumo, severidade, confianca, impacto_estimado, prioridade,
+           entidade_tipo, entidade_ref, periodo, status, dedupe_key, primeira_vez, ultima_vez, ocorrencias, criado_em, atualizado_em)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aberto', ?, ?, ?, 1, ?, ?)`
+      )
+      .run(lid, s.classe, s.tipo, s.titulo, s.resumo || null, s.severidade || 0, s.confianca || 0,
+        s.impacto_estimado ?? null, s.prioridade || 0, s.entidade_tipo || null, s.entidade_ref || null,
+        s.periodo || null, s.dedupe_key, ts, ts, ts, ts);
+    id = Number(info.lastInsertRowid);
+  } else {
+    id = ex.id;
+    reaberto = ex.status === "resolvido" || ex.status === "descartado";
+    db.prepare(
+      `UPDATE intel_sinais SET classe = ?, tipo = ?, titulo = ?, resumo = ?, severidade = ?, confianca = ?,
+         impacto_estimado = ?, prioridade = ?, entidade_tipo = ?, entidade_ref = ?, periodo = ?,
+         status = CASE WHEN status IN ('resolvido','descartado') THEN 'aberto' ELSE status END,
+         ultima_vez = ?, ocorrencias = ocorrencias + 1, resolvido_em = NULL, atualizado_em = ?
+       WHERE id = ?`
+    ).run(s.classe, s.tipo, s.titulo, s.resumo || null, s.severidade || 0, s.confianca || 0,
+      s.impacto_estimado ?? null, s.prioridade || 0, s.entidade_tipo || null, s.entidade_ref || null,
+      s.periodo || null, ts, ts, id);
+  }
+  db.prepare("DELETE FROM intel_evidencias WHERE sinal_id = ?").run(id);
+  const insE = db.prepare("INSERT INTO intel_evidencias (sinal_id, campo, valor, fonte, periodo, criado_em) VALUES (?, ?, ?, ?, ?, ?)");
+  for (const e of s.evidencias || []) insE.run(id, e.campo, e.valor == null ? null : String(e.valor), e.fonte || null, e.periodo || null, ts);
+  registrarEventoIntel(loja, ex ? (reaberto ? "SINAL_REABERTO" : "SINAL_ATUALIZADO") : "SINAL_ABERTO", { refTabela: "intel_sinais", refId: id, payload: { tipo: s.tipo } });
+  return { id, codigo: codigoIntel(s.classe, id), novo: !ex, reaberto };
+}
+
+// marca como resolvidos os sinais abertos de uma leva anterior que NÃO reapareceram agora.
+function resolverSinaisAusentes(loja, tipos, dedupeKeysAtuais) {
+  const lid = lojaId(loja);
+  const set = new Set(dedupeKeysAtuais);
+  const abertos = db
+    .prepare(`SELECT id, dedupe_key FROM intel_sinais WHERE loja_id = ? AND status IN ('aberto','observando') AND tipo IN (${tipos.map(() => "?").join(",")})`)
+    .all(lid, ...tipos);
+  let n = 0;
+  for (const a of abertos) {
+    if (!set.has(a.dedupe_key)) {
+      db.prepare("UPDATE intel_sinais SET status = 'resolvido', resolvido_em = ?, atualizado_em = ? WHERE id = ?").run(nowIso(), nowIso(), a.id);
+      registrarEventoIntel(loja, "SINAL_RESOLVIDO", { refTabela: "intel_sinais", refId: a.id });
+      n++;
+    }
+  }
+  return n;
+}
+
+function _sinalComCodigo(r) {
+  if (!r) return null;
+  r.codigo = codigoIntel(r.classe, r.id);
+  return r;
+}
+function listSinais(loja, { status, classe, tipo, limite } = {}) {
+  const lid = lojaId(loja);
+  const cond = ["loja_id = ?"];
+  const args = [lid];
+  if (status) { cond.push("status = ?"); args.push(status); }
+  if (classe) { cond.push("classe = ?"); args.push(classe); }
+  if (tipo) { cond.push("tipo = ?"); args.push(tipo); }
+  const lim = Math.min(500, limite || 200);
+  return db.prepare(`SELECT * FROM intel_sinais WHERE ${cond.join(" AND ")} ORDER BY prioridade DESC, atualizado_em DESC LIMIT ${lim}`).all(...args).map(_sinalComCodigo);
+}
+function getSinal(id) {
+  const r = _sinalComCodigo(db.prepare("SELECT * FROM intel_sinais WHERE id = ?").get(id));
+  if (!r) return null;
+  r.evidencias = db.prepare("SELECT campo, valor, fonte, periodo FROM intel_evidencias WHERE sinal_id = ? ORDER BY id").all(id);
+  return r;
+}
+function setSinalStatus(id, status) {
+  const ok = ["aberto", "observando", "resolvido", "descartado"];
+  if (!ok.includes(status)) throw new Error("status inválido");
+  db.prepare("UPDATE intel_sinais SET status = ?, resolvido_em = CASE WHEN ? IN ('resolvido','descartado') THEN ? ELSE NULL END, atualizado_em = ? WHERE id = ?")
+    .run(status, status, nowIso(), nowIso(), id);
+  return getSinal(id);
+}
+
+// -- investigações / hipóteses --
+function criarInvestigacao(loja, { pergunta, sinal_id = null }) {
+  const ts = nowIso();
+  const info = db.prepare("INSERT INTO intel_investigacoes (loja_id, pergunta, sinal_id, criado_em, atualizado_em) VALUES (?, ?, ?, ?, ?)")
+    .run(lojaId(loja), pergunta, sinal_id, ts, ts);
+  return Number(info.lastInsertRowid);
+}
+function addHipotese(investigacaoId, h) {
+  db.prepare("INSERT INTO intel_hipoteses (investigacao_id, texto, veredito, confianca, evidencias_json, criado_em) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(investigacaoId, h.texto, h.veredito || "inconclusiva", h.confianca || 0, h.evidencias ? JSON.stringify(h.evidencias) : null, nowIso());
+}
+function concluirInvestigacao(id, { conclusao, confianca }) {
+  db.prepare("UPDATE intel_investigacoes SET status = 'concluida', conclusao = ?, confianca = ?, atualizado_em = ? WHERE id = ?")
+    .run(conclusao || null, confianca ?? null, nowIso(), id);
+  return getInvestigacao(id);
+}
+function getInvestigacao(id) {
+  const r = db.prepare("SELECT i.*, s.titulo AS sinal_titulo FROM intel_investigacoes i LEFT JOIN intel_sinais s ON s.id = i.sinal_id WHERE i.id = ?").get(id);
+  if (!r) return null;
+  r.codigo = codigoIntel("investigacao", r.id);
+  r.hipoteses = db.prepare("SELECT * FROM intel_hipoteses WHERE investigacao_id = ? ORDER BY confianca DESC, id").all(id)
+    .map((h) => ({ ...h, evidencias: h.evidencias_json ? JSON.parse(h.evidencias_json) : [] }));
+  return r;
+}
+function listInvestigacoes(loja) {
+  return db.prepare("SELECT i.*, (SELECT COUNT(*) FROM intel_hipoteses h WHERE h.investigacao_id = i.id) n_hip FROM intel_investigacoes i WHERE i.loja_id = ? ORDER BY i.criado_em DESC")
+    .all(lojaId(loja)).map((r) => ({ ...r, codigo: codigoIntel("investigacao", r.id) }));
+}
+
+// -- decisões / ações / resultados --
+function criarDecisao(loja, d) {
+  const ts = nowIso();
+  const info = db.prepare("INSERT INTO intel_decisoes (loja_id, titulo, contexto, tipo, sinais_json, decidido_por, decidido_em, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+    .run(lojaId(loja), d.titulo, d.contexto || null, d.tipo || null, d.sinais ? JSON.stringify(d.sinais) : null, d.decidido_por || null, d.decidido_em || ts, ts);
+  const id = Number(info.lastInsertRowid);
+  for (const a of d.acoes || []) addAcao(id, a);
+  registrarEventoIntel(loja, "DECISAO_REGISTRADA", { refTabela: "intel_decisoes", refId: id });
+  return id;
+}
+function addAcao(decisaoId, a) {
+  db.prepare("INSERT INTO intel_acoes (decisao_id, texto, responsavel, prazo, status) VALUES (?, ?, ?, ?, ?)")
+    .run(decisaoId, a.texto, a.responsavel || null, a.prazo || null, a.status || "pendente");
+}
+function setAcaoStatus(id, status) {
+  db.prepare("UPDATE intel_acoes SET status = ? WHERE id = ?").run(status, id);
+}
+function addResultado(decisaoId, r) {
+  db.prepare("INSERT INTO intel_resultados (decisao_id, metrica, antes, depois, unidade, veredito, avaliado_em, nota) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+    .run(decisaoId, r.metrica, r.antes ?? null, r.depois ?? null, r.unidade || null, r.veredito || null, r.avaliado_em || nowIso(), r.nota || null);
+}
+function getDecisao(id) {
+  const r = db.prepare("SELECT d.*, l.nome AS loja FROM intel_decisoes d JOIN lojas l ON l.id = d.loja_id WHERE d.id = ?").get(id);
+  if (!r) return null;
+  r.codigo = codigoIntel("decisao", r.id);
+  r.sinais = r.sinais_json ? JSON.parse(r.sinais_json) : [];
+  r.acoes = db.prepare("SELECT * FROM intel_acoes WHERE decisao_id = ? ORDER BY id").all(id);
+  r.resultados = db.prepare("SELECT * FROM intel_resultados WHERE decisao_id = ? ORDER BY avaliado_em").all(id);
+  return r;
+}
+function listDecisoes(loja) {
+  return db.prepare("SELECT d.*, (SELECT COUNT(*) FROM intel_acoes a WHERE a.decisao_id = d.id) n_acoes, (SELECT COUNT(*) FROM intel_resultados r WHERE r.decisao_id = d.id) n_result FROM intel_decisoes d WHERE d.loja_id = ? ORDER BY d.decidido_em DESC")
+    .all(lojaId(loja)).map((r) => ({ ...r, codigo: codigoIntel("decisao", r.id), sinais: r.sinais_json ? JSON.parse(r.sinais_json) : [] }));
+}
+
+// -- padrões --
+function upsertPadrao(loja, chave, { descricao, sucesso } = {}) {
+  const lid = lojaId(loja);
+  const ts = nowIso();
+  const ex = db.prepare("SELECT * FROM intel_padroes WHERE loja_id = ? AND chave = ?").get(lid, chave);
+  const inc = sucesso == null ? 0 : 1;
+  const win = sucesso ? 1 : 0;
+  if (!ex) {
+    db.prepare("INSERT INTO intel_padroes (loja_id, chave, descricao, amostra_n, sucessos, taxa_sucesso, ultima_ocorrencia, atualizado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(lid, chave, descricao || null, inc, win, inc ? win / inc : null, ts, ts);
+  } else {
+    const n = ex.amostra_n + inc;
+    const w = ex.sucessos + win;
+    db.prepare("UPDATE intel_padroes SET descricao = COALESCE(?, descricao), amostra_n = ?, sucessos = ?, taxa_sucesso = ?, ultima_ocorrencia = ?, atualizado_em = ? WHERE id = ?")
+      .run(descricao || null, n, w, n ? w / n : null, ts, ts, ex.id);
+  }
+  return getPadrao(loja, chave);
+}
+function getPadrao(loja, chave) {
+  const r = db.prepare("SELECT * FROM intel_padroes WHERE loja_id = ? AND chave = ?").get(lojaId(loja), chave);
+  if (!r) return null;
+  r.codigo = codigoIntel("padrao", r.id);
+  return r;
+}
+function listPadroes(loja) {
+  return db.prepare("SELECT * FROM intel_padroes WHERE loja_id = ? ORDER BY amostra_n DESC, taxa_sucesso DESC").all(lojaId(loja))
+    .map((r) => ({ ...r, codigo: codigoIntel("padrao", r.id) }));
+}
+
+// -- ontologia persistida (Fase 7) --
+function upsertOntologyNode(loja, n) {
+  const lid = lojaId(loja);
+  const ts = nowIso();
+  db.prepare(
+    `INSERT INTO ontology_nodes (loja_id, chave, tipo, rotulo, atributos_json, visto_em, atualizado_em)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(loja_id, chave) DO UPDATE SET tipo = excluded.tipo, rotulo = excluded.rotulo,
+       atributos_json = excluded.atributos_json, atualizado_em = excluded.atualizado_em`
+  ).run(lid, n.chave, n.tipo, n.rotulo, n.atributos ? JSON.stringify(n.atributos) : null, ts, ts);
+}
+function upsertOntologyEdge(loja, e) {
+  const lid = lojaId(loja);
+  const ts = nowIso();
+  db.prepare(
+    `INSERT INTO ontology_edges (loja_id, de_chave, para_chave, tipo, forca, confianca, valid_from, valid_to, atributos_json, atualizado_em)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(loja_id, de_chave, para_chave, tipo) DO UPDATE SET forca = excluded.forca,
+       confianca = excluded.confianca, valid_to = excluded.valid_to, atributos_json = excluded.atributos_json,
+       atualizado_em = excluded.atualizado_em`
+  ).run(lid, e.de, e.para, e.tipo, e.forca ?? 0.5, e.confianca ?? 0.5, e.valid_from || ts.slice(0, 10), e.valid_to || null, e.atributos ? JSON.stringify(e.atributos) : null, ts);
+}
+function getOntologiaPersistida(loja) {
+  const lid = lojaId(loja);
+  return {
+    nodes: db.prepare("SELECT chave, tipo, rotulo, atributos_json, atualizado_em FROM ontology_nodes WHERE loja_id = ?").all(lid)
+      .map((n) => ({ id: n.chave, tipo: n.tipo, rotulo: n.rotulo, atributos: n.atributos_json ? JSON.parse(n.atributos_json) : {}, atualizado_em: n.atualizado_em })),
+    edges: db.prepare("SELECT de_chave, para_chave, tipo, forca, confianca, valid_from, valid_to FROM ontology_edges WHERE loja_id = ?").all(lid)
+      .map((e) => ({ de: e.de_chave, para: e.para_chave, tipo: e.tipo, forca: e.forca, confianca: e.confianca, valid_from: e.valid_from, valid_to: e.valid_to })),
+  };
+}
+
 // --- períodos --------------------------------------------------------------
 
 function findPeriodo(loja, ano, mes) {
@@ -620,6 +853,7 @@ module.exports = {
   db,
   LOJAS_VALIDAS,
   lojaId,
+  nowIso,
   getOrCreatePeriodo,
   findPeriodo,
   getPeriodoById,
@@ -669,4 +903,29 @@ module.exports = {
   importarCalendarioCampanhas,
   salvarCestaPares,
   getCestaPares,
+  // Fases 5–12 — inteligência
+  codigoIntel,
+  registrarEventoIntel,
+  upsertSinal,
+  resolverSinaisAusentes,
+  listSinais,
+  getSinal,
+  setSinalStatus,
+  criarInvestigacao,
+  addHipotese,
+  concluirInvestigacao,
+  getInvestigacao,
+  listInvestigacoes,
+  criarDecisao,
+  addAcao,
+  setAcaoStatus,
+  addResultado,
+  getDecisao,
+  listDecisoes,
+  upsertPadrao,
+  getPadrao,
+  listPadroes,
+  upsertOntologyNode,
+  upsertOntologyEdge,
+  getOntologiaPersistida,
 };
