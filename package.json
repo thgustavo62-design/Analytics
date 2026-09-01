@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
+    "@vercel/speed-insights": "^2.0.0",
     "chokidar": "^4.0.3",
     "express": "^4.21.2",
     "multer": "^2.3.0",
