@@ -363,8 +363,9 @@ body.export .main { padding: 24px 32px 40px; }
 .warroom .itl-why { background: #0f1218; color: var(--wr-ink); }
 @media (max-width: 900px) { .wr-top { grid-template-columns: 1fr 1fr; } .wr-cols { grid-template-columns: 1fr; } }
 
-/* ===== cópia estática (publico): esconde controles que só funcionam ao vivo ===== */
+/* ===== cópia estática (publico): app shell inteiro visível, mas some o que só roda ao vivo ===== */
 body.publico [data-view="upload"],
+body.publico #btn-sair,
 body.publico #itlDetect,
 body.publico #btn-baixar,
 body.publico .itl-sig-a,
@@ -373,4 +374,6 @@ body.publico form#askForm,
 body.publico form#simForm,
 body.publico form#cbForm button[type="submit"],
 body.publico .itl-dec button { display: none !important; }
-body.publico #askOut::before { content: "A busca em linguagem natural só funciona no site ao vivo (localhost)."; color: var(--muted); font-size: 13px; }
+body.publico #askOut::before,
+body.publico #simOut::before,
+body.publico #cbOut::before { content: "⏻ Só no site ao vivo (localhost) — esta é a cópia estática."; color: var(--muted); font-size: 13px; }

@@ -54,7 +54,7 @@ function regenerarPublicoEmBreve(ms = 4000) {
   _pubTimer = setTimeout(() => {
     publicar
       .regenerar({ port: PORT, cookie: makeToken(), outDir: PUBLIC_DIR, root: __dirname })
-      .then((r) => r && r.gerados && console.log(`  publico: ${r.gerados.map((g) => g.arquivo).join(", ")} regenerados em ${PUBLIC_DIR}`))
+      .then((r) => r && r.arquivo && console.log(`  publico: analytics.html regenerado (${(r.bytes / 1048576).toFixed(1)} MB, ${r.lojas_com_dados} loja(s) com dados)`))
       .catch((e) => console.error("[publico]", e.message));
   }, ms);
 }
@@ -122,10 +122,11 @@ app.post("/logout", (req, res) => {
   res.redirect("/login");
 });
 
-// cópia estática que se regenera — servida SEM login (é o artefato "público"; o mesmo que
-// você copia p/ OneDrive/Drive/GitHub Pages). Fica antes do gate de sessão de propósito.
+// cópia estática que se regenera — UM arquivo com as duas lojas e todas as telas, servido
+// SEM login (é o artefato "público"; o mesmo que você copia p/ OneDrive/Drive/GitHub Pages).
+// Fica antes do gate de sessão de propósito.
 app.use("/publico", express.static(PUBLIC_DIR, { extensions: ["html"] }));
-app.get("/publico", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "index.html")));
+app.get(["/publico", "/publico/"], (req, res) => res.sendFile(path.join(PUBLIC_DIR, "analytics.html")));
 
 // tudo abaixo exige sessão (VA_NO_AUTH=1 desliga — só para teste local, nunca em produção)
 const NO_AUTH = process.env.VA_NO_AUTH === "1";

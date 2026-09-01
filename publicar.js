@@ -1,96 +1,126 @@
-// Site estático que se regenera. A cada ingestão, o servidor chama regenerar(): ele bate na
-// própria API local (com um cookie de sessão válido), assa TODAS as respostas dentro de um
-// HTML autocontido por loja (Painel + Marketing + Intelligence) + um index.html, e grava em
-// VA_PUBLIC_DIR. Aponte essa pasta para OneDrive / Google Drive / GitHub Pages / Netlify e o
-// "site" público passa a se atualizar sozinho, sem servidor exposto.
+// Site estático que se regenera — TUDO num único HTML.
+//
+// A cada ingestão, o servidor bate na própria API local (com cookie de sessão válido) e
+// "assa" todas as respostas — as DUAS lojas, todos os períodos, todas as telas (Painel,
+// Marketing, Intelligence, Conexões, Análise Comercial, Histórico, Configurações) — dentro
+// de um só arquivo: <VA_PUBLIC_DIR>/analytics.html. Ele abre sem servidor, com o app shell
+// completo (seletor de loja e período funcionando, navegação por abas, gráficos).
+//
+// Aponte VA_PUBLIC_DIR para uma pasta do OneDrive / Google Drive / GitHub Pages / Netlify e
+// o link público passa a se atualizar sozinho, sem expor o servidor.
 
 const fs = require("fs");
 const path = require("path");
 
-const slug = (s) => String(s).toLowerCase().normalize("NFD").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "");
 const FONTS_LINK = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">';
 
-async function coletar(base, get, nome) {
+// sufixo da rota -> chave no pacote assado
+const MK_MARKETING = {
+  "produtos": "produtos", "recommended-products": "recommended", "do-not-promote": "dnp",
+  "stagnant-stock": "parado", "baskets": "baskets", "combos": "combos",
+  "campaign-efficiency": "eficiencia", "campaign-builder": "builder",
+};
+const MK_INTEL = {
+  "war-room": "warRoom", "signals": "signals", "investigations": "investigations",
+  "decisions": "decisions", "patterns": "patterns", "editorial-plan": "editorial",
+};
+
+async function coletarLoja(get, nome) {
   const L = encodeURIComponent(nome);
   const periodos = (await get(`/api/periodos/${L}`)) || [];
-  const comVendas = periodos.filter((p) => p.temVendas);
-  if (!comVendas.length) return null;
-  const ym = (comVendas.find((p) => p.atual) || comVendas[0]).periodo;
+  const comVendas = Array.isArray(periodos) ? periodos.filter((p) => p.temVendas) : [];
+  const analise = {};
+  const ontologia = {};
+  for (const p of comVendas) {
+    analise[`${nome}|${p.periodo}`] = await get(`/api/analise/${L}/${p.periodo}`);
+    ontologia[`${nome}|${p.periodo}`] = await get(`/api/ontologia/${L}/${p.periodo}`);
+  }
+  const ultimo = comVendas.length ? (comVendas.find((p) => p.atual) || comVendas[0]).periodo : null;
 
-  const marketing = {};
-  for (const [k, p] of [
-    ["produtos", `/api/marketing/${L}/${ym}/produtos?limite=150`],
-    ["recommended", `/api/marketing/${L}/${ym}/recommended-products`],
-    ["dnp", `/api/marketing/${L}/${ym}/do-not-promote`],
-    ["parado", `/api/marketing/${L}/${ym}/stagnant-stock`],
-    ["baskets", `/api/marketing/${L}/${ym}/baskets`],
-    ["combos", `/api/marketing/${L}/${ym}/combos`],
-    ["eficiencia", `/api/marketing/${L}/campaign-efficiency`],
-    ["builder", `/api/marketing/${L}/${ym}/campaign-builder`],
-  ]) marketing[k] = await get(p);
+  const analiseComercial = {};
+  const acLatest = await get(`/api/analise-comercial/${L}`);
+  if (acLatest && !acLatest.__erro && !acLatest.erro) {
+    analiseComercial[nome] = acLatest;
+    for (const ym of acLatest.meses || []) analiseComercial[`${nome}|${ym}`] = await get(`/api/analise-comercial/${L}/${ym}`);
+  } else {
+    analiseComercial[nome] = acLatest; // guarda o {erro:...} p/ a tela mostrar o estado vazio
+  }
 
-  const intelligence = {};
-  for (const [k, p] of [
-    ["warRoom", `/api/intelligence/${L}/war-room`],
-    ["signals", `/api/intelligence/${L}/signals?limite=200`],
-    ["investigations", `/api/intelligence/${L}/investigations`],
-    ["decisions", `/api/intelligence/${L}/decisions`],
-    ["patterns", `/api/intelligence/${L}/patterns`],
-    ["editorial", `/api/intelligence/${L}/editorial-plan`],
-  ]) intelligence[k] = await get(p);
+  let marketing = null;
+  let intelligence = null;
+  if (ultimo) {
+    marketing = {
+      produtos: await get(`/api/marketing/${L}/${ultimo}/produtos?limite=90`),
+      recommended: await get(`/api/marketing/${L}/${ultimo}/recommended-products`),
+      dnp: await get(`/api/marketing/${L}/${ultimo}/do-not-promote`),
+      parado: await get(`/api/marketing/${L}/${ultimo}/stagnant-stock`),
+      baskets: await get(`/api/marketing/${L}/${ultimo}/baskets`),
+      combos: await get(`/api/marketing/${L}/${ultimo}/combos`),
+      eficiencia: await get(`/api/marketing/${L}/campaign-efficiency`),
+      builder: await get(`/api/marketing/${L}/${ultimo}/campaign-builder`),
+    };
+    intelligence = {
+      warRoom: await get(`/api/intelligence/${L}/war-room`),
+      signals: await get(`/api/intelligence/${L}/signals?limite=120`),
+      investigations: await get(`/api/intelligence/${L}/investigations`),
+      decisions: await get(`/api/intelligence/${L}/decisions`),
+      patterns: await get(`/api/intelligence/${L}/patterns`),
+      editorial: await get(`/api/intelligence/${L}/editorial-plan`),
+    };
+  }
 
   return {
-    loja: nome, ym,
-    periodos,
-    analise: await get(`/api/analise/${L}/${ym}`),
-    marketing, intelligence,
-    catalogo: await get(`/api/catalogo/${L}`),
+    periodos: { [nome]: periodos },
+    analise, ontologia,
+    ontologiaUlt: { [nome]: ultimo ? ontologia[`${nome}|${ultimo}`] : null },
+    analiseComercial,
+    marketing: { [nome]: marketing },
+    intelligence: { [nome]: intelligence },
+    catalogo: { [nome]: await get(`/api/catalogo/${L}`) },
   };
 }
 
-function stub(nome, ym, pacote, geradoEm) {
-  const B = JSON.stringify({ nome, ym, geradoEm, ...pacote });
+function stubScript(B) {
   return `
-  window.__EXPORT__ = true; window.__PUBLICO__ = true;
+  window.__PUBLICO__ = true;
   (function () {
-    var B = ${B};
-    var L = encodeURIComponent(B.nome);
+    var B = ${JSON.stringify(B)};
+    function NF(){ return { ok:false, status:404, json:function(){ return Promise.resolve({ erro:"não disponível na cópia estática" }); } }; }
+    function OK(d){ return { ok:true, status:200, json:function(){ return Promise.resolve(d); } }; }
+    var MKM = ${JSON.stringify(MK_MARKETING)}, MKI = ${JSON.stringify(MK_INTEL)};
     function pick(u) {
-      u = String(u).split("?")[0];
-      if (/\\/api\\/lojas$/.test(u)) return B.lojas;
-      if (/\\/api\\/periodos\\//.test(u)) return B.periodos;
-      if (/\\/api\\/ingest-log$/.test(u)) return { inbox: "(cópia estática)", pollMin: 0, eventos: [] };
-      if (/\\/api\\/analise\\/[^/]+\\/[0-9-]+$/.test(u)) return B.analise;
-      if (/\\/api\\/catalogo\\/[^/]+$/.test(u)) return B.catalogo;
-      var mm = u.match(/\\/api\\/marketing\\/[^/]+(?:\\/[0-9-]+)?\\/([a-z-]+)$/);
-      if (mm) return ({ "produtos": B.marketing.produtos, "recommended-products": B.marketing.recommended,
-        "do-not-promote": B.marketing.dnp, "stagnant-stock": B.marketing.parado, "baskets": B.marketing.baskets,
-        "combos": B.marketing.combos, "campaign-efficiency": B.marketing.eficiencia, "campaign-builder": B.marketing.builder })[mm[1]];
-      var im = u.match(/\\/api\\/intelligence\\/[^/]+\\/([a-z-]+)$/);
-      if (im) return ({ "war-room": B.intelligence.warRoom, "signals": B.intelligence.signals,
-        "investigations": B.intelligence.investigations, "decisions": B.intelligence.decisions,
-        "patterns": B.intelligence.patterns, "editorial-plan": B.intelligence.editorial })[im[1]];
+      var s = String(u).replace(/^https?:\\/\\/[^/]+/, "").split("?")[0].split("/").filter(Boolean).map(function (x) { try { return decodeURIComponent(x); } catch (e) { return x; } });
+      if (s[0] === "logout") return {};                 // no-op
+      if (s[0] !== "api") return undefined;
+      if (s[1] === "lojas") return B.lojas;
+      if (s[1] === "periodos") return B.periodos[s[2]] || [];
+      if (s[1] === "ingest-log") return { inbox: "(cópia estática)", pollMin: 0, eventos: [] };
+      if (s[1] === "analise") return B.analise[s[2] + "|" + s[3]];
+      if (s[1] === "ontologia") return B.ontologia[s[2] + "|" + s[3]] || B.ontologiaUlt[s[2]];
+      if (s[1] === "analise-comercial") return s[3] ? B.analiseComercial[s[2] + "|" + s[3]] : B.analiseComercial[s[2]];
+      if (s[1] === "catalogo" && s.length === 3) return B.catalogo[s[2]];
+      if (s[1] === "marketing") { var m = B.marketing[s[2]]; return m ? m[MKM[s[s.length - 1]]] : undefined; }
+      if (s[1] === "intelligence") { var g = B.intelligence[s[2]]; return g ? g[MKI[s[s.length - 1]]] : undefined; }
       return undefined;
     }
-    var OFF = "Esta é uma cópia estática (gerada " + B.geradoEm + "). Ações ao vivo (rodar detecção, simular, perguntar, upload) só no site em localhost.";
+    var OFF = "Ação ao vivo (rodar detecção, simular, perguntar, upload, \\"por quê?\\") só no site em localhost. Esta é a cópia estática gerada " + B.geradoEm + ".";
     window.fetch = function (u, opt) {
-      if (opt && opt.method && String(opt.method).toUpperCase() !== "GET")
+      if (opt && opt.method && String(opt.method).toUpperCase() !== "GET" && !/\\/logout$/.test(String(u)))
         return Promise.resolve({ ok: false, status: 503, json: function () { return Promise.resolve({ erro: OFF }); } });
       var d = pick(u);
-      if (d === undefined) return Promise.resolve({ ok: false, status: 404, json: function () { return Promise.resolve({ erro: "não disponível na cópia estática" }); } });
-      return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve(d); } });
+      if (d === undefined || (d && d.__erro)) return Promise.resolve(NF());
+      return Promise.resolve(OK(d));
     };
-    try { localStorage.clear(); } catch (e) {}
     document.addEventListener("DOMContentLoaded", function () {
       var b = document.createElement("div");
-      b.textContent = "📄 Cópia estática · " + new Date(B.geradoEm).toLocaleString("pt-BR") + " · atualiza sozinha a cada novo arquivo processado";
-      b.style.cssText = "background:#1b1f29;color:#cfd3dc;font:12px/1.4 system-ui;padding:6px 14px;text-align:center";
+      b.textContent = "📄 Cópia estática · " + new Date(B.geradoEm).toLocaleString("pt-BR") + " · Minas Farma + Farma e Farma · atualiza sozinha a cada arquivo processado no sistema";
+      b.style.cssText = "background:#1b1f29;color:#cfd3dc;font:12px/1.5 system-ui,sans-serif;padding:6px 14px;text-align:center";
       document.body.insertBefore(b, document.body.firstChild);
     });
   })();`;
 }
 
-function montarHtml({ __dirname: root }, nome, ym, pacote, geradoEm) {
+function montarHtml(root, B) {
   const css = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
   const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
   const body = fs
@@ -98,39 +128,21 @@ function montarHtml({ __dirname: root }, nome, ym, pacote, geradoEm) {
     .replace(/^[\s\S]*?<body>/i, "")
     .replace(/<\/body>[\s\S]*$/i, "")
     .replace(/<script src="\/app\.js"><\/script>/i, "");
-  const label = (pacote.analise && pacote.analise.meta && pacote.analise.meta.periodoLabel) || ym;
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Analytics — ${nome} — ${label}</title>
-${FONTS_LINK}<style>${css}</style></head><body class="export publico">
+<title>Analytics — Minas Farma &amp; Farma e Farma</title>
+${FONTS_LINK}<style>${css}</style></head><body class="publico">
 ${body}
-<script>${stub(nome, ym, pacote, geradoEm)}</script>
+<script>${stubScript(B)}</script>
 <script>${appJs}</script>
 </body></html>`;
 }
 
-function indice(gerados, geradoEm) {
-  const linhas = gerados
-    .map((g) => `<li><a href="${slug(g.loja)}.html">${g.loja}</a> <span>${g.label} · ${(g.bytes / 1024 / 1024).toFixed(1)} MB</span></li>`)
-    .join("\n");
-  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Analytics</title>
-<style>body{font:16px/1.6 system-ui,sans-serif;background:#f4f5f7;color:#1f2430;display:grid;place-items:center;min-height:100vh;margin:0}
-.c{background:#fff;padding:34px 40px;border-radius:16px;box-shadow:0 10px 40px -12px rgba(0,0,0,.2);width:min(460px,92vw)}
-h1{font-size:20px;margin:0 0 2px}.s{color:#8a909c;font-size:13px;margin:0 0 20px}
-ul{list-style:none;padding:0;margin:0}li{padding:12px 0;border-bottom:1px solid #ebedf0;display:flex;justify-content:space-between;align-items:baseline}
-li:last-child{border:0}a{color:#d81f2a;font-weight:700;text-decoration:none;font-size:17px}a:hover{text-decoration:underline}
-li span{color:#8a909c;font-size:12px}.f{margin-top:18px;color:#8a909c;font-size:12px}</style></head>
-<body><div class="c"><h1>📊 Analytics</h1><p class="s">Minas Farma · Farma e Farma — Baixo Guandu/ES</p>
-<ul>${linhas}</ul>
-<p class="f">Cópia estática gerada automaticamente em ${new Date(geradoEm).toLocaleString("pt-BR")}.<br>Cada arquivo novo processado no sistema regenera estas páginas.</p></div></body></html>`;
-}
-
 let _rodando = false;
-let _pendente = false;
+let _pendente = null;
 
-async function regenerar({ port, cookie, outDir, root = __dirname } = {}) {
-  if (_rodando) { _pendente = true; return { adiado: true }; }
+async function regenerar({ port, cookie, outDir, root = __dirname, arquivo = "analytics.html" } = {}) {
+  if (_rodando) { _pendente = { port, cookie, outDir, root, arquivo }; return { adiado: true }; }
   _rodando = true;
   try {
     fs.mkdirSync(outDir, { recursive: true });
@@ -143,25 +155,36 @@ async function regenerar({ port, cookie, outDir, root = __dirname } = {}) {
         return { __erro: e.message };
       }
     };
-    const geradoEm = new Date().toISOString();
+
     const lojas = (await get("/api/lojas")) || [];
-    const gerados = [];
+    const B = {
+      geradoEm: new Date().toISOString(),
+      lojas,
+      periodos: {}, analise: {}, ontologia: {}, ontologiaUlt: {},
+      analiseComercial: {}, marketing: {}, intelligence: {}, catalogo: {},
+    };
+    let comDados = 0;
     for (const l of lojas) {
-      const pacote = await coletar(null, get, l.nome);
-      if (!pacote) continue;
-      pacote.lojas = lojas;
-      const html = montarHtml({ __dirname: root }, l.nome, pacote.ym, pacote, geradoEm);
-      const file = slug(l.nome) + ".html";
-      fs.writeFileSync(path.join(outDir, file), html);
-      const label = (pacote.analise && pacote.analise.meta && pacote.analise.meta.periodoLabel) || pacote.ym;
-      gerados.push({ loja: l.nome, ym: pacote.ym, label, arquivo: file, bytes: Buffer.byteLength(html) });
+      const parte = await coletarLoja(get, l.nome);
+      Object.assign(B.periodos, parte.periodos);
+      Object.assign(B.analise, parte.analise);
+      Object.assign(B.ontologia, parte.ontologia);
+      Object.assign(B.ontologiaUlt, parte.ontologiaUlt);
+      Object.assign(B.analiseComercial, parte.analiseComercial);
+      Object.assign(B.marketing, parte.marketing);
+      Object.assign(B.intelligence, parte.intelligence);
+      Object.assign(B.catalogo, parte.catalogo);
+      if (parte.marketing[l.nome]) comDados++;
     }
-    fs.writeFileSync(path.join(outDir, "index.html"), indice(gerados, geradoEm));
-    return { outDir, geradoEm, gerados };
+
+    const html = montarHtml(root, B);
+    const dest = path.join(outDir, arquivo);
+    fs.writeFileSync(dest, html);
+    return { arquivo: dest, bytes: Buffer.byteLength(html), lojas_com_dados: comDados, geradoEm: B.geradoEm };
   } finally {
     _rodando = false;
-    if (_pendente) { _pendente = false; setTimeout(() => regenerar({ port, cookie, outDir, root }).catch(() => {}), 500); }
+    if (_pendente) { const p = _pendente; _pendente = null; setTimeout(() => regenerar(p).catch(() => {}), 500); }
   }
 }
 
-module.exports = { regenerar, slug };
+module.exports = { regenerar };
