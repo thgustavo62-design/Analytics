@@ -1,23 +1,37 @@
-// Lê a planilha padrão Concorrentes_Coleta_AAAA-MM-DD.xlsx (36 colunas, cabeçalho na
-// linha 1) e cruza as ofertas confirmadas e vigentes com o preço médio que a gente
-// pratica no mesmo produto. Reaproveita o formato já usado no ecossistema — não inventa
-// planilha nova.
+// Lê preço de concorrente jogado na inbox/. Dois formatos:
+//   1) a planilha padrão Concorrentes_Coleta_AAAA-MM-DD.xlsx (36 colunas);
+//   2) qualquer planilha simples com Concorrente + Produto + um preço (colunas mapeadas
+//      por config/concorrentes.json; sem status = tudo confirmado; sem validade = nada expira).
+// Cruza as ofertas com o preço médio que a gente pratica no mesmo produto.
 
+const fs = require("fs");
+const path = require("path");
 const XLSX = require("xlsx");
 const { bestMatch } = require("../match");
 
-// Nome canônico -> possíveis cabeçalhos (normalizados) + índice de fallback (0-based).
-const COLS = {
-  concorrente: { nomes: ["concorrente"], idx: 2 },
-  categoria: { nomes: ["categoria"], idx: 6 },
-  produto: { nomes: ["produto"], idx: 8 },
-  marca: { nomes: ["marca"], idx: 9 },
-  preco_normal: { nomes: ["preco normal"], idx: 15 },
-  preco_promo: { nomes: ["preco promo"], idx: 16 },
-  validade: { nomes: ["validade"], idx: 28 },
-  nivel_confianca: { nomes: ["nivel confianca", "nivel de confianca"], idx: 33 },
-  status_validacao: { nomes: ["status validacao", "status de validacao"], idx: 34 },
-};
+const CFG = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "config", "concorrentes.json"), "utf8"));
+  } catch {
+    return { colunas: {}, posicional_36col: {} };
+  }
+})();
+
+// Nome canônico -> sinônimos de cabeçalho (do config) + índice posicional da planilha de 36 col.
+const COLS = {};
+for (const [k, nomes] of Object.entries(CFG.colunas || {})) {
+  COLS[k] = { nomes: (nomes || []).map((n) => String(n).toLowerCase()), idx: (CFG.posicional_36col || {})[k] };
+}
+// se o config falhar, mantém o mínimo p/ a planilha padrão
+if (!COLS.produto) {
+  Object.assign(COLS, {
+    concorrente: { nomes: ["concorrente"], idx: 2 }, categoria: { nomes: ["categoria"], idx: 6 },
+    produto: { nomes: ["produto"], idx: 8 }, marca: { nomes: ["marca"], idx: 9 },
+    preco_normal: { nomes: ["preco normal"], idx: 15 }, preco_promo: { nomes: ["preco promo"], idx: 16 },
+    validade: { nomes: ["validade"], idx: 28 }, nivel_confianca: { nomes: ["nivel confianca"], idx: 33 },
+    status_validacao: { nomes: ["status validacao"], idx: 34 },
+  });
+}
 
 function norm(s) {
   return String(s ?? "")
@@ -54,11 +68,16 @@ function parseValidade(v) {
 
 function resolveIndices(header) {
   const normHeader = header.map(norm);
+  const largo = header.length >= 20; // parece a planilha padrão de 36 colunas
   const idx = {};
   for (const [key, spec] of Object.entries(COLS)) {
+    // 1) cabeçalho igual a um sinônimo
     let i = normHeader.findIndex((h) => spec.nomes.includes(h));
-    if (i < 0) i = spec.idx; // fallback posicional
-    idx[key] = i;
+    // 2) cabeçalho que CONTÉM um sinônimo (só sinônimos com >= 4 letras, p/ não casar "de"/"por" solto)
+    if (i < 0) i = normHeader.findIndex((h) => spec.nomes.some((n) => n.length >= 4 && h.includes(n)));
+    // 3) só na planilha larga: fallback posicional fixo
+    if (i < 0 && largo && spec.idx != null) i = spec.idx;
+    if (i >= 0) idx[key] = i;
   }
   return idx;
 }
@@ -76,6 +95,14 @@ function parseConcorrentes(xlsxPath, nossosProdutos = [], opts = {}) {
   if (!rows.length) throw new Error("Planilha de concorrentes vazia.");
 
   const idx = resolveIndices(rows[0]);
+  if (idx.produto == null) {
+    throw new Error(
+      "planilha de concorrente sem coluna de produto reconhecível. Precisa ter ao menos " +
+      "'Produto' e um 'Preço' (ajuste os nomes em config/concorrentes.json)."
+    );
+  }
+  const temStatus = idx.status_validacao != null;
+  const temValidade = idx.validade != null;
   const candidatos = nossosProdutos.filter((p) => p.precoMedio != null).map((p) => ({ name: p.name, precoMedio: p.precoMedio }));
 
   const ofertas = [];
@@ -88,19 +115,22 @@ function parseConcorrentes(xlsxPath, nossosProdutos = [], opts = {}) {
     const produto = row[idx.produto];
     if (!produto || String(produto).trim() === "") continue; // linha vazia no fim da planilha
 
-    const status = String(row[idx.status_validacao] ?? "").trim();
-    if (norm(status) !== "confirmada") {
+    const status = temStatus ? String(row[idx.status_validacao] ?? "").trim() : "Confirmada";
+    if (temStatus && norm(status) !== "confirmada") {
       descartadasStatus++;
       continue;
     }
 
-    const validadeIso = parseValidade(row[idx.validade]);
-    if (validadeIso && validadeIso < refDate) {
-      expiradas++;
-      continue;
+    if (temValidade) {
+      const validadeIso = parseValidade(row[idx.validade]);
+      if (validadeIso && validadeIso < refDate) {
+        expiradas++;
+        continue;
+      }
     }
 
-    const precoPromo = parsePreco(row[idx.preco_promo]);
+    // sem coluna de "preço promo", usa o único preço que houver (normal)
+    const precoPromo = idx.preco_promo != null ? parsePreco(row[idx.preco_promo]) : parsePreco(row[idx.preco_normal]);
     const marca = row[idx.marca] ? String(row[idx.marca]).trim() : null;
     const m = candidatos.length
       ? bestMatch(String(produto), candidatos, { minScore: 0.5, minOverlap: 2, brand: marca })

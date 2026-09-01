@@ -1,0 +1,25 @@
+{
+  "_nota": "Leitura de PREÇO DE CONCORRENTE jogado na inbox/. 'arquivo_contem' = pistas no nome do arquivo que roteiam pra cá. 'colunas' mapeia campo interno -> nomes possíveis de coluna (acentos/caixa ignorados; casa por igualdade e depois por 'contém'). Formatos aceitos: a planilha padrão de 36 colunas (Concorrentes_Coleta_AAAA-MM-DD.xlsx) OU uma planilha simples com pelo menos Concorrente + Produto + um preço. Sem coluna de status, todas as linhas contam como confirmadas. Sem validade, nada expira.",
+  "arquivo_contem": [
+    "concorrente", "concorrentes", "coleta", "varredura", "confronto",
+    "preco concorrente", "precos concorrente", "preco conc", "precos conc",
+    "inova", "circulista", "lavagnoli", "indiana", "atacadao do bebe", "rede inova",
+    "detona preco", "dias imbativeis", "encarte concorrente"
+  ],
+  "colunas": {
+    "concorrente":      ["concorrente", "loja concorrente", "rede", "estabelecimento", "fonte concorrente"],
+    "categoria":        ["categoria", "grupo", "departamento", "secao"],
+    "produto":          ["produto", "descricao", "descricao do produto", "item", "nome"],
+    "marca":            ["marca", "fabricante"],
+    "preco_normal":     ["preco normal", "preco de", "preco cheio", "de", "preco tabela", "preco sem desconto"],
+    "preco_promo":      ["preco promo", "preco promocional", "preco oferta", "por", "preco", "preco praticado", "valor", "preco final"],
+    "validade":         ["validade", "valido ate", "vigencia", "ate", "data limite", "expira"],
+    "nivel_confianca":  ["nivel confianca", "nivel de confianca", "confianca", "confiabilidade"],
+    "status_validacao": ["status validacao", "status de validacao", "status", "situacao", "confirmado"]
+  },
+  "posicional_36col": {
+    "_nota": "índices 0-based da planilha padrão de 36 colunas — usado só quando o cabeçalho tem >= 20 colunas.",
+    "concorrente": 2, "categoria": 6, "produto": 8, "marca": 9,
+    "preco_normal": 15, "preco_promo": 16, "validade": 28, "nivel_confianca": 33, "status_validacao": 34
+  }
+}

@@ -204,12 +204,29 @@ function ingestInstagramJson(filePath) {
 
 // --- dispatcher ---------------------------------------------------------
 
+const CONC_CFG = (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, "config", "concorrentes.json"), "utf8")); }
+  catch { return { arquivo_contem: ["concorrente", "coleta", "varredura", "confronto"] }; }
+})();
+const ehArquivoConcorrente = (base) => (CONC_CFG.arquivo_contem || []).some((w) => base.includes(w));
+
 async function ingestFile(filePath) {
   const base = path.basename(filePath).toLowerCase();
   const ext = path.extname(base);
   if (ext === ".pdf") return ingestVendas(filePath);
   if (ext === ".xlsx") {
-    if (/concorrente|coleta|varredura|confronto/.test(base)) return ingestConcorrentes(filePath);
+    if (ehArquivoConcorrente(base)) {
+      const r = ingestConcorrentes(filePath);
+      // concorrência mexe no COMPETITOR_PRICE_ATTACK e no Opportunity Score — re-detecta
+      try {
+        for (const a of r.aplicadas || []) {
+          if (LOJAS_VALIDAS.includes(a.loja)) require("./intelligence").rodarDeteccao(a.loja);
+        }
+      } catch (e) {
+        console.error("[ingest] detecção pós-concorrentes:", e.message);
+      }
+      return r;
+    }
     const { detectarTipoPlanilha, ingestPlanilhaProduto } = require("./catalogo");
     if (detectarTipoPlanilha(base)) {
       const r = ingestPlanilhaProduto(filePath);

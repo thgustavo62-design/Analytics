@@ -14,10 +14,17 @@ O QUE JOGAR
    - Se a soma nao bater com o "Total:" impresso no rodape, o arquivo e RECUSADO
      (aparece no log em "Entrada de arquivos") e o painel antigo continua no ar.
 
-2) Coleta de concorrentes (Concorrentes_Coleta_AAAA-MM-DD.xlsx)
-   - Formato de 36 colunas de sempre.
-   - Vale para as duas lojas (cada uma comparada com o proprio preco).
-   - O mes vem da data no nome do arquivo.
+2) Preco de concorrente (xlsx)
+   - Formato completo: Concorrentes_Coleta_AAAA-MM-DD.xlsx (36 colunas de sempre).
+   - Formato simples: qualquer planilha com pelo menos "Concorrente", "Produto" e um
+     "Preco". Sem coluna de status = todas as linhas contam. Sem validade = nada expira.
+     Colunas mapeadas por config/concorrentes.json (edite os nomes se precisar).
+   - O nome do arquivo precisa ter uma pista: "concorrente", "coleta", "preco concorrente",
+     ou o nome de um concorrente ("inova", "lavagnoli", "circulista", "indiana"...).
+   - Vale para as DUAS lojas (cada uma comparada com o proprio preco medio praticado).
+   - O mes vem da data no nome; sem data, usa o mes corrente.
+   - Ao entrar, ja re-roda a deteccao: vira sinal COMPETITOR_PRICE_ATTACK no War Room e
+     entra no Opportunity Score (componente concorrencia) e na classe DEFESA.
 
 2b) Estoque (xlsx do sistema — "Posicao de estoque" / export geral)
    - Nome do arquivo PRECISA conter "estoque" (ou "estoqeu") E dizer a loja:
