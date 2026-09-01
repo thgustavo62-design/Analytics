@@ -12,20 +12,27 @@ const { coletarTudo, MK_MARKETING, MK_INTEL } = require("./coletar-tudo");
 const FONTS_LINK = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">';
 
 function stubScript(B) {
+  const SB_URL = process.env.SUPABASE_URL || "";
+  const SB_ANON = process.env.SUPABASE_ANON_KEY || "";
   return `
   window.__PUBLICO__ = true;
   (function () {
     var B = ${JSON.stringify(B)};
-    function NF(){ return { ok:false, status:404, json:function(){ return Promise.resolve({ erro:"não disponível na cópia estática" }); } }; }
+    var SB_URL = ${JSON.stringify(SB_URL)}, SB_ANON = ${JSON.stringify(SB_ANON)};
+    var LIVE = !!(SB_URL && SB_ANON);
+    function NF(){ return { ok:false, status:404, json:function(){ return Promise.resolve({ erro:"não disponível" }); } }; }
     function OK(d){ return { ok:true, status:200, json:function(){ return Promise.resolve(d); } }; }
     var MKM = ${JSON.stringify(MK_MARKETING)}, MKI = ${JSON.stringify(MK_INTEL)};
+    // segmentos de /api/... -> [head, ...resto]
+    function segs(u){ return String(u).replace(/^https?:\\/\\/[^/]+/, "").split("?")[0].split("/").filter(Boolean).map(function(x){ try { return decodeURIComponent(x); } catch(e){ return x; } }); }
+    // -> o dado assado (fallback offline)
     function pick(u) {
-      var s = String(u).replace(/^https?:\\/\\/[^/]+/, "").split("?")[0].split("/").filter(Boolean).map(function (x) { try { return decodeURIComponent(x); } catch (e) { return x; } });
+      var s = segs(u);
       if (s[0] === "logout") return {};
       if (s[0] !== "api") return undefined;
       if (s[1] === "lojas") return B.lojas;
       if (s[1] === "periodos") return B.periodos[s[2]] || [];
-      if (s[1] === "ingest-log") return { inbox: "(cópia estática)", pollMin: 0, eventos: [] };
+      if (s[1] === "ingest-log") return { inbox: "(hospedado)", pollMin: 0, eventos: [] };
       if (s[1] === "analise") return B.analise[s[2] + "|" + s[3]];
       if (s[1] === "ontologia") return B.ontologia[s[2] + "|" + s[3]] || B.ontologiaUlt[s[2]];
       if (s[1] === "analise-comercial") return s[3] ? B.analiseComercial[s[2] + "|" + s[3]] : B.analiseComercial[s[2]];
@@ -34,17 +41,42 @@ function stubScript(B) {
       if (s[1] === "intelligence") { var g = B.intelligence[s[2]]; return g ? g[MKI[s[s.length - 1]]] : undefined; }
       return undefined;
     }
-    var OFF = "Ação ao vivo (rodar detecção, simular, perguntar, upload, \\"por quê?\\") só no site em localhost. Esta é a cópia estática gerada " + B.geradoEm + ".";
+    // -> a chave da snapshot no Supabase (espelha supabase-sync.js)
+    function chaveDe(u) {
+      var s = segs(u), h = s[1], r = s.slice(2);
+      if (h === "lojas") return "__global__|lojas|";
+      if (h === "periodos") return r[0] + "|periodos|";
+      if (h === "analise") return r[0] + "|analise|" + r[1];
+      if (h === "ontologia") return r[0] + "|ontologia|" + r[1];
+      if (h === "analise-comercial") return r[0] + "|analise-comercial|" + (r[1] || "");
+      if (h === "catalogo") return r[0] + "|catalogo|";
+      if (h === "marketing") return r[0] + "|marketing/" + r[r.length - 1] + "|";
+      if (h === "intelligence") return r[0] + "|intelligence/" + r[r.length - 1] + "|";
+      return null;
+    }
+    var OFF = "Ação ao vivo (rodar detecção, simular, perguntar, upload, \\"por quê?\\") só no site em localhost.";
+    var _fetch = window.fetch.bind(window);
+    function daNuvem(u) {
+      var k = chaveDe(u);
+      if (!k) return Promise.reject();
+      var url = SB_URL + "/rest/v1/analytics_snapshots?select=payload&chave=eq." + encodeURIComponent(k);
+      return _fetch(url, { headers: { apikey: SB_ANON, Authorization: "Bearer " + SB_ANON } })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+        .then(function (rows) { return (rows && rows[0]) ? rows[0].payload : Promise.reject(); });
+    }
     window.fetch = function (u, opt) {
-      if (opt && opt.method && String(opt.method).toUpperCase() !== "GET" && !/\\/logout$/.test(String(u)))
+      var su = String(u);
+      if (su.indexOf("/api/") !== 0 && !/\\/logout$/.test(su)) return _fetch(u, opt); // fontes, etc.
+      if (opt && opt.method && String(opt.method).toUpperCase() !== "GET" && !/\\/logout$/.test(su))
         return Promise.resolve({ ok: false, status: 503, json: function () { return Promise.resolve({ erro: OFF }); } });
-      var d = pick(u);
-      if (d === undefined || (d && d.__erro)) return Promise.resolve(NF());
-      return Promise.resolve(OK(d));
+      var baked = pick(u);
+      var fb = function () { return (baked === undefined || (baked && baked.__erro)) ? NF() : OK(baked); };
+      if (!LIVE || /\\/logout$/.test(su) || /ingest-log/.test(su)) return Promise.resolve(fb());
+      return daNuvem(u).then(function (p) { return OK(p); }).catch(function () { return fb(); });
     };
     document.addEventListener("DOMContentLoaded", function () {
       var b = document.createElement("div");
-      b.textContent = "📄 Cópia estática · " + new Date(B.geradoEm).toLocaleString("pt-BR") + " · Minas Farma + Farma e Farma · atualiza sozinha a cada arquivo processado no sistema";
+      b.textContent = (LIVE ? "🔌 Ao vivo do Supabase" : "📄 Cópia estática") + " · " + new Date(B.geradoEm).toLocaleString("pt-BR") + " · Minas Farma + Farma e Farma";
       b.style.cssText = "background:#1b1f29;color:#cfd3dc;font:12px/1.5 system-ui,sans-serif;padding:6px 14px;text-align:center";
       document.body.insertBefore(b, document.body.firstChild);
     });
