@@ -16,5 +16,6 @@
   },
   "campanha_dias_min": 4,
   "sem_giro_dias": 45,
-  "margem_pct_minima_para_anunciar": 0.06
+  "margem_pct_minima_para_anunciar": 0.06,
+  "margem_pct_lucrativo": 0.18
 }

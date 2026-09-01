@@ -6,7 +6,7 @@
 const MK_MARKETING = {
   "produtos": "produtos", "recommended-products": "recommended", "do-not-promote": "dnp",
   "stagnant-stock": "parado", "baskets": "baskets", "combos": "combos",
-  "campaign-efficiency": "eficiencia", "campaign-builder": "builder",
+  "campaign-efficiency": "eficiencia", "campaign-builder": "builder", "resultado": "resultado",
 };
 const MK_INTEL = {
   "war-room": "warRoom", "signals": "signals", "investigations": "investigations",
@@ -57,6 +57,7 @@ async function coletarLoja(get, nome) {
       combos: await get(`/api/marketing/${L}/${ultimo}/combos`),
       eficiencia: await get(`/api/marketing/${L}/campaign-efficiency`),
       builder: await get(`/api/marketing/${L}/${ultimo}/campaign-builder`),
+      resultado: await get(`/api/marketing/${L}/${ultimo}/resultado`),
     };
     intelligence = {
       warRoom: await get(`/api/intelligence/${L}/war-room`),

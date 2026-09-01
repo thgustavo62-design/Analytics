@@ -961,9 +961,9 @@
   }
 
   // ---------- Marketing (Fase 2/3/4) ----------
-  var mkt = { tab: "produtos", cache: {} };
+  var mkt = { tab: "resultado", cache: {} };
   var MKT_TABS = [
-    ["produtos", "Produtos"], ["recomendados", "Recomendados"], ["nao-anunciar", "Não anunciar"],
+    ["resultado", "Resultado"], ["produtos", "Produtos"], ["recomendados", "Recomendados"], ["nao-anunciar", "Não anunciar"],
     ["estoque-parado", "Estoque parado"], ["cestas", "Cestas & Combos"], ["eficiencia", "Eficiência"],
     ["builder", "Montar campanha"], ["simulador", "Simulador de oferta"],
   ];
@@ -1001,6 +1001,52 @@
     return '<table class="tbl mobile-cards"><thead><tr><th>Produto</th><th>Classe</th><th class="num">Un 30d</th><th class="num">Receita 30d</th><th>Tendência</th><th>Cobertura</th><th>Margem</th><th>Opportunity</th></tr></thead><tbody>' +
       items.map(prodRow).join("") + "</tbody></table>";
   }
+  var QUAD = {
+    VACA_LEITEIRA: ["🐄", "Vaca leiteira", "sai bem + dá lucro"],
+    ISCA_CARA: ["🎣", "Isca cara", "sai bem mas margem ruim"],
+    PESO_MORTO: ["🪨", "Peso morto", "estoque preso, sem giro"],
+    APOSTA: ["🎲", "Aposta", "margem boa, ainda não gira"],
+    SUMINDO: ["📉", "Sumindo", "vendia e caiu forte"],
+    RUPTURA: ["🔴", "Ruptura", "sai bem, estoque acabando"],
+    NORMAL: ["·", "Normal", "sem sinal forte"],
+  };
+  function rTbl(titulo, sub, itens, colExtra) {
+    if (!itens || !itens.length) return "";
+    return '<div class="card" style="margin-bottom:12px"><div class="chead"><div class="ci gold">•</div><div><h3>' + titulo + '</h3><div class="cs">' + esc(sub) + "</div></div></div>" +
+      '<table class="tbl mobile-cards"><thead><tr><th>Produto</th><th class="num">Un 30d</th><th class="num">Receita 30d</th><th>Margem</th>' + (colExtra ? "<th>" + colExtra.h + "</th>" : "") + "</tr></thead><tbody>" +
+      itens.map(function (p) {
+        return "<tr><td>" + esc(p.descricao) + '<div class="cs">' + esc(p.categoria || "") + (p.custo_suspeito ? ' · <b style="color:var(--down)">custo a conferir</b>' : "") + "</div></td>" +
+          '<td class="num" data-l="Un 30d">' + int(p.unid_30d) + "</td>" +
+          '<td class="num" data-l="Receita 30d">R$ ' + brl(p.receita_30d || 0) + "</td>" +
+          '<td data-l="Margem">' + (p.margem_pct == null ? "—" : pct(p.margem_pct * 100)) + "</td>" +
+          (colExtra ? '<td data-l="' + esc(colExtra.h) + '">' + colExtra.f(p) + "</td>" : "") + "</tr>";
+      }).join("") + "</tbody></table></div>";
+  }
+  function resultadoHtml(d) {
+    if (!d || d.erro) return '<div class="empty">' + esc((d && d.erro) || "erro") + "</div>";
+    var r = d.resumo;
+    var out = feedsAviso(d);
+    out += '<div class="cc-kpis">' +
+      ccKpi("Lucro estimado (30d)", r.lucro_estimado_30d == null ? "s/ custo" : "R$ " + brl(r.lucro_estimado_30d), r.lucro_estimado_30d != null && r.lucro_estimado_30d < 0 ? "var(--down)" : "var(--ok)") +
+      ccKpi("Capital parado (peso morto)", r.capital_parado_total == null ? "s/ estoque" : "R$ " + brl(r.capital_parado_total), r.capital_parado_total ? "var(--warn)" : null) +
+      ccKpi("Receita 30d em risco de ruptura", r.receita_30d_em_risco_de_ruptura == null ? "s/ estoque" : "R$ " + brl(r.receita_30d_em_risco_de_ruptura), r.receita_30d_em_risco_de_ruptura ? "var(--down)" : null) +
+      ccKpi("Cobertura do cálculo", r.cobertura_custo_pct + "% c/ custo" + (r.produtos_custo_suspeito ? " · " + r.produtos_custo_suspeito + " suspeitos" : "")) +
+      "</div>";
+    // quadrantes
+    out += '<div class="card"><div class="chead"><div class="ci red">🧩</div><div><h3>Matriz: o que sai × dá lucro × encalha</h3></div></div><div class="quad-grid">' +
+      Object.keys(QUAD).map(function (k) {
+        var n = (r.por_quadrante || {})[k] || 0;
+        var q = QUAD[k];
+        return '<div class="quad' + (n ? "" : " off") + '"><div class="quad-n">' + int(n) + '</div><div class="quad-t">' + q[0] + " " + q[1] + '</div><div class="quad-s">' + q[2] + "</div></div>";
+      }).join("") + "</div></div>";
+    out += rTbl("💰 Onde está o lucro", "os que mais contribuem com margem × volume", r.top_lucro, { h: "Resultado 30d", f: function (p) { return "R$ " + brl(p.resultado_30d || 0); } });
+    out += rTbl("🩸 Vende e não dá lucro (isca cara / prejuízo)", "revisar preço/custo — ou assumir como chamariz", r.top_prejuizo, { h: "Resultado 30d", f: function (p) { return '<span style="color:var(--down)">R$ ' + brl(p.resultado_30d || 0) + "</span>"; } });
+    out += rTbl("⚠️ Custo a conferir", "custo cadastrado (Últ. Prc. Entrada) maior que o preço — provável erro no ERP", r.custo_a_conferir, { h: "Custo × Preço", f: function (p) { return "R$ " + brl(p.custo_atual || 0) + " / R$ " + brl(p.preco || 0); } });
+    out += rTbl("🪨 Peso morto (capital parado)", "estoque parado sem giro — liquidar / combo", r.peso_morto, { h: "Parado / giro", f: function (p) { return "R$ " + brl(p.capital_parado || 0) + " · " + (p.giro_mensal == null ? "—" : p.giro_mensal + "x"); } });
+    out += rTbl("🔴 Ruptura (perde venda)", "sai bem e o estoque está acabando — repor já", r.ruptura, { h: "Cobertura", f: function (p) { return (p.dias_cobertura == null ? "—" : p.dias_cobertura + "d"); } });
+    out += rTbl("📉 Sumindo", "vendia e a demanda caiu forte — investigar", r.sumindo, { h: "Tendência", f: function (p) { return esc(p.tendencia || ""); } });
+    return out;
+  }
   async function mktFetch(path) {
     if (mkt.cache[path]) return mkt.cache[path];
     var d = await getJSON(path);
@@ -1025,7 +1071,10 @@
     var host = view.querySelector("#mktBody");
     var L = encodeURIComponent(state.loja);
     try {
-      if (mkt.tab === "produtos" || mkt.tab === "recomendados") {
+      if (mkt.tab === "resultado") {
+        var d = await mktFetch("/api/marketing/" + L + "/" + ym + "/resultado");
+        host.innerHTML = resultadoHtml(d);
+      } else if (mkt.tab === "produtos" || mkt.tab === "recomendados") {
         var url = mkt.tab === "recomendados" ? "/api/marketing/" + L + "/" + ym + "/recommended-products" : "/api/marketing/" + L + "/" + ym + "/produtos?limite=150";
         var d = await mktFetch(url);
         host.innerHTML = feedsAviso(d) + '<div class="card">' + prodTable(d.produtos) + "</div>";

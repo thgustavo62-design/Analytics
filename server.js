@@ -518,6 +518,20 @@ app.get("/api/marketing/:loja/:periodo/produtos", (req, res) => {
   res.json({ ...r, produtos: lista, total_catalogo: r.total });
 });
 
+// análise cruzada — vendas × estoque × custo × margem -> o que sai e dá lucro, o que encalha
+const analiseCruzada = require("./analise-cruzada");
+app.get("/api/marketing/:loja/:periodo/resultado", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const ctx = contextoMarketing(req.params.loja, req.params.periodo);
+    const r = analiseCruzada.analiseCruzada(req.params.loja, ctx);
+    res.status(r.erro ? 404 : 200).json(r);
+  } catch (e) {
+    console.error("[api/marketing resultado]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 app.get("/api/marketing/:loja/:periodo/recommended-products", (req, res) => {
   if (!lojaOk(req, res)) return;
   const ctx = contextoMarketing(req.params.loja, req.params.periodo);
