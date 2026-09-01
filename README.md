@@ -10,6 +10,9 @@ cruzando as vendas com os concorrentes e com o calendário de campanhas de cada 
 
 Projeto **independente** do `app_minasfarma/`. Não lê nem escreve nada lá dentro.
 
+📄 **Documentação completa do sistema:** [`SISTEMA.md`](SISTEMA.md) (arquitetura, módulos,
+modelo de dados, rotas, configuração, fluxos).
+
 ## Stack
 
 - **Node.js** (>= 22; testado no 24) + **Express**. Sem Python.
