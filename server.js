@@ -71,6 +71,16 @@ async function regenerarAgora() {
     const { B } = await coletarTudo({ port: PORT, cookie: makeToken() }); // coleta UMA vez
     const r = await publicar.regenerar({ outDir: PUBLIC_DIR, root: __dirname, B });
     if (r && r.arquivo) console.log(`  publico: analytics.html (${(r.bytes / 1048576).toFixed(1)} MB, ${r.lojas_com_dados} loja(s))`);
+    // mantém as pastas de deploy estático em dia (Vercel/GitHub Pages servem o index.html)
+    try {
+      const src = path.join(PUBLIC_DIR, "index.html");
+      for (const d of ["analytics"]) {
+        const dst = path.join(__dirname, d);
+        fs.mkdirSync(dst, { recursive: true });
+        fs.copyFileSync(src, path.join(dst, "index.html"));
+        if (!fs.existsSync(path.join(dst, ".nojekyll"))) fs.writeFileSync(path.join(dst, ".nojekyll"), "");
+      }
+    } catch (e) { console.error("[publicar] cópia p/ analytics/:", e.message); }
     if (supabaseSync.ativo()) {
       const s = await supabaseSync.sincronizar({ B });
       if (s && s.linhas) console.log(`  supabase: ${s.linhas} snapshots enviados`);

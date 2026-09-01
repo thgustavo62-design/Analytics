@@ -1,0 +1,37 @@
+# O deploy no Vercel é SÓ o site estático (publico/index.html ou analytics/index.html).
+# Nada do backend deve ir — principalmente server.js, pra o Vercel não tentar rodá-lo.
+server.js
+db.js
+ingest.js
+watcher.js
+motor.js
+coletar-tudo.js
+publicar.js
+supabase-sync.js
+marketing-product-analytics.js
+campanhas.js
+basket.js
+editorial.js
+ask.js
+analytics-deep.js
+aggregate.js
+ontologia.js
+classify.js
+match.js
+insights.js
+validate-analise.js
+analise-store.js
+intelligence/
+parsers/
+prompts/
+schemas/
+scripts/
+sql/
+test/
+data/
+inbox/
+node_modules/
+docs/
+*.db
+.env
+iniciar.bat
