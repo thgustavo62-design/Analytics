@@ -141,6 +141,67 @@ CREATE TABLE IF NOT EXISTS produto_preco (
 );
 CREATE INDEX IF NOT EXISTS ix_preco_lp ON produto_preco(loja_id, produto_id, tipo_preco, data_inicio);
 
+CREATE INDEX IF NOT EXISTS ix_vendas_barras ON vendas_transacoes(barras);
+
+-- ---- FASE 3 — Campanha como entidade persistente -------------------------
+
+CREATE TABLE IF NOT EXISTS campanhas (
+  id           INTEGER PRIMARY KEY,
+  loja_id      INTEGER NOT NULL REFERENCES lojas(id),
+  nome         TEXT NOT NULL,
+  objetivo     TEXT,                  -- ALCANCE | ENGAJAMENTO | AQUISICAO | CONVERSAO | AUMENTAR_TICKET | DEFENDER_CONCORRENCIA | GIRAR_ESTOQUE | LANCAMENTO | RECUPERAR_CATEGORIA | INSTITUCIONAL
+  categoria    TEXT,
+  data_inicio  TEXT,
+  data_fim     TEXT,
+  status       TEXT NOT NULL DEFAULT 'rascunho',  -- rascunho | planejada | ativa | encerrada
+  descricao    TEXT,
+  investimento REAL,
+  origem       TEXT NOT NULL DEFAULT 'manual',    -- manual | calendario | builder
+  criado_em    TEXT NOT NULL,
+  atualizado_em TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_campanhas_loja ON campanhas(loja_id, data_inicio);
+
+CREATE TABLE IF NOT EXISTS campanha_produtos (
+  id                INTEGER PRIMARY KEY,
+  campanha_id       INTEGER NOT NULL REFERENCES campanhas(id) ON DELETE CASCADE,
+  produto_id        INTEGER NOT NULL REFERENCES produtos(id),
+  papel             TEXT,             -- CHAMARIZ | MARGEM | GIRO | HERO | COMPLEMENTAR | DEFESA | LANCAMENTO
+  preco_planejado   REAL,
+  preco_promocional REAL,
+  prioridade        INTEGER,
+  UNIQUE(campanha_id, produto_id)
+);
+
+CREATE TABLE IF NOT EXISTS campanha_resultados (
+  campanha_id   INTEGER PRIMARY KEY REFERENCES campanhas(id) ON DELETE CASCADE,
+  metricas_json TEXT,
+  resultado     TEXT,                 -- EXCELENTE | BOA | ACEITAVEL | FRACA | DESTRUTIVA | INCONCLUSIVO
+  score         REAL,
+  analise       TEXT,
+  atualizado_em TEXT NOT NULL
+);
+
+-- ---- FASE 4 — Cesta (materialização de support/confidence/lift) ---------
+
+CREATE TABLE IF NOT EXISTS cesta_pares (
+  id           INTEGER PRIMARY KEY,
+  loja_id      INTEGER NOT NULL REFERENCES lojas(id),
+  janela_ini   TEXT NOT NULL,
+  janela_fim   TEXT NOT NULL,
+  produto_a    INTEGER NOT NULL REFERENCES produtos(id),
+  produto_b    INTEGER NOT NULL REFERENCES produtos(id),
+  cupons_a     INTEGER NOT NULL,
+  cupons_b     INTEGER NOT NULL,
+  cupons_ab    INTEGER NOT NULL,
+  support      REAL NOT NULL,
+  confidence   REAL NOT NULL,
+  lift         REAL NOT NULL,
+  criado_em    TEXT NOT NULL,
+  UNIQUE(loja_id, janela_ini, janela_fim, produto_a, produto_b)
+);
+CREATE INDEX IF NOT EXISTS ix_cesta_loja ON cesta_pares(loja_id, janela_fim);
+
 -- ============================================================================
 
 -- Fase 2: análise comercial mensal (JSON do Motor). Guardado no banco para não se perder

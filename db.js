@@ -364,6 +364,232 @@ function freshnessCatalogo(lojaNome) {
   };
 }
 
+// --- Fase 2/3/4: janelas de venda por produto (sempre de UMA loja) ------------
+
+function getUltimaDataVenda(loja) {
+  const lid = lojaId(loja);
+  const r = db
+    .prepare("SELECT MAX(v.data) d FROM vendas_transacoes v JOIN periodos p ON p.id = v.periodo_id WHERE p.loja_id = ?")
+    .get(lid);
+  return (r && r.d) || null;
+}
+
+// agregado por produto (barras) numa janela [ini, fim] — uma loja só.
+function vendasPorProdutoJanela(loja, ini, fim) {
+  const lid = lojaId(loja);
+  return db
+    .prepare(
+      `SELECT v.barras AS barras,
+              MAX(v.descricao) AS descricao,
+              SUM(v.quantidade) AS unidades,
+              SUM(v.valor_liquido) AS receita,
+              COUNT(DISTINCT v.data || '#' || v.lancamento) AS cupons,
+              COUNT(DISTINCT v.data) AS dias_com_venda,
+              MIN(v.data) AS primeira,
+              MAX(v.data) AS ultima
+         FROM vendas_transacoes v JOIN periodos p ON p.id = v.periodo_id
+        WHERE p.loja_id = ? AND v.data >= ? AND v.data <= ?
+        GROUP BY v.barras`
+    )
+    .all(lid, ini, fim);
+}
+
+// total de cupons distintos de uma loja numa janela (denominador da cesta / penetração)
+function cuponsNaJanela(loja, ini, fim) {
+  const lid = lojaId(loja);
+  const r = db
+    .prepare(
+      "SELECT COUNT(DISTINCT v.data || '#' || v.lancamento) n FROM vendas_transacoes v JOIN periodos p ON p.id = v.periodo_id WHERE p.loja_id = ? AND v.data >= ? AND v.data <= ?"
+    )
+    .get(lid, ini, fim);
+  return (r && r.n) || 0;
+}
+
+// linhas cruas (lancamento, data, barras, descricao, quantidade) p/ a cesta — uma loja.
+function linhasCestaJanela(loja, ini, fim) {
+  const lid = lojaId(loja);
+  return db
+    .prepare(
+      `SELECT v.data, v.lancamento, v.barras, v.descricao, v.quantidade, v.valor_liquido
+         FROM vendas_transacoes v JOIN periodos p ON p.id = v.periodo_id
+        WHERE p.loja_id = ? AND v.data >= ? AND v.data <= ?`
+    )
+    .all(lid, ini, fim);
+}
+
+function todosProdutos() {
+  return db.prepare("SELECT * FROM produtos").all().map(produtoEfetivo);
+}
+
+// soma diária por categoria (categoria já classificada na ingestão) — uma loja.
+function vendasCategoriaPorData(loja, ini, fim) {
+  const lid = lojaId(loja);
+  return db
+    .prepare(
+      `SELECT v.data AS data, v.categoria AS categoria,
+              SUM(v.valor_liquido) AS receita, SUM(v.quantidade) AS unidades
+         FROM vendas_transacoes v JOIN periodos p ON p.id = v.periodo_id
+        WHERE p.loja_id = ? AND v.data >= ? AND v.data <= ?
+        GROUP BY v.data, v.categoria`
+    )
+    .all(lid, ini, fim);
+}
+
+// --- Fase 3: campanhas como entidade -----------------------------------------
+
+function criarCampanha(loja, c) {
+  const lid = lojaId(loja);
+  const ts = nowIso();
+  const info = db
+    .prepare(
+      `INSERT INTO campanhas (loja_id, nome, objetivo, categoria, data_inicio, data_fim, status, descricao, investimento, origem, criado_em, atualizado_em)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      lid,
+      c.nome,
+      c.objetivo || null,
+      c.categoria || null,
+      c.data_inicio || null,
+      c.data_fim || null,
+      c.status || "rascunho",
+      c.descricao || null,
+      c.investimento ?? null,
+      c.origem || "manual",
+      ts,
+      ts
+    );
+  return Number(info.lastInsertRowid);
+}
+
+function atualizarCampanha(id, campos) {
+  const ok = ["nome", "objetivo", "categoria", "data_inicio", "data_fim", "status", "descricao", "investimento"];
+  const sets = [];
+  const vals = [];
+  for (const k of ok) if (k in campos) { sets.push(`${k} = ?`); vals.push(campos[k]); }
+  if (!sets.length) return getCampanha(id);
+  db.prepare(`UPDATE campanhas SET ${sets.join(", ")}, atualizado_em = ? WHERE id = ?`).run(...vals, nowIso(), id);
+  return getCampanha(id);
+}
+
+function addCampanhaProduto(campanhaId, p) {
+  db.prepare(
+    `INSERT INTO campanha_produtos (campanha_id, produto_id, papel, preco_planejado, preco_promocional, prioridade)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(campanha_id, produto_id) DO UPDATE SET
+       papel = excluded.papel, preco_planejado = excluded.preco_planejado,
+       preco_promocional = excluded.preco_promocional, prioridade = excluded.prioridade`
+  ).run(campanhaId, p.produto_id, p.papel || null, p.preco_planejado ?? null, p.preco_promocional ?? null, p.prioridade ?? null);
+}
+
+function getCampanha(id) {
+  const c = db.prepare("SELECT c.*, l.nome AS loja FROM campanhas c JOIN lojas l ON l.id = c.loja_id WHERE c.id = ?").get(id);
+  if (!c) return null;
+  c.produtos = db
+    .prepare(
+      `SELECT cp.*, p.ean, COALESCE(p.descricao_manual, p.descricao) AS descricao,
+              COALESCE(p.categoria_manual, p.categoria) AS categoria
+         FROM campanha_produtos cp JOIN produtos p ON p.id = cp.produto_id
+        WHERE cp.campanha_id = ? ORDER BY cp.prioridade IS NULL, cp.prioridade`
+    )
+    .all(id);
+  const r = db.prepare("SELECT * FROM campanha_resultados WHERE campanha_id = ?").get(id);
+  c.resultado = r ? { ...r, metricas: r.metricas_json ? JSON.parse(r.metricas_json) : null } : null;
+  return c;
+}
+
+function listCampanhas(loja) {
+  const lid = lojaId(loja);
+  return db
+    .prepare(
+      `SELECT c.*, (SELECT COUNT(*) FROM campanha_produtos cp WHERE cp.campanha_id = c.id) AS n_produtos,
+              (SELECT resultado FROM campanha_resultados r WHERE r.campanha_id = c.id) AS resultado
+         FROM campanhas c WHERE c.loja_id = ? ORDER BY COALESCE(c.data_inicio, c.criado_em) DESC`
+    )
+    .all(lid);
+}
+
+function setCampanhaResultado(campanhaId, { metricas, resultado, score, analise }) {
+  db.prepare(
+    `INSERT INTO campanha_resultados (campanha_id, metricas_json, resultado, score, analise, atualizado_em)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(campanha_id) DO UPDATE SET
+       metricas_json = excluded.metricas_json, resultado = excluded.resultado,
+       score = excluded.score, analise = excluded.analise, atualizado_em = excluded.atualizado_em`
+  ).run(campanhaId, metricas ? JSON.stringify(metricas) : null, resultado || null, score ?? null, analise || null, nowIso());
+}
+
+function removerCampanha(id) {
+  db.prepare("DELETE FROM campanha_resultados WHERE campanha_id = ?").run(id);
+  db.prepare("DELETE FROM campanha_produtos WHERE campanha_id = ?").run(id);
+  db.prepare("DELETE FROM campanhas WHERE id = ?").run(id);
+}
+
+// importa o calendário recorrente de config/lojas.json como campanhas 'calendario' (idempotente
+// por nome+loja). Mantém o config intacto — é só um espelho navegável no banco.
+function importarCalendarioCampanhas(loja, campanhasCfg) {
+  const lid = lojaId(loja);
+  let criadas = 0;
+  for (const cc of campanhasCfg || []) {
+    const ja = db.prepare("SELECT id FROM campanhas WHERE loja_id = ? AND nome = ? AND origem = 'calendario'").get(lid, cc.nome);
+    if (ja) continue;
+    criarCampanha(loja, {
+      nome: cc.nome,
+      objetivo: "GIRAR_ESTOQUE",
+      categoria: (cc.categorias || []).join(" + ") || null,
+      status: "ativa",
+      descricao: `Recorrente — dias ${JSON.stringify(cc.dias)} (config/lojas.json). Categorias: ${(cc.categorias || []).join(", ")}.`,
+      origem: "calendario",
+    });
+    criadas++;
+  }
+  return criadas;
+}
+
+// --- Fase 4: cesta (materialização) -----------------------------------------
+
+function salvarCestaPares(loja, janelaIni, janelaFim, pares) {
+  const lid = lojaId(loja);
+  const ts = nowIso();
+  db.exec("BEGIN");
+  try {
+    db.prepare("DELETE FROM cesta_pares WHERE loja_id = ? AND janela_ini = ? AND janela_fim = ?").run(lid, janelaIni, janelaFim);
+    const ins = db.prepare(
+      `INSERT INTO cesta_pares (loja_id, janela_ini, janela_fim, produto_a, produto_b, cupons_a, cupons_b, cupons_ab, support, confidence, lift, criado_em)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    for (const p of pares) {
+      ins.run(lid, janelaIni, janelaFim, p.produto_a, p.produto_b, p.cupons_a, p.cupons_b, p.cupons_ab, p.support, p.confidence, p.lift, ts);
+    }
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+}
+
+function getCestaPares(loja, { produtoId, limite } = {}) {
+  const lid = lojaId(loja);
+  const ult = db.prepare("SELECT janela_ini, janela_fim FROM cesta_pares WHERE loja_id = ? ORDER BY janela_fim DESC LIMIT 1").get(lid);
+  if (!ult) return { janela: null, pares: [] };
+  const cond = ["cp.loja_id = ?", "cp.janela_ini = ?", "cp.janela_fim = ?"];
+  const args = [lid, ult.janela_ini, ult.janela_fim];
+  if (produtoId) { cond.push("(cp.produto_a = ? OR cp.produto_b = ?)"); args.push(produtoId, produtoId); }
+  const lim = Math.min(2000, limite || 400);
+  const pares = db
+    .prepare(
+      `SELECT cp.*, COALESCE(pa.descricao_manual, pa.descricao) AS desc_a, COALESCE(pb.descricao_manual, pb.descricao) AS desc_b,
+              pa.ean AS ean_a, pb.ean AS ean_b
+         FROM cesta_pares cp
+         JOIN produtos pa ON pa.id = cp.produto_a
+         JOIN produtos pb ON pb.id = cp.produto_b
+        WHERE ${cond.join(" AND ")}
+        ORDER BY cp.lift DESC LIMIT ${lim}`
+    )
+    .all(...args);
+  return { janela: { inicio: ult.janela_ini, fim: ult.janela_fim }, pares };
+}
+
 // --- períodos --------------------------------------------------------------
 
 function findPeriodo(loja, ano, mes) {
@@ -426,4 +652,21 @@ module.exports = {
   getCustoEm,
   getPrecoEm,
   freshnessCatalogo,
+  // Fase 2/3/4 — janelas de venda + campanhas + cesta
+  getUltimaDataVenda,
+  vendasPorProdutoJanela,
+  cuponsNaJanela,
+  linhasCestaJanela,
+  todosProdutos,
+  vendasCategoriaPorData,
+  criarCampanha,
+  atualizarCampanha,
+  addCampanhaProduto,
+  getCampanha,
+  listCampanhas,
+  setCampanhaResultado,
+  removerCampanha,
+  importarCalendarioCampanhas,
+  salvarCestaPares,
+  getCestaPares,
 };

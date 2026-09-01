@@ -960,12 +960,205 @@
       '<button class="btn secondary" id="cxLimpar" style="margin-top:12px">← limpar foco</button>';
   }
 
+  // ---------- Marketing (Fase 2/3/4) ----------
+  var mkt = { tab: "produtos", cache: {} };
+  var MKT_TABS = [
+    ["produtos", "Produtos"], ["recomendados", "Recomendados"], ["nao-anunciar", "Não anunciar"],
+    ["estoque-parado", "Estoque parado"], ["cestas", "Cestas & Combos"], ["eficiencia", "Eficiência"],
+    ["builder", "Montar campanha"], ["simulador", "Simulador de oferta"],
+  ];
+  function mktPeriodo() { return state.periodo || (state.periodos[0] && state.periodos[0].periodo) || null; }
+  function scoreBar(s) {
+    var c = s >= 68 ? "var(--s1)" : s >= 45 ? "var(--s3)" : "var(--muted)";
+    return '<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:60px;height:7px;border-radius:4px;background:var(--line);display:inline-block;overflow:hidden"><span style="display:block;height:100%;width:' + Math.max(2, Math.min(100, s)) + '%;background:' + c + '"></span></span><b>' + (s == null ? "—" : s) + "</b></span>";
+  }
+  function classeChip(cl) {
+    var m = { HERO: "🥇", TRAFEGO: "🧲", OPORTUNIDADE: "📈", GIRO_URGENTE: "⏱️", PROTEGIDO: "🛡️", COMPLEMENTAR: "➕", DEFESA: "⚔️", GIRO: "•" };
+    return '<span class="chip">' + (m[cl] || "") + " " + esc(cl) + "</span>";
+  }
+  function tendChip(t) {
+    var m = { SUBINDO: ["▲", "var(--s1)"], CAINDO: ["▼", "var(--down)"], ESTAVEL: ["=", "var(--ink-2)"], SEM_BASE: ["·", "var(--muted)"] };
+    var x = m[t.rotulo] || m.SEM_BASE;
+    return '<span style="color:' + x[1] + '">' + x[0] + " " + (t.pct == null ? "s/ base" : (t.pct > 0 ? "+" : "") + t.pct + "%") + "</span>";
+  }
+  function feedsAviso(r) {
+    if (!r || !r.dados_ausentes_globais || !r.dados_ausentes_globais.length) return "";
+    return '<div class="result" style="background:#fff6e6;border-color:#f0c98a;color:#8a5a00;margin-bottom:14px">⚠ Sem alguns feeds — números pré-calculados só do que existe (a IA não completa nada):<ul style="margin:6px 0 0 18px">' +
+      r.dados_ausentes_globais.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>";
+  }
+  function prodRow(p) {
+    return "<tr><td>" + esc(p.descricao) + (p.ean ? '<div class="cs">EAN ' + p.ean + "</div>" : "") + "</td>" +
+      "<td>" + classeChip(p.classe) + "</td>" +
+      '<td class="num">' + int(p.unidades[30]) + "</td>" +
+      '<td class="num">R$ ' + brl(p.receita.d30) + "</td>" +
+      "<td>" + tendChip(p.tendencia) + "</td>" +
+      "<td>" + (p.cobertura_rotulo === "SEM_ESTOQUE" ? '<span class="cs">s/ feed</span>' : '<span class="tag">' + (p.cobertura_infinita ? "∞" : p.dias_cobertura + "d") + " · " + p.cobertura_rotulo + "</span>") + "</td>" +
+      "<td>" + (p.margem_pct == null ? '<span class="cs">s/ custo</span>' : pct(p.margem_pct * 100)) + "</td>" +
+      "<td>" + scoreBar(p.opportunity.score) + ' <span class="cs">conf ' + p.opportunity.confianca + "</span></td></tr>";
+  }
+  function prodTable(items, cols) {
+    if (!items || !items.length) return '<div class="empty">Nada aqui neste período.</div>';
+    return '<table class="tbl"><thead><tr><th>Produto</th><th>Classe</th><th class="num">Un 30d</th><th class="num">Receita 30d</th><th>Tendência</th><th>Cobertura</th><th>Margem</th><th>Opportunity</th></tr></thead><tbody>' +
+      items.map(prodRow).join("") + "</tbody></table>";
+  }
+  async function mktFetch(path) {
+    if (mkt.cache[path]) return mkt.cache[path];
+    var d = await getJSON(path);
+    mkt.cache[path] = d;
+    return d;
+  }
+  function renderMarketing() {
+    state.view = "marketing";
+    document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === "marketing"); });
+    var ym = mktPeriodo();
+    if (!state.loja || !ym) { view.innerHTML = '<div class="page-head"><div><h1>🎯 Marketing</h1></div></div><div class="empty">Suba um relatório de vendas primeiro.</div>'; return; }
+    view.innerHTML =
+      '<div class="page-head"><div><h1>🎯 Marketing Intelligence</h1><div class="sub">' + esc(state.loja) + " · decisões de anúncio a partir de sinais de venda/estoque/margem · camada determinística (a IA não inventa número)</div></div></div>" +
+      '<div class="tabs" id="mktTabs">' + MKT_TABS.map(function (t) { return '<button data-mtab="' + t[0] + '"' + (t[0] === mkt.tab ? ' class="active"' : "") + ">" + t[1] + "</button>"; }).join("") + "</div>" +
+      '<div id="mktBody"><div class="empty">Carregando…</div></div>';
+    view.querySelectorAll("[data-mtab]").forEach(function (b) {
+      b.addEventListener("click", function () { mkt.tab = b.getAttribute("data-mtab"); renderMarketing(); });
+    });
+    mktBody(ym);
+  }
+  async function mktBody(ym) {
+    var host = view.querySelector("#mktBody");
+    var L = encodeURIComponent(state.loja);
+    try {
+      if (mkt.tab === "produtos" || mkt.tab === "recomendados") {
+        var url = mkt.tab === "recomendados" ? "/api/marketing/" + L + "/" + ym + "/recommended-products" : "/api/marketing/" + L + "/" + ym + "/produtos?limite=150";
+        var d = await mktFetch(url);
+        host.innerHTML = feedsAviso(d) + '<div class="card">' + prodTable(d.produtos) + "</div>";
+      } else if (mkt.tab === "nao-anunciar") {
+        var d = await mktFetch("/api/marketing/" + L + "/" + ym + "/do-not-promote");
+        host.innerHTML = feedsAviso(d) + '<div class="card">' + (d.produtos.length ? d.produtos.map(function (p) {
+          return '<div class="dnp-item" style="padding:10px 0;border-bottom:1px solid var(--line)"><b>' + esc(p.descricao) + "</b> " + classeChip(p.classe) +
+            "<ul style=\"margin:6px 0 0 18px\">" + p.do_not_promote.motivos.map(function (m) { return "<li>" + esc(m.texto) + ' <span class="cs">(' + esc(m.evidencia.campo) + " · " + esc(m.evidencia.periodo) + ")</span></li>"; }).join("") + "</ul>" +
+            (p.do_not_promote.substituto ? '<div class="cs" style="margin-top:4px">↳ usar no lugar: <b>' + esc(p.do_not_promote.substituto.descricao) + "</b> (opportunity " + p.do_not_promote.substituto.opportunity_score + ")</div>" : "") + "</div>";
+        }).join("") : '<div class="empty">Nenhum produto bloqueado neste período — nada com risco de ruptura ou margem negativa detectável com os feeds atuais.</div>') + "</div>";
+      } else if (mkt.tab === "estoque-parado") {
+        var d = await mktFetch("/api/marketing/" + L + "/" + ym + "/stagnant-stock");
+        var proxy = d.modo === "sem_giro_proxy";
+        host.innerHTML = feedsAviso(d) +
+          (proxy ? '<div class="result" style="margin-bottom:12px">Sem feed de estoque: mostrando <b>produtos sem giro</b> (nenhuma venda há 45+ dias) como proxy.</div>' : "") +
+          '<div class="card">' + (d.produtos.length ? '<table class="tbl"><thead><tr><th>Produto</th><th>Categoria</th>' + (proxy ? "<th>Sem venda há</th>" : '<th class="num">Cobertura</th><th class="num">Capital parado</th>') + "</tr></thead><tbody>" +
+            d.produtos.map(function (p) {
+              return "<tr><td>" + esc(p.descricao) + "</td><td>" + esc(p.categoria) + "</td>" +
+                (proxy ? "<td>" + p.dias_sem_venda + "d</td>" : '<td class="num">' + (p.cobertura_infinita ? "∞" : p.dias_cobertura + "d") + '</td><td class="num">' + (p.capital_parado == null ? "—" : "R$ " + brl(p.capital_parado)) + "</td>") + "</tr>";
+            }).join("") + "</tbody></table>" : '<div class="empty">Nada parado detectável.</div>') + "</div>";
+      } else if (mkt.tab === "cestas") {
+        var b = await mktFetch("/api/marketing/" + L + "/" + ym + "/baskets");
+        var c = await mktFetch("/api/marketing/" + L + "/" + ym + "/combos");
+        host.innerHTML =
+          (b.erro ? '<div class="result err" style="margin-bottom:12px">' + esc(b.erro) + "</div>" : '<div class="cs" style="margin-bottom:10px">Janela ' + esc(b.janela.inicio) + " a " + esc(b.janela.fim) + " · " + int(b.total_cupons) + " cupons · " + b.pares.length + " pares acima do corte de ruído</div>") +
+          '<div class="card"><div class="chead"><div class="ci gold">🧺</div><div><h3>Pares (support / confidence / lift)</h3></div></div>' +
+          ((b.pares && b.pares.length) ? '<table class="tbl"><thead><tr><th>A</th><th>B</th><th class="num">Cupons A+B</th><th class="num">Support</th><th class="num">Confidence</th><th class="num">Lift</th></tr></thead><tbody>' +
+            b.pares.map(function (p) { return "<tr><td>" + esc(p.desc_a) + "</td><td>" + esc(p.desc_b) + '</td><td class="num">' + p.cupons_ab + '</td><td class="num">' + (p.support * 100).toFixed(2) + '%</td><td class="num">' + (p.confidence * 100).toFixed(1) + '%</td><td class="num"><b>' + p.lift + "×</b></td></tr>"; }).join("") + "</tbody></table>" : '<div class="empty">Sem pares acima do corte ainda (precisa de mais histórico).</div>') + "</div>" +
+          '<div class="card" style="margin-top:14px"><div class="chead"><div class="ci red">🔗</div><div><h3>Combos sugeridos</h3><div class="cs">par de cesta + retrato de marketing de cada perna</div></div></div>' +
+          ((c.combos && c.combos.length) ? c.combos.slice(0, 20).map(function (co) {
+            return '<div style="padding:8px 0;border-bottom:1px solid var(--line)"><b>' + esc(co.produto_a.descricao) + "</b> + <b>" + esc(co.produto_b.descricao) + "</b> " +
+              '<span class="tag">lift ' + co.lift + "×</span> " +
+              '<span class="cs">âncora: ' + (co.papel.ancora === "A" ? esc(co.produto_a.descricao) : esc(co.produto_b.descricao)) + "</span>" +
+              (co.alertas && co.alertas.length ? '<div class="cs" style="color:#b23">' + co.alertas.map(esc).join(" · ") + "</div>" : "") + "</div>";
+          }).join("") : '<div class="empty">' + esc(c.nota || "Sem combos.") + "</div>") + "</div>";
+      } else if (mkt.tab === "eficiencia") {
+        var d = await mktFetch("/api/marketing/" + L + "/campaign-efficiency");
+        host.innerHTML = '<div class="card">' + d.campanhas.map(function (e) {
+          if (e.erro) return '<div class="empty">' + esc(e.erro) + "</div>";
+          var vc = { EXCELENTE: "var(--s1)", BOA: "var(--s3)", ACEITAVEL: "var(--s5)", FRACA: "var(--muted)", DESTRUTIVA: "#d81f2a", INCONCLUSIVO: "var(--ink-2)" };
+          return '<div style="padding:12px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;align-items:center"><b>' + esc(e.campanha) + '</b><span class="tag" style="background:' + (vc[e.veredito] || "#ccc") + ';color:#fff">' + e.veredito + "</span></div>" +
+            '<div class="cs">' + esc((e.categorias || []).join(", ")) + " · janela " + esc(e.janela.inicio) + "→" + esc(e.janela.fim) + " · amostra " + (e.amostra.suficiente ? "ok" : "curta") + "</div>" +
+            '<div class="cx-metrs" style="margin-top:6px">' +
+            '<div class="cx-m"><span>DEMAND_LIFT receita</span><b>' + (e.metricas.DEMAND_LIFT_receita == null ? "—" : e.metricas.DEMAND_LIFT_receita + "×") + "</b></div>" +
+            '<div class="cx-m"><span>Receita média dia campanha</span><b>R$ ' + brl(e.metricas.receita_media_dia_campanha) + "</b></div>" +
+            '<div class="cx-m"><span>Receita média dia normal</span><b>R$ ' + brl(e.metricas.receita_media_dia_fora) + "</b></div>" +
+            '<div class="cx-m"><span>EFFICIENCY_SCORE</span><b>' + (e.metricas.EFFICIENCY_SCORE == null ? "—" : e.metricas.EFFICIENCY_SCORE) + "</b></div>" +
+            "</div>" +
+            (e.dados_ausentes.length ? '<div class="cs" style="margin-top:4px">sem: ' + e.dados_ausentes.map(esc).join("; ") + "</div>" : "") +
+            '<div class="cs" style="margin-top:4px">' + esc(e.aviso) + "</div></div>";
+        }).join("") + "</div>";
+      } else if (mkt.tab === "builder") {
+        host.innerHTML = renderBuilderForm();
+        wireBuilder(ym);
+      } else if (mkt.tab === "simulador") {
+        host.innerHTML = renderSimForm();
+        wireSim();
+      }
+    } catch (e) {
+      host.innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>";
+    }
+  }
+  function renderBuilderForm() {
+    var cats = ["Fraldas", "Leite Infantil", "Limpeza"];
+    return '<div class="card form-card"><form id="cbForm"><fieldset><legend>Parâmetros</legend><div class="rowf">' +
+      '<div><label class="f">Objetivo</label><select class="inp" name="objetivo">' +
+      ["GIRAR_ESTOQUE", "AUMENTAR_TICKET", "DEFENDER_CONCORRENCIA", "CONVERSAO", "LANCAMENTO"].map(function (o) { return "<option>" + o + "</option>"; }).join("") + "</select></div>" +
+      '<div><label class="f">Categorias (vírgula, opcional)</label><input class="inp" name="categorias" placeholder="' + cats.join(", ") + '"></div>' +
+      '</div></fieldset><button class="btn" type="submit">Montar elenco</button></form><div id="cbOut" style="margin-top:14px"></div></div>';
+  }
+  function wireBuilder(ym) {
+    view.querySelector("#cbForm").addEventListener("submit", async function (ev) {
+      ev.preventDefault();
+      var f = ev.target, out = view.querySelector("#cbOut");
+      out.innerHTML = '<div class="empty">Montando…</div>';
+      var qs = "objetivo=" + encodeURIComponent(f.objetivo.value);
+      if (f.categorias.value.trim()) qs += "&categorias=" + encodeURIComponent(f.categorias.value.trim());
+      try {
+        var d = await getJSON("/api/marketing/" + encodeURIComponent(state.loja) + "/" + ym + "/campaign-builder?" + qs);
+        out.innerHTML = feedsAviso(d) + ["CHAMARIZ", "HERO", "MARGEM", "GIRO", "COMPLEMENTAR", "DEFESA"].map(function (papel) {
+          var itens = d.elenco[papel] || [];
+          return '<div class="card" style="margin-bottom:10px"><div class="chead"><div class="ci red">' + papel[0] + '</div><div><h3>' + papel + " <span class=\"cs\">(" + itens.length + ")</span></h3></div></div>" +
+            (itens.length ? '<table class="tbl"><tbody>' + itens.map(function (it) {
+              return "<tr><td>" + esc(it.descricao) + (it.proxy ? ' <span class="tag">proxy</span>' : "") + '</td><td class="cs">' + esc(it.motivo) + '</td><td class="num">' + scoreBar(it.opportunity) + "</td></tr>";
+            }).join("") + "</tbody></table>" : '<div class="cs">— sem candidato (feed faltando ou categoria sem produto)</div>') + "</div>";
+        }).join("") +
+          (d.evitar.length ? '<div class="card"><div class="chead"><div class="ci gold">🚫</div><div><h3>NÃO anunciar (' + d.evitar.length + ")</h3></div></div><ul style=\"margin:0 0 0 18px\">" + d.evitar.slice(0, 15).map(function (e) { return "<li>" + esc(e.descricao) + ' <span class="cs">' + esc(e.motivos.join("; ")) + "</span></li>"; }).join("") + "</ul></div>" : "") +
+          '<div class="card" style="margin-top:10px"><div class="chead"><div class="ci">📋</div><div><h3>Briefing</h3></div></div><pre style="white-space:pre-wrap;font:13px/1.5 ui-monospace,monospace;margin:0">' + esc(d.briefing) + "</pre></div>";
+      } catch (e) { out.innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>"; }
+    });
+  }
+  function renderSimForm() {
+    return '<div class="card form-card"><form id="simForm"><fieldset><legend>Produto e oferta</legend><div class="rowf">' +
+      '<div><label class="f">EAN</label><input class="inp" name="ean" placeholder="7891..." required></div>' +
+      '<div><label class="f">Preço atual (R$)</label><input class="inp" name="preco_atual" type="number" step="0.01" required></div>' +
+      '<div><label class="f">Preço promocional (R$)</label><input class="inp" name="preco_promocional" type="number" step="0.01" required></div>' +
+      '</div><div class="rowf"><div><label class="f">Custo atual (R$, opcional)</label><input class="inp" name="custo_atual" type="number" step="0.01"></div>' +
+      '<div><label class="f">Estoque atual (opcional)</label><input class="inp" name="estoque_atual" type="number" step="1"></div>' +
+      '<div><label class="f">Duração (dias)</label><input class="inp" name="duracao_dias" type="number" value="4"></div>' +
+      '</div></fieldset><button class="btn" type="submit">Simular</button></form><div id="simOut" style="margin-top:14px"></div></div>';
+  }
+  function wireSim() {
+    view.querySelector("#simForm").addEventListener("submit", async function (ev) {
+      ev.preventDefault();
+      var f = ev.target, out = view.querySelector("#simOut");
+      out.innerHTML = '<div class="empty">Simulando…</div>';
+      var body = {};
+      ["ean", "preco_atual", "preco_promocional", "custo_atual", "estoque_atual", "duracao_dias"].forEach(function (k) {
+        var v = f[k].value.trim(); if (v) body[k] = k === "ean" ? v : Number(v);
+      });
+      try {
+        var r = await fetch("/api/marketing/" + encodeURIComponent(state.loja) + "/offer-simulator", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        var d = await r.json();
+        if (!r.ok) throw new Error(d.erro || ("HTTP " + r.status));
+        out.innerHTML =
+          '<div class="card"><div class="cs">' + esc(d.descricao || d.ean) + " · desconto <b>" + d.desconto_pct + "%</b> · âncora dos cenários: " + esc(d.ancora_cenarios.fonte) + "</div>" +
+          '<table class="tbl" style="margin-top:8px"><thead><tr><th>Cenário</th><th class="num">×demanda</th><th class="num">Unid. proj.</th><th class="num">Receita proj.</th><th class="num">Δ margem vs sem promo</th><th>Risco ruptura</th></tr></thead><tbody>' +
+          d.cenarios.map(function (c) {
+            return "<tr><td><b>" + c.cenario + '</b></td><td class="num">' + c.multiplicador_demanda + '×</td><td class="num">' + int(c.unidades_projetadas) + '</td><td class="num">R$ ' + brl(c.receita_projetada) + '</td><td class="num">' + (c.variacao_margem_vs_sem_promo == null ? "—" : "R$ " + brl(c.variacao_margem_vs_sem_promo)) + "</td><td>" + c.risco_ruptura + "</td></tr>";
+          }).join("") + "</tbody></table>" +
+          (d.dados_ausentes && d.dados_ausentes.length ? '<div class="cs" style="margin-top:6px">sem: ' + d.dados_ausentes.map(esc).join("; ") + "</div>" : "") +
+          '<div class="result" style="margin-top:10px;background:#fff6e6;border-color:#f0c98a;color:#8a5a00">' + esc(d.aviso) + "</div></div>";
+      } catch (e) { out.innerHTML = '<div class="result err">' + esc(e.message) + "</div>"; }
+    });
+  }
+
   // ---------- nav ----------
-  var VIEWS = ["painel", "conexoes", "analise", "upload", "historico", "config"];
+  var VIEWS = ["painel", "marketing", "conexoes", "analise", "upload", "historico", "config"];
   function go(v) {
     state.view = v;
     document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === v); });
     if (v === "painel") { if (state.data) renderPainel(); else loadAnalise(); }
+    else if (v === "marketing") { mkt.cache = {}; renderMarketing(); }
     else if (v === "conexoes") renderConexoes();
     else if (v === "analise") renderAnalise();
     else if (v === "upload") renderUpload();
@@ -992,11 +1185,13 @@
       LS.setItem("va_loja", state.loja);
       if (state.view === "analise") { renderAnalise(); loadPeriodos(); }
       else if (state.view === "conexoes") { renderConexoes(); loadPeriodos(); }
+      else if (state.view === "marketing") { mkt.cache = {}; loadPeriodos().then(function () { renderMarketing(); }); }
       else loadPeriodos();
     });
     selPeriodo.addEventListener("change", function () {
       state.periodo = selPeriodo.value;
       if (state.view === "conexoes") { state.conexoesFocus = null; renderConexoes(selPeriodo.value); }
+      else if (state.view === "marketing") { mkt.cache = {}; renderMarketing(); }
       else loadAnalise();
     });
     document.getElementById("btn-sair").addEventListener("click", function () {

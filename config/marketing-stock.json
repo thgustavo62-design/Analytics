@@ -1,0 +1,20 @@
+{
+  "_nota": "Fase 2 — limiares de dias de cobertura (days-of-cover = estoque_disponivel / venda_media_diaria_30d). 'default' vale para toda categoria; 'por_categoria' sobrescreve. 'campanha_dias_min' = quantos dias de estoque uma campanha precisa ter para não gerar ruptura (usado no do-not-promote e no Campaign Builder). 'sem_giro_dias' = dias sem nenhuma venda para o produto entrar na lista de 'estoque parado' quando não há feed de estoque.",
+  "default": {
+    "ruptura": 7,
+    "atencao": 12,
+    "normal_min": 12,
+    "normal_max": 60,
+    "oportunidade": 60,
+    "parado": 120
+  },
+  "por_categoria": {
+    "Fraldas":        { "ruptura": 10, "atencao": 18, "normal_max": 75, "oportunidade": 75, "parado": 150 },
+    "Leite Infantil": { "ruptura": 10, "atencao": 18, "normal_max": 75, "oportunidade": 75, "parado": 150 },
+    "Limpeza":        { "ruptura": 7,  "atencao": 14, "normal_max": 90, "oportunidade": 90, "parado": 180 },
+    "Medicamentos/Outros": { "ruptura": 5, "atencao": 10, "normal_max": 45, "oportunidade": 45, "parado": 120 }
+  },
+  "campanha_dias_min": 4,
+  "sem_giro_dias": 45,
+  "margem_pct_minima_para_anunciar": 0.06
+}

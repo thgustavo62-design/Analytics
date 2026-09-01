@@ -1,0 +1,22 @@
+{
+  "_nota": "Fase 2 — Marketing Opportunity Score (0–100). Cada componente é calculado no backend em [0,1] (a IA nunca inventa nada), multiplicado pelo peso e somado. 'confianca' = soma dos pesos dos componentes que tinham dado real ÷ soma total dos pesos. Ajuste os pesos aqui sem tocar no código. Um componente sem dado (ex.: margem sem custo cadastrado) entra como neutro (0.5) e é listado em 'dados_ausentes'.",
+  "pesos": {
+    "demanda": 0.22,
+    "tendencia": 0.18,
+    "margem": 0.15,
+    "estoque": 0.15,
+    "campanha_historica": 0.12,
+    "concorrencia": 0.08,
+    "cesta": 0.10
+  },
+  "tendencia": { "limite_pct": 15 },
+  "margem": { "piso_pct": 0.0, "teto_pct": 0.40 },
+  "rotulos": { "alto": 68, "medio": 45 },
+  "classe_thresholds": {
+    "hero_percentil_receita": 0.85,
+    "trafego_percentil_cupons": 0.85,
+    "oportunidade_tendencia_pct": 25,
+    "giro_urgente_cobertura": 90,
+    "complementar_percentil_receita": 0.35
+  }
+}

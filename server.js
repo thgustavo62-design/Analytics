@@ -161,7 +161,7 @@ async function parseVendasFile(loja, ano, mes, file) {
   return parsed;
 }
 // Fase 2: grava (só chamada depois que tudo que podia falhar já passou).
-function persistirVendas(periodoId, parsed) {
+function persistirVendas(periodoId, parsed, loja) {
   replaceVendas(periodoId, parsed.rows);
   setVendasMeta(periodoId, {
     lastDay: parsed.lastDay,
@@ -170,12 +170,28 @@ function persistirVendas(periodoId, parsed) {
     printedTotal: parsed.printedTotal,
     geradoEm: parsed.headerTimestamp,
   });
+  // Fase 1/4: mesmo caminho do watcher — mantém catálogo (EAN) e cesta em dia também no
+  // upload manual (antes só o watcher da inbox fazia isso).
+  let catalogo = null;
+  try {
+    catalogo = require("./catalogo").sincronizarProdutosDeVendas(periodoId);
+  } catch (e) {
+    console.error("[upload] sincronização de catálogo:", e.message);
+  }
+  if (loja) {
+    try {
+      require("./basket").calcularCesta(loja);
+    } catch (e) {
+      console.error("[upload] cesta:", e.message);
+    }
+  }
   return {
     linhas: parsed.rows.length,
     total: parsed.total,
     printedTotal: parsed.printedTotal,
     lastDayPartial: parsed.lastDayPartial,
     lastDayMotivo: parsed.lastDayMotivo,
+    catalogo,
   };
 }
 
@@ -222,7 +238,7 @@ app.post("/upload/analise", campos, async (req, res) => {
     const periodoId = getOrCreatePeriodo(loja, ano, mes);
     const resultado = { ok: true, loja, periodo: periodoSlug(ano, mes) };
 
-    if (parsedVendas) resultado.vendas = persistirVendas(periodoId, parsedVendas);
+    if (parsedVendas) resultado.vendas = persistirVendas(periodoId, parsedVendas, loja);
     if (instagram) {
       const metricas = normalizeInstagram(instagram);
       replaceInstagram(periodoId, metricas);
@@ -252,7 +268,7 @@ app.post("/upload/vendas", upload.single("arquivo"), async (req, res) => {
     if (!req.file) throw httpErr(400, "Arquivo 'arquivo' (PDF) obrigatório.");
     const parsed = await parseVendasFile(loja, ano, mes, req.file);
     const periodoId = getOrCreatePeriodo(loja, ano, mes);
-    res.json({ ok: true, vendas: persistirVendas(periodoId, parsed) });
+    res.json({ ok: true, vendas: persistirVendas(periodoId, parsed, loja) });
   } catch (e) {
     res.status(e.status || 500).json({ erro: e.message });
   }
@@ -345,6 +361,162 @@ app.post("/api/catalogo/produtos/:id", (req, res) => {
     if (k in req.body) campos[k] = req.body[k];
   }
   res.json(dbCat.produtoEfetivo(dbCat.setProdutoOverride(id, campos)));
+});
+
+// --- Fase 2/3/4: Marketing Intelligence (camada determinística; a IA não entra aqui) ---
+const mpa = require("./marketing-product-analytics");
+const basket = require("./basket");
+const campanhasEng = require("./campanhas");
+
+// contexto opcional que enriquece o Opportunity Score: pressão de concorrência + cesta
+function contextoMarketing(loja, ym) {
+  const ctx = {};
+  const m = String(ym || "").match(/^(\d{4})-(\d{2})$/);
+  let per = m ? findPeriodo(loja, +m[1], +m[2]) : null;
+  if (!per) {
+    const ps = listPeriodos(loja);
+    if (ps.length) per = findPeriodo(loja, ps[0].ano, ps[0].mes);
+  }
+  if (per) {
+    const conc = getConcorrencia(per.id);
+    if (conc.length) {
+      const cats = new Set();
+      for (const o of conc) if (o.abaixo_do_nosso && o.categoria) cats.add(o.categoria);
+      ctx.concorrenciaCategorias = cats;
+    }
+  }
+  try {
+    const c = basket.centralidade(loja);
+    if (c && c.size) ctx.cestaCentralidade = c;
+  } catch (e) {}
+  return ctx;
+}
+
+function lojaOk(req, res) {
+  if (!LOJAS_VALIDAS.includes(req.params.loja)) {
+    res.status(404).json({ erro: "loja desconhecida" });
+    return false;
+  }
+  return true;
+}
+
+app.get("/api/marketing/:loja/:periodo/produtos", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const ctx = contextoMarketing(req.params.loja, req.params.periodo);
+  const r = mpa.analisarProdutos(req.params.loja, { ...ctx, limite: +req.query.limite || 0 });
+  if (r.erro) return res.status(404).json(r);
+  if (req.query.classe) r.produtos = r.produtos.filter((p) => p.classe === req.query.classe);
+  if (req.query.categoria) r.produtos = r.produtos.filter((p) => p.categoria === req.query.categoria);
+  if (req.query.limite) r.produtos = r.produtos.slice(0, +req.query.limite);
+  res.json(r);
+});
+
+app.get("/api/marketing/:loja/:periodo/recommended-products", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const ctx = contextoMarketing(req.params.loja, req.params.periodo);
+  const r = mpa.recomendados(req.params.loja, { ...ctx, limite: +req.query.limite || 40 });
+  res.status(r.erro ? 404 : 200).json(r);
+});
+
+app.get("/api/marketing/:loja/:periodo/do-not-promote", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const ctx = contextoMarketing(req.params.loja, req.params.periodo);
+  const r = mpa.naoAnunciar(req.params.loja, ctx);
+  res.status(r.erro ? 404 : 200).json(r);
+});
+
+app.get("/api/marketing/:loja/:periodo/stagnant-stock", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const ctx = contextoMarketing(req.params.loja, req.params.periodo);
+  const r = mpa.estoqueParado(req.params.loja, ctx);
+  res.status(r.erro ? 404 : 200).json(r);
+});
+
+app.get("/api/marketing/:loja/:periodo/products/:ean", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const ctx = contextoMarketing(req.params.loja, req.params.periodo);
+  const r = mpa.produtoPorEan(req.params.loja, req.params.ean, ctx);
+  res.status(r.erro ? 404 : 200).json(r);
+});
+
+// Fase 4 — cesta
+app.get("/api/marketing/:loja/:periodo/baskets", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const r = basket.calcularCesta(req.params.loja, { janelaDias: +req.query.janela || undefined });
+    res.status(r.erro ? 422 : 200).json(r);
+  } catch (e) {
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+app.get("/api/marketing/:loja/:periodo/combos", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const ctx = contextoMarketing(req.params.loja, req.params.periodo);
+    res.json(basket.combos(req.params.loja, { ...ctx, limite: +req.query.limite || 60 }));
+  } catch (e) {
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// Fase 3 — campanhas: eficiência, builder, simulador
+app.get("/api/marketing/:loja/campaign-efficiency", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const janelaDias = +req.query.janela || undefined;
+  if (req.query.nome) return res.json(campanhasEng.eficienciaCalendario(req.params.loja, { nome: req.query.nome, janelaDias }));
+  res.json({ loja: req.params.loja, campanhas: campanhasEng.eficienciaTodasDoCalendario(req.params.loja, { janelaDias }) });
+});
+
+app.get("/api/marketing/:loja/:periodo/campaign-builder", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const ctx = contextoMarketing(req.params.loja, req.params.periodo);
+  const categorias = req.query.categorias ? String(req.query.categorias).split(",").map((s) => s.trim()).filter(Boolean) : null;
+  const r = campanhasEng.campaignBuilder(req.params.loja, { ...ctx, objetivo: req.query.objetivo, categorias });
+  res.status(r.erro ? 404 : 200).json(r);
+});
+
+app.post("/api/marketing/:loja/offer-simulator", express.json({ limit: "1mb" }), (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const r = campanhasEng.offerSimulator(req.params.loja, req.body || {});
+    res.status(r.erro ? 400 : 200).json(r);
+  } catch (e) {
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// CRUD leve de campanhas persistidas
+app.get("/api/marketing/:loja/campaigns", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  res.json(dbCat.listCampanhas(req.params.loja));
+});
+app.get("/api/marketing/:loja/campaigns/:id", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const c = dbCat.getCampanha(+req.params.id);
+  if (!c || c.loja !== req.params.loja) return res.status(404).json({ erro: "campanha não encontrada" });
+  res.json(c);
+});
+app.post("/api/marketing/:loja/campaigns", express.json({ limit: "1mb" }), (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const b = req.body || {};
+  if (!b.nome) return res.status(400).json({ erro: "nome obrigatório" });
+  const id = dbCat.criarCampanha(req.params.loja, b);
+  for (const p of b.produtos || []) if (p.produto_id) dbCat.addCampanhaProduto(id, p);
+  res.json(dbCat.getCampanha(id));
+});
+app.patch("/api/marketing/:loja/campaigns/:id", express.json({ limit: "1mb" }), (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const c = dbCat.getCampanha(+req.params.id);
+  if (!c || c.loja !== req.params.loja) return res.status(404).json({ erro: "campanha não encontrada" });
+  res.json(dbCat.atualizarCampanha(+req.params.id, req.body || {}));
+});
+app.delete("/api/marketing/:loja/campaigns/:id", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const c = dbCat.getCampanha(+req.params.id);
+  if (!c || c.loja !== req.params.loja) return res.status(404).json({ erro: "campanha não encontrada" });
+  dbCat.removerCampanha(+req.params.id);
+  res.json({ ok: true });
 });
 
 // --- Fase 2: Motor de Análise Comercial (o backend só recebe/valida/guarda/serve o JSON) ---
@@ -747,6 +919,15 @@ app.listen(PORT, () => {
     console.log(`  motor:   análise comercial via ${ANALISE_MODEL}${process.env.AUTO_ANALISE === "0" ? " (auto DESLIGADO)" : " (auto ligado — AUTO_ANALISE=0 desliga)"}`);
   } else {
     console.log(`  motor:   ANTHROPIC_API_KEY não definida — análise comercial só entra por JSON (inbox / POST)`);
+  }
+  // Fase 3: espelha o calendário recorrente de config/lojas.json na tabela campanhas (idempotente)
+  try {
+    for (const loja of LOJAS_VALIDAS) {
+      const n = dbCat.importarCalendarioCampanhas(loja, (LOJAS_CFG[loja] || {}).campanhas || []);
+      if (n) console.log(`  campanhas: ${n} do calendário de ${loja} importadas`);
+    }
+  } catch (e) {
+    console.error("[boot] importar calendário de campanhas:", e.message);
   }
   startWatcher(INBOX_DIR);
   setTimeout(verificacaoAnaliseComercial, 30000);

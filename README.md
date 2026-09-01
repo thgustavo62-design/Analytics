@@ -77,6 +77,26 @@ Variáveis de ambiente:
 
 - **Painel** — 4 cartões de resumo + abas (Visão Geral · Vendas · Redes Sociais ·
   Concorrência · Categorias · Top Produtos · Tendência). Abre no **mês corrente**.
+- **Marketing** (Fases 2–4 — camada determinística: sinal de venda/estoque/margem →
+  decisão de anúncio, a IA não entra aqui) — abas:
+  - *Produtos* / *Recomendados* — Opportunity Score (0–100, com os 7 componentes e a fonte
+    de cada um), classe de marketing (HERO/TRÁFEGO/OPORTUNIDADE/GIRO_URGENTE/
+    PROTEGIDO/COMPLEMENTAR/DEFESA/GIRO), tendência, cobertura, margem.
+  - *Não anunciar* — produtos bloqueados (ruptura, margem baixa, sem giro) com motivo,
+    evidência e substituto sugerido.
+  - *Estoque parado* — capital parado por cobertura (ou "sem giro 45d+" quando não há feed
+    de estoque) com ações de marketing sugeridas.
+  - *Cestas & Combos* — support/confidence/lift por par de produtos, com o retrato de
+    marketing de cada perna.
+  - *Eficiência* — DEMAND_LIFT / EFFICIENCY_SCORE de cada campanha do calendário, veredito
+    EXCELENTE→DESTRUTIVA.
+  - *Montar campanha* — Campaign Builder: elenco por papel (CHAMARIZ/HERO/MARGEM/GIRO/
+    COMPLEMENTAR/DEFESA) + lista de evitar + briefing pronto.
+  - *Simulador de oferta* — cenários conservador/provável/agressivo a partir do lift
+    histórico da categoria; nunca promete venda futura.
+  - Números que dependem de estoque/custo/preço (ainda sem feed) aparecem `null` com aviso
+    explícito — nunca estimados. Ver [`docs/marketing-opportunity.md`](docs/marketing-opportunity.md)
+    e [`docs/campaign-engine.md`](docs/campaign-engine.md).
 - **Conexões** — mapa de objetos interligados (estilo Palantir): loja, categorias, canais,
   campanhas, concorrentes, sinais e os achados da Análise Comercial, todos como nós de um
   grafo ligados pelo que cada um toca (categoria ↔ campanha que a promove, concorrente ↔
@@ -164,6 +184,10 @@ analytics-deep.js    agregados profundos p/ o Motor (ticket mediano, baseline c/
                      operadores, resumo da coleta de concorrentes)
 motor.js             gera o JSON via API da Anthropic a partir dos agregados profundos (opt-in por ANTHROPIC_API_KEY)
 ontologia.js         monta o grafo de objetos interligados da tela "Conexões" (nós + arestas com significado + cruzamentos)
+catalogo.js          catálogo de produto por EAN (Fase 1): popula de vendas + ingere planilhas de estoque/custo/preço
+marketing-product-analytics.js  Fase 2: janelas por produto, tendência, days-of-cover, margem, classes, Opportunity Score
+campanhas.js         Fase 3: eficiência do calendário, Campaign Builder, Offer Simulator
+basket.js            Fase 4: cesta (support/confidence/lift), centralidade, combos
 db.js                node:sqlite — acesso, sempre por loja/período
 schema.sql           tabelas
 parsers/vendas.js    PDF "Analítico de Vendas" -> transações + empresa (CNPJ) + validação da soma
@@ -173,14 +197,18 @@ classify.js          classificador de categoria (config/categorias.json)
 aggregate.js         transações -> KPIs, série diária, dia da semana, categorias, top produtos
 insights.js          3 regras automáticas -> cards (config/insights.json)
 match.js             casamento de nome de produto (Jaccard de tokens + marca), portado do app_minasfarma
-config/              categorias.json · insights.json · lojas.json (cnpj, dias de campanha, horaFechamento, concorrentes)
-public/              index.html (app shell) · app.js · styles.css · upload.html (redireciona p/ #upload)
-inbox/               pasta observada (LEIA-ME.txt versionado; o resto é ignorado)
-test/                vendas.test.js (soma == Total impresso) · concorrentes.test.js (filtro de marca, datas, preços)
+config/              categorias.json · insights.json · lojas.json (cnpj, dias de campanha, horaFechamento, concorrentes) ·
+                     catalogo.json · marketing-stock.json · opportunity-score.json · basket-analysis.json
+public/              index.html (app shell) · app.js (Painel/Marketing/Conexões/Análise/Upload/Histórico/Config) · styles.css
+inbox/               pasta observada (LEIA-ME.txt versionado; o resto é ignorado) — inclui Estoque_/Custo_/Precos_*.xlsx
+test/                vendas.test.js · catalogo.test.js · marketing-product.test.js · basket.test.js · campanhas.test.js · concorrentes.test.js
 data/                analytics.db · inbox-log.json · uploads/<loja>/<ano-mes>/ (gitignored)
 prompts/             motor-analise-comercial.md — system prompt + contrato da Fase 2 (referência p/ a tarefa que gera o JSON)
 schemas/             analise-comercial.example.json — exemplo do JSON (fixture dos testes)
 docs/integracoes.md  ferramentas que dá para plugar (WhatsApp, Instagram API, Postgres do ERP, túnel, backup…)
+docs/EVOLUCAO-INTELLIGENCE.md  mapa vivo da evolução p/ Marketing Intelligence & Decision Engine (fases, migrations, riscos)
+docs/marketing-opportunity.md  referência do Opportunity Score, classes e do-not-promote (Fase 2)
+docs/campaign-engine.md        referência de eficiência, Campaign Builder e Offer Simulator (Fase 3)
 ```
 
 ## Testes

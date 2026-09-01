@@ -1,0 +1,13 @@
+{
+  "_nota": "Fase 4 — Market Basket por 'lancamento' (cupom). support = cupons com A e B ÷ total de cupons; confidence(A→B) = cupons(A,B) ÷ cupons(A); lift = confidence ÷ support(B). Os limites evitam ruído: só entra par com amostra e sinal suficientes. 'janela_dias' = janela padrão olhada para trás a partir do último dia com venda.",
+  "janela_dias": 90,
+  "min_cupons_total": 200,
+  "min_cupons_par": 6,
+  "min_cupons_isolado": 15,
+  "min_support": 0.001,
+  "min_confidence": 0.08,
+  "min_lift": 1.3,
+  "max_produtos": 400,
+  "max_pares_materializados": 600,
+  "trios": { "habilitado": true, "min_cupons": 6, "min_lift": 1.6, "max": 60 }
+}

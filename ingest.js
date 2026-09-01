@@ -105,8 +105,17 @@ async function ingestVendas(filePath, { lojaForcada = null } = {}) {
     atualizados.push({ loja, periodo: ym, linhas: mrows.length, catalogo });
   }
 
+  // Fase 4: re-materializa a cesta (support/confidence/lift) da loja com a janela nova
+  let cesta = null;
+  try {
+    cesta = require("./basket").calcularCesta(loja);
+  } catch (e) {
+    console.error("[ingest] cesta:", e.message);
+  }
+
   return {
     tipo: "vendas",
+    cesta: cesta && !cesta.erro ? { pares: cesta.pares.length, cupons: cesta.total_cupons } : null,
     loja,
     empresa: parsed.empresa,
     arquivoTotal: parsed.total,

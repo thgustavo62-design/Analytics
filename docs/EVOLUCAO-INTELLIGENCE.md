@@ -17,16 +17,20 @@ plano de fases. Atualizado a cada fase concluída.
 | Camada determinística | `aggregate.js` (KPIs, série diária, dia da semana, categorias, top 15), `analytics-deep.js` (`analiseProfunda`: ticket médio/mediano, baseline semanal c/ desvio, Pareto, incrementalidade intradiária por campanha, canais convênio/delivery/balcão, concentração cliente/convênio, operadores, resumo de concorrentes), `classify.js` (categoria por palavra-chave, `config/categorias.json`), `insights.js` (4 regras → cards). |
 | Camada de inteligência (LLM) | `motor.js` + `prompts/motor-analise-comercial.md` + `validate-analise.js` | `analytics-deep.js` agrega → `motor.js` chama a API da Anthropic passando **só os agregados** → JSON validado (`analises_comerciais`). Opt-in por `ANTHROPIC_API_KEY`. |
 | Grafo | `ontologia.js` + `GET /api/ontologia/:loja/:periodo` | Nós: loja, categoria, canal, campanha, concorrente, sinal, + achados da Análise Comercial. Arestas com significado (`promove`, `pressiona`, `afeta`, …) + cruzamentos ("Campanha sob pressão em X"). |
-| Servidor | `server.js` | Auth por senha (`1234`), `buildAnalise()`, exports `.html`, verificação diária. ~20 rotas. |
+| Catálogo (Fase 1) | `catalogo.js` | `produtos` por EAN a partir das vendas; ingestão de planilhas de estoque/custo/preço (`config/catalogo.json`). |
+| Marketing (Fase 2) | `marketing-product-analytics.js` | Janelas por produto, tendência, days-of-cover, margem, classes, Opportunity Score, do-not-promote, substituição, estoque parado. |
+| Campanhas (Fase 3) | `campanhas.js` + tabelas `campanhas`/`campanha_produtos`/`campanha_resultados` | Eficiência do calendário, Campaign Builder, Offer Simulator. |
+| Cesta (Fase 4) | `basket.js` + tabela `cesta_pares` | Support/confidence/lift, centralidade, combos. |
+| Servidor | `server.js` | Auth por senha (`1234`), `buildAnalise()`, exports `.html`, verificação diária. ~40 rotas (inclui `/api/marketing/...`). |
 
 ### Frontend (`public/`, vanilla JS + SVG à mão, sem build)
-- `app.js` (~1000 linhas): app shell, roteamento por hash, gráficos SVG, grafo de Conexões, tela de Análise Comercial.
-- Telas: **Painel** (abas), **Conexões** (grafo radial), **Análise Comercial**, **Upload**, **Histórico**, **Configurações**.
+- `app.js` (~1150 linhas): app shell, roteamento por hash, gráficos SVG, grafo de Conexões, tela de Análise Comercial, tela de Marketing.
+- Telas: **Painel** (abas), **Marketing** (Produtos/Recomendados/Não anunciar/Estoque parado/Cestas & Combos/Eficiência/Montar campanha/Simulador), **Conexões** (grafo radial), **Análise Comercial**, **Upload**, **Histórico**, **Configurações**.
 
 ### Config
-`config/lojas.json` (cnpj, `horaFechamento`, `concorrentes[]`, **`campanhas[{nome,dias,categorias}]`**), `config/categorias.json`, `config/insights.json`.
+`config/lojas.json` (cnpj, `horaFechamento`, `concorrentes[]`, **`campanhas[{nome,dias,categorias}]`**), `config/categorias.json`, `config/insights.json`, `config/catalogo.json`, `config/marketing-stock.json`, `config/opportunity-score.json`, `config/basket-analysis.json`.
 
-### Testes: 16 (`node --test`), fixtures = PDFs reais de agosto/2026.
+### Testes: 40 (`node --test`), fixtures = PDFs reais de agosto/2026.
 
 ---
 
@@ -103,10 +107,10 @@ uma dessas fontes sem mexer no código.
 
 | Fase | Entrega | Toca |
 |---|---|---|
-| **1 · Data Foundation** *(em andamento)* | Tabelas de produto/estoque/custo/preço. `catalogo.js`: popular `produtos` a partir dos `barras` das vendas (EAN → produto, categoria pelo classificador). Ingester configurável para estoque/custo/preço (`config/catalogo.json`). Correção manual prevalece. `GET /api/catalogo`. | `schema.sql`, `db.js`, `ingest.js`, novo `catalogo.js`, `config/catalogo.json`, teste novo. |
-| **2 · Marketing Product Intelligence** | `marketing-product-analytics.js`: unidades/receita 7/14/30/60/90d, venda média diária, tendência, days-of-cover (`config/marketing-stock.json`), margem (se houver custo), classificações (HERO/TRAFEGO/OPORTUNIDADE/GIRO_URGENTE/PROTEGIDO/COMPLEMENTAR/DEFESA), Opportunity Score com **componentes** (`config/opportunity-score.json`), `do-not-promote`, motor de substituição, estoque parado → ações. | novo módulo + `config/*.json` + rotas `/api/marketing/...` + testes. |
-| **3 · Campaigns** | Campanha vira entidade (`campanhas`/`campanha_produtos`/`campanha_resultados`), importa de `config/lojas.json`. Sell-through, eficiência (EFFICIENCY/DEMAND_LIFT/SELL_THROUGH/MARGIN_SACRIFICE/STOCK_IMPACT), **Campaign Builder**, **Simulador de oferta** (cenários conservador/provável/agressivo), previsão de estoque pós-campanha (faixas). | migrations + módulos + telas em **MARKETING**. |
-| **4 · Basket** | Market Basket por `lancamento`: support/confidence/lift (pares, trios se viável), com mínimos configuráveis. Combos inteligentes (cesta + estoque + margem + campanha). | `basket.js` + `config/basket-analysis.json` + materialização + testes. |
+| **1 · Data Foundation** ✅ | Tabelas de produto/estoque/custo/preço. `catalogo.js`: popular `produtos` a partir dos `barras` das vendas (EAN → produto, categoria pelo classificador). Ingester configurável para estoque/custo/preço (`config/catalogo.json`). Correção manual prevalece. `GET /api/catalogo`. | `schema.sql`, `db.js`, `ingest.js`, novo `catalogo.js`, `config/catalogo.json`, teste novo. |
+| **2 · Marketing Product Intelligence** ✅ | `marketing-product-analytics.js`: unidades/receita 7/14/30/60/90d, venda média diária, tendência, days-of-cover (`config/marketing-stock.json`), margem (se houver custo), classificações (HERO/TRAFEGO/OPORTUNIDADE/GIRO_URGENTE/PROTEGIDO/COMPLEMENTAR/DEFESA), Opportunity Score com **componentes** (`config/opportunity-score.json`), `do-not-promote`, motor de substituição, estoque parado → ações. | novo módulo + `config/*.json` + rotas `/api/marketing/...` + testes. |
+| **3 · Campaigns** ✅ | Campanha vira entidade (`campanhas`/`campanha_produtos`/`campanha_resultados`), importa de `config/lojas.json`. Eficiência (EFFICIENCY_SCORE/DEMAND_LIFT, SELL_THROUGH/MARGIN_SACRIFICE/STOCK_IMPACT quando há estoque/custo), **Campaign Builder**, **Simulador de oferta** (cenários conservador/provável/agressivo). | migrations + `campanhas.js` + rotas + tela **Marketing**. |
+| **4 · Basket** ✅ | Market Basket por cupom (`data+lancamento`): support/confidence/lift (pares; trios preparados, sem amostra ainda), com mínimos configuráveis (incl. mínimo por produto isolado, contra ruído). Combos inteligentes (cesta + classe/cobertura/margem da Fase 2). | `basket.js` + `config/basket-analysis.json` + materialização + testes. |
 | **5 · Intelligence Foundation** | `intelligence_events`, `intelligence_signals`, `intelligence_evidence`. Detectores determinísticos (CREATIVE_FATIGUE, COMPETITOR_PRICE_ATTACK, CATEGORY_DECLINE/GROWTH, STOCK_RISK, STAGNANT_STOCK, CAMPAIGN_OVER/UNDERPERFORMANCE, DEMAND_ANOMALY, MARKETING/CROSS_SELL_OPPORTUNITY, CONTRADICTION). Severidade e `confidence` por regra quantitativa. Priority Engine. | `intelligence/` (novo dir) + `config/intelligence.json` + rotas `/api/intelligence/...`. |
 | **6 · Investigation** | `investigations` + `hypotheses` + contradiction engine + evidence lineage + endpoint "Por quê?" (árvore navegável). | módulos + rotas + tela **Investigations**. |
 | **7 · Ontology 2.0** | Persistir o grafo (nós/arestas com `strength`/`confidence`/temporalidade). Novos tipos (PRODUTO, MARCA, SUBCATEGORIA, CRIATIVO, CONTEUDO, INSTAGRAM_POST, WHATSAPP, …). Grafo com zoom/pan/busca/foco/profundidade, física simples opcional. | evolui `ontologia.js` + `app.js` (grafo). |
@@ -169,3 +173,113 @@ inventado**.
   de catálogo ou de uma regra na Fase 2.
 - Produtos sem EAN (ex.: "DIVERSOS", "TAXA DE ENTREGA") entram com `ean=NULL` e chave por
   descrição normalizada — comportamento esperado.
+
+### Fases 2, 3 e 4 — Marketing Product Intelligence · Campaigns · Basket ✅ (2026-09-01)
+
+Feitas em lote (decisão do dono: "emenda as fases 2–4 direto e reporta no fim"). A fonte de
+estoque/custo/preço definida foi **planilhas na pasta `inbox/`** (`Estoque_/Custo_/Precos_*.xlsx`,
+já suportadas desde a Fase 1). Como ainda não chegou nenhuma, as três fases foram construídas e
+verificadas **no modo sem esses feeds**: todo número que dependeria deles sai `null` com o campo
+listado em `dados_ausentes`/`dados_ausentes_globais` — nunca estimado. Quando as planilhas
+chegarem, os mesmos endpoints passam a devolver days-of-cover, margem, ruptura e sell-through
+reais sem nenhuma mudança de código.
+
+**Correção que valia para as 3 fases:** o upload manual (`/upload/vendas`, `/upload/analise`,
+tela "Upload de dados") nunca chamava `sincronizarProdutosDeVendas` nem materializava a cesta —
+só o watcher da `inbox/` fazia isso (bug herdado da Fase 1). `persistirVendas` em `server.js`
+agora faz os dois, nos dois caminhos.
+
+**Migrations (idempotentes):** `campanhas`, `campanha_produtos`, `campanha_resultados` (Fase 3);
+`cesta_pares` (Fase 4); índice `ix_vendas_barras`.
+
+**Fase 2 — `marketing-product-analytics.js`:**
+- Por produto (chave = EAN normalizado, senão descrição): unidades/receita/cupons em janelas
+  7/14/30/60/90d (`db.vendasPorProdutoJanela`, agregação SQL por `barras` cruzando `periodos.loja_id`).
+- Tendência: venda média diária dos 14d recentes vs. os 14 anteriores (não 30x30 — janela curta
+  o bastante para caber dentro de um único mês de upload), rótulo SUBINDO/ESTÁVEL/CAINDO/SEM_BASE,
+  percentual sempre limitado a ±300% para não estourar a UI.
+- `dias_cobertura = estoque_disponível / venda_média_diária_30d`, limiares por categoria em
+  `config/marketing-stock.json` → RUPTURA/ATENCAO/NORMAL/OPORTUNIDADE/PARADO. Sem feed de
+  estoque: `null` + `cobertura_rotulo: "SEM_ESTOQUE"`.
+- `margem_unitaria`/`margem_pct` só quando há custo cadastrado (§60 do brief) — senão `null`.
+- **Marketing Opportunity Score (0–100)**: 7 componentes em `config/opportunity-score.json`
+  (demanda, tendência, margem, estoque, campanha histórica, concorrência, cesta), cada um
+  calculado em [0,1] com `fonte` (evidência textual) e `contribuicao`; componente sem dado entra
+  neutro (0.5) e é listado em `dados_ausentes`; `confianca` = fração do peso total apoiada em
+  dado real. "Campanha histórica" usa um **lift real**: receita média da categoria nos dias de
+  campanha do calendário vs. os demais dias, 90d (`liftCampanhaPorCategoria`).
+- Classes determinísticas: HERO/TRÁFEGO/OPORTUNIDADE/GIRO_URGENTE/PROTEGIDO/COMPLEMENTAR/DEFESA/
+  GIRO, por regras de percentil + cobertura + margem + pressão de concorrência.
+- `do-not-promote`: ruptura (cobertura < mínimo p/ campanha), margem abaixo do piso, sem giro há
+  45d+; cada motivo com evidência (`campo`/`valor`/`fonte`/`periodo`) + substituto sugerido (mesma
+  categoria, cobertura ok, margem igual ou melhor, maior opportunity).
+- `estoque parado`: com feed de estoque, por cobertura > limiar + capital parado (estoque×custo);
+  sem feed, degrada honestamente para "sem giro há 45d+" (`modo: "sem_giro_proxy"`).
+- Pseudo-produtos (DIVERSOS, TAXA DE ENTREGA, …) nunca entram nas telas de marketing.
+
+**Fase 3 — `campanhas.js` + tabela `campanhas`:**
+- `eficienciaCalendario`: para cada campanha recorrente de `config/lojas.json`, compara receita/
+  unidades médias por dia nos dias-de-campanha da categoria vs. os demais dias (90d) →
+  `DEMAND_LIFT_receita/unidades`, `EFFICIENCY_SCORE` (ancorado no lift), veredito EXCELENTE/BOA/
+  ACEITAVEL/FRACA/DESTRUTIVA — **nunca DESTRUTIVA sem custo cadastrado** (não dá pra provar
+  destruição de margem sem margem). `SELL_THROUGH`/`MARGIN_SACRIFICE`/`STOCK_IMPACT` ficam `null`
+  sem estoque/custo.
+- **Campaign Builder** (`campaignBuilder`): monta elenco por papel (CHAMARIZ/HERO/MARGEM/GIRO/
+  COMPLEMENTAR/DEFESA) a partir do Opportunity Score + classes + cesta (COMPLEMENTAR = parceiro
+  de cesta de um HERO escolhido); lista EVITAR = do-not-promote; gera briefing em texto pronto
+  pra copiar. Sem custo, MARGEM cai para um proxy declarado (`proxy:true`, preço praticado mais
+  alto) em vez de ficar vazio.
+- **Offer Simulator** (`offerSimulator`): cenários CONSERVADOR/PROVÁVEL/AGRESSIVO ancorados no
+  lift histórico real da categoria (ou fallback declarado de 1.15x); projeta unidades/receita/
+  margem/estoque-depois por cenário; risco de ruptura só quando há estoque cadastrado; aviso fixo
+  de que é projeção, nunca promessa. Exige preço atual e promocional no corpo (não inventa preço
+  de tabela quando não existe).
+- Calendário de `config/lojas.json` é espelhado (idempotente, por nome+loja) na tabela
+  `campanhas` no boot do servidor — a config continua sendo a fonte de verdade do recorrente; a
+  tabela existe para campanhas manuais/Builder e resultado persistido (`campanha_resultados`).
+
+**Fase 4 — `basket.js` + tabela `cesta_pares`:**
+- Cesta por cupom (`data + lancamento`, não só `lancamento` — evita colisão entre meses).
+  `support = cupons(A,B)/total`, `confidence(A→B) = cupons(A,B)/cupons(A)`, `lift = confidence/
+  support(B)`. Limites em `config/basket-analysis.json`: amostra mínima total, mínimo de cupons
+  por par **e por produto isolado** (evita "lift 250" de dois produtos de nicho vendidos juntos
+  por coincidência 6 vezes), suporte/confiança/lift mínimos. Materializa em `cesta_pares`
+  (re-roda a cada ingestão de vendas, `ingest.js` e `server.js persistirVendas`).
+- `combos()`: pega os pares materializados e anexa o retrato de marketing de cada perna (classe,
+  cobertura, margem, opportunity, tendência) vindo da Fase 2; sugere papel âncora/isca; alerta se
+  alguma perna está em risco de ruptura.
+- `centralidade()`: soma de `(lift-1)` por produto nos pares em que aparece, normalizada 0–1 —
+  alimenta o componente "cesta" do Opportunity Score.
+
+**Rotas novas (`server.js`):** `GET /api/marketing/:loja/:periodo/produtos`,
+`/recommended-products`, `/do-not-promote`, `/stagnant-stock`, `/products/:ean`, `/baskets`,
+`/combos`, `/campaign-builder`; `GET /api/marketing/:loja/campaign-efficiency` (+ `?nome=`);
+`POST /api/marketing/:loja/offer-simulator`; CRUD `GET/POST/PATCH/DELETE
+/api/marketing/:loja/campaigns[/:id]`.
+
+**Frontend:** nova seção de sidebar **🎯 Marketing** (`renderMarketing` em `app.js`), com abas
+Produtos / Recomendados / Não anunciar / Estoque parado / Cestas & Combos / Eficiência / Montar
+campanha / Simulador de oferta. Aviso amarelo padronizado quando algum feed falta. Painel e as
+telas existentes não foram tocados.
+
+**Testes:** `test/marketing-product.test.js` (7), `test/basket.test.js` (6),
+`test/campanhas.test.js` (7) — **40 testes no total, todos passando.** Cobrem: janelas
+monotônicas, clamp de tendência, os 7 componentes do score somando ao score final, confiança
+menor que 1 sem custo/estoque, classes coerentes com percentil, do-not-promote com evidência,
+degradação para "sem giro" sem feed de estoque; support/confidence/lift dentro dos limites
+configurados e nunca vazando pseudo-produto; materialização em `cesta_pares`; `DEMAND_LIFT` e
+veredito nunca DESTRUTIVA sem custo; elenco do Builder respeitando o filtro de categoria e o
+proxy de margem; simulador com 3 cenários crescentes e exigindo preço quando não há tabela;
+import idempotente do calendário; CRUD completo de campanha.
+
+**Verificado E2E (HTTP, servidor real):** upload do PDF de agosto pela rota manual → catálogo
+populado (2.873 produtos) **e** cesta materializada na mesma chamada; todas as rotas novas
+respondendo com dados reais (Opportunity Score, do-not-promote, cesta com 2 pares limpos após o
+filtro de ruído, eficiência do calendário com lift real, Campaign Builder com elenco + briefing,
+Offer Simulator com 3 cenários, CRUD de campanhas com o calendário já importado).
+
+**Limitações / pendências:** sem feed de estoque/custo/preço, days-of-cover, margem,
+sell-through, MARGIN_SACRIFICE/STOCK_IMPACT e risco de ruptura no simulador continuam `null` —
+por desenho, não por bug. A cesta de 1 mês fica magra com o limite de amostra pensado para 90d
+(vai naturalmente enriquecer conforme mais meses entrarem). Fases 5–12 (Intelligence Foundation
+em diante) seguem no plano da seção 6.
