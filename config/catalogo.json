@@ -5,6 +5,7 @@
     "Minas Farma": ["minas", "31689601000349"],
     "Farma e Farma": ["farma e farma", "farmaefarma", "melhor preco", "36007525000104"]
   },
+  "nome_todas_as_lojas": ["geral", "rede", "consolidado", "consolidada", "todas", "ambas", "central"],
   "estoque": {
     "arquivo_contem": ["estoque", "estoqeu", "posicao_estoque", "posicao de estoque", "posicao_de_estoque", "saldo"],
     "colunas": {

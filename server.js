@@ -45,6 +45,20 @@ const POLL_MIN = Number(process.env.VA_POLL_MIN || 5);
 const ANALISE_TOKEN = process.env.ANALISE_UPLOAD_TOKEN || null;
 const LOJAS_CFG = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "lojas.json"), "utf8"));
 
+// Site estático que se regenera (VA_PUBLIC_DIR — aponte p/ OneDrive/Drive/GitHub Pages/Netlify)
+const PUBLIC_DIR = process.env.VA_PUBLIC_DIR || path.join(__dirname, "publico");
+const publicar = require("./publicar");
+let _pubTimer = null;
+function regenerarPublicoEmBreve(ms = 4000) {
+  clearTimeout(_pubTimer);
+  _pubTimer = setTimeout(() => {
+    publicar
+      .regenerar({ port: PORT, cookie: makeToken(), outDir: PUBLIC_DIR, root: __dirname })
+      .then((r) => r && r.gerados && console.log(`  publico: ${r.gerados.map((g) => g.arquivo).join(", ")} regenerados em ${PUBLIC_DIR}`))
+      .catch((e) => console.error("[publico]", e.message));
+  }, ms);
+}
+
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 // --- auth (senha única, ferramenta interna) ---------------------------------
@@ -107,6 +121,11 @@ app.post("/logout", (req, res) => {
   res.setHeader("Set-Cookie", "va_session=; HttpOnly; Path=/; Max-Age=0");
   res.redirect("/login");
 });
+
+// cópia estática que se regenera — servida SEM login (é o artefato "público"; o mesmo que
+// você copia p/ OneDrive/Drive/GitHub Pages). Fica antes do gate de sessão de propósito.
+app.use("/publico", express.static(PUBLIC_DIR, { extensions: ["html"] }));
+app.get("/publico", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "index.html")));
 
 // tudo abaixo exige sessão (VA_NO_AUTH=1 desliga — só para teste local, nunca em produção)
 const NO_AUTH = process.env.VA_NO_AUTH === "1";
@@ -259,6 +278,7 @@ app.post("/upload/analise", campos, async (req, res) => {
       }
     }
 
+    regenerarPublicoEmBreve();
     res.json(resultado);
   } catch (e) {
     console.error("[upload/analise]", e.message);
@@ -273,7 +293,9 @@ app.post("/upload/vendas", upload.single("arquivo"), async (req, res) => {
     if (!req.file) throw httpErr(400, "Arquivo 'arquivo' (PDF) obrigatório.");
     const parsed = await parseVendasFile(loja, ano, mes, req.file);
     const periodoId = getOrCreatePeriodo(loja, ano, mes);
-    res.json({ ok: true, vendas: persistirVendas(periodoId, parsed, loja) });
+    const out = persistirVendas(periodoId, parsed, loja);
+    regenerarPublicoEmBreve();
+    res.json({ ok: true, vendas: out });
   } catch (e) {
     res.status(e.status || 500).json({ erro: e.message });
   }
@@ -329,6 +351,16 @@ app.get("/api/periodos/:loja", (req, res) => {
 
 // eventos da pasta inbox/ (o que foi ingerido, quando, e o que falhou)
 app.get("/api/ingest-log", (req, res) => res.json({ inbox: INBOX_DIR, pollMin: POLL_MIN, eventos: getLog() }));
+
+// força a regeneração da cópia estática agora (normalmente é automática após cada ingestão)
+app.post("/api/publicar", async (req, res) => {
+  try {
+    const r = await publicar.regenerar({ port: PORT, cookie: makeToken(), outDir: PUBLIC_DIR, root: __dirname });
+    res.json({ ok: true, dir: PUBLIC_DIR, ...r });
+  } catch (e) {
+    res.status(500).json({ erro: e.message });
+  }
+});
 
 // --- Fase 1: catálogo (produtos por EAN) + freshness de estoque/custo/preço ---
 const dbCat = require("./db");
@@ -1105,4 +1137,14 @@ app.listen(PORT, () => {
   startWatcher(INBOX_DIR);
   setTimeout(verificacaoAnaliseComercial, 30000);
   setInterval(verificacaoAnaliseComercial, 24 * 3600 * 1000);
+
+  // cópia estática: gera no boot e sempre que o watcher da inbox processar algo novo
+  console.log(`  publico: ${PUBLIC_DIR}  (cópia estática que se regenera — copie p/ OneDrive/Drive/GitHub Pages)`);
+  setTimeout(() => regenerarPublicoEmBreve(1000), 12000);
+  let _ultLog = -1;
+  setInterval(() => {
+    const n = getLog().length;
+    if (_ultLog === -1) { _ultLog = n; return; }
+    if (n !== _ultLog) { _ultLog = n; regenerarPublicoEmBreve(2000); }
+  }, 20000);
 });

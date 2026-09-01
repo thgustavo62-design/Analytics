@@ -11,3 +11,5 @@ inbox/*
 test/fixtures/*.pdf
 *.log
 .env
+publico/
+data/servidor.log

@@ -100,6 +100,13 @@ function lojaDoNome(base) {
   return null;
 }
 
+// resolve para uma LISTA de lojas: nome "geral"/"rede"/... => todas; senão a que casar.
+function lojasDoNome(base) {
+  if ((CFG.nome_todas_as_lojas || []).some((m) => base.includes(m))) return LOJAS.slice();
+  const one = lojaDoNome(base);
+  return one ? [one] : null;
+}
+
 const normHead = (s) => normalize(s).replace(/\s+/g, " ").trim();
 function resolverColunas(header, mapa) {
   const hn = header.map(normHead);
@@ -162,10 +169,14 @@ function ingestPlanilhaProduto(filePath) {
   const hojeIso = new Date().toISOString().slice(0, 10);
   const dataArq = (base.match(/(\d{4})-(\d{2})-(\d{2})/) || []).slice(1).join("-") || hojeIso;
 
-  const lojasAplicar = idx.loja != null ? null : (lojaDoNome(base) ? [lojaDoNome(base)] : null);
-  if (idx.loja == null && !lojasAplicar) {
-    throw new Error(`não deu para saber a loja de "${base}". Ponha 'minas' ou 'farma e farma' no nome do arquivo, ou uma coluna 'loja'.`);
+  const lojasAplicar = idx.loja != null ? null : lojasDoNome(base);
+  if (idx.loja == null && (!lojasAplicar || !lojasAplicar.length)) {
+    throw new Error(
+      `não deu para saber a loja de "${base}". Ponha 'minas' ou 'farma e farma' no nome do arquivo ` +
+      `(ou 'geral'/'rede' para as duas), ou inclua uma coluna 'loja'.`
+    );
   }
+  const multiLoja = lojasAplicar && lojasAplicar.length > 1;
 
   let aplicadas = 0;
   let semProduto = 0;
@@ -174,30 +185,13 @@ function ingestPlanilhaProduto(filePath) {
   const lojasIds = {};
   for (const l of LOJAS) lojasIds[l] = db.lojaId(l);
 
-  // uma transação só — a planilha da rede tem ~15k linhas e cada uma pode gerar 4 escritas
-  // historizadas (estoque + preço + promo + custo). Sem isto, são dezenas de milhares de commits.
-  db.db.exec("BEGIN");
-  try {
-  for (let r = cab.linha + 1; r < rows.length; r++) {
-    const row = rows[r];
-    if (!row) continue;
-    const ean = normalizarEan(idx.ean != null ? row[idx.ean] : null);
-    const descricao = idx.descricao != null ? String(row[idx.descricao] ?? "").trim() : "";
-    if (!ean && !descricao) continue;
-
-    const lojaNome = idx.loja != null ? String(row[idx.loja] ?? "").trim() : lojasAplicar[0];
-    const lid = lojasIds[lojaNome] || lojasIds[lojaDoNome(String(lojaNome).toLowerCase()) || ""];
-    if (!lid) continue;
-
-    const resolvido = resolverProduto(ean, descricao);
-    if (!resolvido) { semProduto++; continue; }
-    if (resolvido.confianca < 1) baixaConfianca++;
-
+  // aplica UMA linha (já resolvida a produtoId) a UMA loja
+  function aplicarLinha(lid, produtoId, row) {
     if (tipo === "estoque") {
       const q = num(row[idx.quantidade]);
       const di = (idx.data_referencia != null ? iso(row[idx.data_referencia]) : null) || dataArq;
       if (q != null || idx.disponivel != null) {
-        db.inserirEstoque(lid, resolvido.produtoId, {
+        db.inserirEstoque(lid, produtoId, {
           quantidade: q,
           reservado: idx.reservado != null ? num(row[idx.reservado]) : null,
           disponivel: idx.disponivel != null ? num(row[idx.disponivel]) : null,
@@ -210,31 +204,55 @@ function ingestPlanilhaProduto(filePath) {
       // o export de estoque da rede já carrega preço e custo — aproveita do MESMO arquivo
       if (idx.preco != null) {
         const pv = num(row[idx.preco]);
-        if (pv != null && pv > 0) { db.inserirPreco(lid, resolvido.produtoId, pv, di, "normal", base); extra.preco++; }
+        if (pv != null && pv > 0) { db.inserirPreco(lid, produtoId, pv, di, "normal", base); extra.preco++; }
       }
       if (idx.preco_promocional != null) {
         const pp = num(row[idx.preco_promocional]);
-        if (pp != null && pp > 0) { db.inserirPreco(lid, resolvido.produtoId, pp, di, "promocional", base); extra.preco_promocional++; }
+        if (pp != null && pp > 0) { db.inserirPreco(lid, produtoId, pp, di, "promocional", base); extra.preco_promocional++; }
       }
       if (idx.custo != null && idx.custo !== idx.preco && idx.custo !== idx.preco_promocional) {
         const c = num(row[idx.custo]);
-        if (c != null && c > 0) { db.inserirCusto(lid, resolvido.produtoId, c, di, base); extra.custo++; }
+        if (c != null && c > 0) { db.inserirCusto(lid, produtoId, c, di, base); extra.custo++; }
       }
     } else if (tipo === "custo") {
       const c = num(row[idx.custo]);
-      if (c == null || c <= 0) continue;
-      db.inserirCusto(lid, resolvido.produtoId, c, (idx.data_inicio != null ? iso(row[idx.data_inicio]) : null) || dataArq, base);
+      if (c == null || c <= 0) return;
+      db.inserirCusto(lid, produtoId, c, (idx.data_inicio != null ? iso(row[idx.data_inicio]) : null) || dataArq, base);
       aplicadas++;
     } else if (tipo === "preco") {
       const pNormal = num(row[idx.preco]);
       const di = (idx.data_inicio != null ? iso(row[idx.data_inicio]) : null) || dataArq;
-      if (pNormal != null && pNormal > 0) { db.inserirPreco(lid, resolvido.produtoId, pNormal, di, "normal", base); aplicadas++; }
+      if (pNormal != null && pNormal > 0) { db.inserirPreco(lid, produtoId, pNormal, di, "normal", base); aplicadas++; }
       if (idx.preco_promocional != null) {
         const pp = num(row[idx.preco_promocional]);
-        if (pp != null && pp > 0) { db.inserirPreco(lid, resolvido.produtoId, pp, di, "promocional", base); aplicadas++; }
+        if (pp != null && pp > 0) { db.inserirPreco(lid, produtoId, pp, di, "promocional", base); aplicadas++; }
       }
     }
   }
+
+  // uma transação só — a planilha da rede tem ~15k linhas e cada uma pode gerar 4 escritas
+  // historizadas (estoque + preço + promo + custo). Sem isto, são dezenas de milhares de commits.
+  db.db.exec("BEGIN");
+  try {
+    for (let r = cab.linha + 1; r < rows.length; r++) {
+      const row = rows[r];
+      if (!row) continue;
+      const ean = normalizarEan(idx.ean != null ? row[idx.ean] : null);
+      const descricao = idx.descricao != null ? String(row[idx.descricao] ?? "").trim() : "";
+      if (!ean && !descricao) continue;
+
+      const resolvido = resolverProduto(ean, descricao);
+      if (!resolvido) { semProduto++; continue; }
+      if (resolvido.confianca < 1) baixaConfianca++;
+
+      const alvos = idx.loja != null
+        ? [lojasIds[String(row[idx.loja] ?? "").trim()] || lojasIds[lojaDoNome(String(row[idx.loja] ?? "").toLowerCase()) || ""]]
+        : lojasAplicar.map((l) => lojasIds[l]);
+      for (const lid of alvos) {
+        if (!lid) continue;
+        aplicarLinha(lid, resolvido.produtoId, row);
+      }
+    }
     db.db.exec("COMMIT");
   } catch (e) {
     db.db.exec("ROLLBACK");
@@ -244,6 +262,7 @@ function ingestPlanilhaProduto(filePath) {
   return {
     tipo: "catalogo-" + tipo,
     aba: alvo.aba,
+    lojas: idx.loja != null ? ["(coluna 'loja')"] : lojasAplicar,
     linhas_aplicadas: aplicadas,
     sem_produto: semProduto,
     casados_por_nome: baixaConfianca,

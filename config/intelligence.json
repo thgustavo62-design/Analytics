@@ -10,7 +10,7 @@
     "COMPETITOR_PRICE_ATTACK": { "min_ofertas_abaixo": 3, "severidade_por_oferta": 0.12, "severidade_max": 0.9 },
     "CATEGORY_DECLINE":  { "queda_pct_min": 12, "receita_min_categoria_30d": 800, "severidade_base": 0.45 },
     "CATEGORY_GROWTH":   { "alta_pct_min": 15, "receita_min_categoria_30d": 800 },
-    "STOCK_RISK":        { "usa_cobertura_do_marketing_stock": true, "severidade_base": 0.6 },
+    "STOCK_RISK":        { "usa_cobertura_do_marketing_stock": true, "severidade_base": 0.6, "receita_min_30d": 150, "max_por_deteccao": 12 },
     "STAGNANT_STOCK":    { "min_itens": 1, "severidade_base": 0.3 },
     "CAMPAIGN_UNDERPERFORMANCE": { "lift_min_aceitavel": 1.08, "severidade_base": 0.5 },
     "CAMPAIGN_OVERPERFORMANCE":  { "lift_excelente": 1.5 },

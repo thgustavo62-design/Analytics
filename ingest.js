@@ -211,7 +211,18 @@ async function ingestFile(filePath) {
   if (ext === ".xlsx") {
     if (/concorrente|coleta|varredura|confronto/.test(base)) return ingestConcorrentes(filePath);
     const { detectarTipoPlanilha, ingestPlanilhaProduto } = require("./catalogo");
-    if (detectarTipoPlanilha(base)) return ingestPlanilhaProduto(filePath);
+    if (detectarTipoPlanilha(base)) {
+      const r = ingestPlanilhaProduto(filePath);
+      // estoque/custo/preço mudam o quadro de sinais (ruptura, margem) — re-detecta p/ cada loja tocada
+      try {
+        for (const loja of r.lojas || []) {
+          if (LOJAS_VALIDAS.includes(loja)) require("./intelligence").rodarDeteccao(loja);
+        }
+      } catch (e) {
+        console.error("[ingest] detecção pós-planilha:", e.message);
+      }
+      return r;
+    }
     throw new Error("xlsx não reconhecido — esperado Concorrentes_Coleta_*.xlsx, ou Estoque_/Custo_/Precos_*.xlsx.");
   }
   if (ext === ".json") {

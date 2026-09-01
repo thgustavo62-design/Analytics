@@ -72,6 +72,21 @@ Variáveis de ambiente:
    pra corrigir um mês.
 4. **"Baixar painel (HTML)"** no topo do painel gera um `.html` autocontido daquele mês
    (abre sem servidor, dá pra mandar por e-mail/WhatsApp). Rota: `GET /export/{loja}/{AAAA-MM}`.
+5. **Cópia estática que se regenera** — a cada arquivo processado, o servidor reescreve
+   `publico/index.html` + uma página por loja (Painel + Marketing + Intelligence assados no
+   HTML). Preview: `http://localhost:4180/publico/` (sem senha). Aponte `VA_PUBLIC_DIR` para
+   uma pasta do OneDrive/Google Drive/GitHub Pages/Netlify e o link público passa a se
+   atualizar sozinho, sem expor o servidor. Força manual: `POST /api/publicar`. Detalhes em
+   [`docs/publicar.md`](docs/publicar.md).
+
+### Planilha de estoque (libera margem, ruptura, days-of-cover)
+
+O nome do arquivo precisa conter **`estoque`** (ou `estoqeu`) **e** a loja (`minas` /
+`farma e farma`); use `estoque geral.xlsx` para aplicar nas duas. Um único xlsx do sistema
+já alimenta **estoque + preço de venda + preço de promoção + custo** (coluna "Últ. Prc.
+Entrada") — mapeamento em `config/catalogo.json`. Cada envio é um snapshot novo (histórico
+por data). Sem custo na planilha (caso da Farma e Farma), a margem fica indisponível — não
+é estimada.
 
 ## Telas
 
@@ -207,6 +222,7 @@ intelligence/        Fases 5–12: contexto.js · detectores.js · priorizacao.j
                      investigar.js · ontologia2.js · padroes.js
 ask.js               Fase 11: pergunta em PT -> contexto agregado -> resposta formato analista (IA opcional só narra)
 editorial.js         Fase 12: pauta editorial de 7 dias (produto do motor, CTA de template)
+publicar.js          cópia estática que se regenera a cada ingestão (painel+marketing+intelligence assados no HTML) -> VA_PUBLIC_DIR
 db.js                node:sqlite — acesso, sempre por loja/período
 schema.sql           tabelas
 parsers/vendas.js    PDF "Analítico de Vendas" -> transações + empresa (CNPJ) + validação da soma
@@ -229,6 +245,7 @@ docs/EVOLUCAO-INTELLIGENCE.md  mapa vivo da evolução p/ Marketing Intelligence
 docs/marketing-opportunity.md  referência do Opportunity Score, classes e do-not-promote (Fase 2)
 docs/campaign-engine.md        referência de eficiência, Campaign Builder e Offer Simulator (Fase 3)
 docs/intelligence.md           referência da camada de inteligência: detectores, War Room, investigação, decisão, padrões, Ask, editorial (Fases 5–12)
+docs/publicar.md               cópia estática que se regenera (VA_PUBLIC_DIR, /publico/, POST /api/publicar)
 ```
 
 ## Testes

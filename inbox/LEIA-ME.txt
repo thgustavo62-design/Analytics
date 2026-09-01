@@ -19,6 +19,16 @@ O QUE JOGAR
    - Vale para as duas lojas (cada uma comparada com o proprio preco).
    - O mes vem da data no nome do arquivo.
 
+2b) Estoque (xlsx do sistema — "Posicao de estoque" / export geral)
+   - Nome do arquivo PRECISA conter "estoque" (ou "estoqeu") E dizer a loja:
+     "minas" ou "farma e farma".  Ex.: "estoque minas farma.xlsx".
+     Se for o export unico da rede toda, use "estoque geral.xlsx" (aplica nas 2).
+   - Um arquivo so ja alimenta estoque + preco de venda + preco de promocao +
+     custo (coluna "Ult. Prc. Entrada"), tudo do mesmo xlsx.
+   - Isso libera: days-of-cover, margem %, risco de ruptura, capital parado e o
+     simulador de oferta com margem/estoque reais.
+   - Pode mandar todo dia/semana; cada envio vira um snapshot novo (historico).
+
 3) (opcional) Instagram em JSON
    - Nome do arquivo com "instagram" (ex.: instagram-minas-2026-08.json)
    - Conteudo: { "loja": "Minas Farma", "periodo": "2026-08",
@@ -30,6 +40,17 @@ O QUE JOGAR
    - Gerado por fora (tarefa agendada que aplica o prompt em
      prompts/motor-analise-comercial.md). Vai para a tela "Analise Comercial".
    - Se nao passar na validacao, e recusado e a analise anterior fica no ar.
+
+COPIA ESTATICA (site "publicavel")
+----------------------------------
+- A cada arquivo processado, o servidor regenera uma copia estatica em
+  C:\Sistema Marketing\publico\  (index.html + uma pagina por loja, com Painel +
+  Marketing + Intelligence "assados" dentro do HTML — abrem sem servidor).
+- Preview local: http://localhost:4180/publico/  (sem senha).
+- Para deixar "disponivel" de verdade: aponte a variavel de ambiente
+  VA_PUBLIC_DIR para uma pasta do OneDrive / Google Drive / GitHub Pages /
+  Netlify.  O link publico passa a se atualizar sozinho, sem expor o servidor.
+- Forcar agora: botao nao tem — use  POST /api/publicar  (logado).
 
 DICAS
 -----

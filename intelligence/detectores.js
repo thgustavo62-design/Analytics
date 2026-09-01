@@ -79,21 +79,40 @@ function categoryTrend(ctx) {
 
 function stockRisk(ctx) {
   if (!ctx.feeds.estoque) return [];
+  const cfg = D.STOCK_RISK;
+  const candidatos = (ctx.analiseProdutos.produtos || [])
+    .filter((p) => p.do_not_promote && p.do_not_promote.motivos.some((m) => m.tipo === "RUPTURA"))
+    .filter((p) => (p.receita.d30 || 0) >= (cfg.receita_min_30d || 150)) // só o que realmente gira
+    .sort((a, b) => (b.receita.d30 || 0) - (a.receita.d30 || 0));
   const out = [];
-  for (const p of ctx.analiseProdutos.produtos || []) {
-    if (!p.do_not_promote) continue;
+  const topN = cfg.max_por_deteccao || 12;
+  for (const p of candidatos.slice(0, topN)) {
     const rup = p.do_not_promote.motivos.find((m) => m.tipo === "RUPTURA");
-    if (!rup) continue;
     out.push({
       classe: "AMEACA", tipo: "STOCK_RISK",
       titulo: `Risco de ruptura: ${p.descricao}`,
-      resumo: `Cobertura de ${p.dias_cobertura}d — abaixo do mínimo para sustentar demanda/campanha.`,
-      severidade: D.STOCK_RISK.severidade_base,
+      resumo: `Cobertura de ${p.dias_cobertura}d, R$ ${Math.round(p.receita.d30)} em 30d — repor antes que falte.`,
+      severidade: cfg.severidade_base,
       confianca: 0.8,
       impacto_estimado: p.receita.d30 ? Math.round(p.receita.d30) : null,
       entidade_tipo: "produto", entidade_ref: p.ean || p.descricao, periodo: ctx.refDate,
       dedupe_key: key("stock_risk", p.ean || p.descricao),
       evidencias: [rup.evidencia, { campo: "venda_media_diaria_30d", valor: p.venda_media_diaria.d30, fonte: "marketing-product-analytics", periodo: `últimos 30d até ${ctx.refDate}` }],
+    });
+  }
+  // rollup: se sobrou muita coisa, um sinal único com o total e os piores como evidência
+  if (candidatos.length > topN) {
+    const resto = candidatos.slice(topN);
+    out.push({
+      classe: "AMEACA", tipo: "STOCK_RISK",
+      titulo: `${candidatos.length} produtos com risco de ruptura`,
+      resumo: `${topN} listados individualmente; outros ${resto.length} com cobertura curta e giro relevante.`,
+      severidade: Math.min(0.85, cfg.severidade_base + candidatos.length / 400),
+      confianca: 0.7,
+      impacto_estimado: Math.round(candidatos.reduce((s, p) => s + (p.receita.d30 || 0), 0)),
+      entidade_tipo: "loja", entidade_ref: ctx.loja, periodo: ctx.refDate,
+      dedupe_key: key("stock_risk_rollup", ctx.loja),
+      evidencias: resto.slice(0, 10).map((p) => ({ campo: "cobertura", valor: `${p.descricao}: ${p.dias_cobertura}d (R$ ${Math.round(p.receita.d30)}/30d)`, fonte: "marketing-product-analytics", periodo: ctx.refDate })),
     });
   }
   return out;
