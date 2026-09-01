@@ -88,9 +88,22 @@ function liftCampanhaPorCategoria(loja, refDate) {
 
 // -------------------------- núcleo --------------------------
 
+// memo curto: numa rodada de coleta/detecção, analisarProdutos é chamado ~8x por loja com
+// o mesmo contexto. TTL de 45s colapsa isso numa vez só; expira sozinho pra não servir dado
+// velho depois. Os "recortes" (recomendados/naoAnunciar/estoqueParado) NÃO mutam o retorno.
+const _memo = new Map();
+function _memoKey(loja, refDate, opts) {
+  const c = opts.concorrenciaCategorias instanceof Set ? opts.concorrenciaCategorias.size : -1;
+  const k = opts.cestaCentralidade instanceof Map ? opts.cestaCentralidade.size : -1;
+  return `${loja}|${refDate}|c${c}|k${k}`;
+}
+
 function analisarProdutos(loja, opts = {}) {
   const refDate = opts.refDate || db.getUltimaDataVenda(loja);
   if (!refDate) return { erro: "sem vendas para esta loja", produtos: [] };
+  const mk = _memoKey(loja, refDate, opts);
+  const hit = _memo.get(mk);
+  if (hit && Date.now() - hit.t < 45000) return hit.v;
   const lid = db.lojaId(loja);
 
   const JAN = [7, 14, 30, 60, 90];
@@ -381,7 +394,7 @@ function analisarProdutos(loja, opts = {}) {
     })
     .sort((a, c) => c.opportunity.score - a.opportunity.score);
 
-  return {
+  const resultado = {
     loja,
     refDate,
     feeds: { estoque: temEstoque, custo: temCusto, preco: temPreco, freshness },
@@ -393,6 +406,8 @@ function analisarProdutos(loja, opts = {}) {
     total: produtos.length,
     produtos,
   };
+  _memo.set(mk, { t: Date.now(), v: resultado });
+  return resultado;
 }
 
 // ------- recortes prontos para as rotas -------
@@ -401,32 +416,32 @@ function recomendados(loja, opts = {}) {
   const r = analisarProdutos(loja, opts);
   if (r.erro) return r;
   const limite = opts.limite || 40;
-  r.produtos = r.produtos
+  const lista = r.produtos
     .filter((p) => !p.do_not_promote && p.opportunity.score >= (CFG_SCORE.rotulos.medio - 5))
     .slice(0, limite);
-  return r;
+  return { ...r, produtos: lista };
 }
 
 function naoAnunciar(loja, opts = {}) {
   const r = analisarProdutos(loja, opts);
   if (r.erro) return r;
-  r.produtos = r.produtos.filter((p) => p.do_not_promote);
-  return r;
+  const todos = r.produtos.filter((p) => p.do_not_promote);
+  const limite = opts.limite || 80;
+  return { ...r, total_bloqueados: todos.length, produtos: todos.slice(0, limite) };
 }
 
 function estoqueParado(loja, opts = {}) {
   const r = analisarProdutos(loja, opts);
   if (r.erro) return r;
+  const limite = opts.limite || 80;
   if (!r.feeds.estoque) {
     // sem feed de estoque: melhor proxy honesto é "sem giro" (não venderam nada em 45d+)
-    r.modo = "sem_giro_proxy";
-    r.produtos = r.produtos
+    const todos = r.produtos
       .filter((p) => p.dias_sem_venda != null && p.dias_sem_venda > CFG_STOCK.sem_giro_dias)
       .sort((a, b) => (b.dias_sem_venda || 0) - (a.dias_sem_venda || 0));
-    return r;
+    return { ...r, modo: "sem_giro_proxy", total_parados: todos.length, produtos: todos.slice(0, limite) };
   }
-  r.modo = "estoque";
-  r.produtos = r.produtos
+  const todos = r.produtos
     .filter((p) => p.cobertura_rotulo === "PARADO" || p.cobertura_infinita || (p.dias_cobertura != null && p.dias_cobertura > thresholdsCategoria(p.categoria).parado))
     .map((p) => ({
       ...p,
@@ -438,7 +453,12 @@ function estoqueParado(loja, opts = {}) {
       ],
     }))
     .sort((a, b) => (b.capital_parado || 0) - (a.capital_parado || 0));
-  return r;
+  return {
+    ...r, modo: "estoque",
+    total_parados: todos.length,
+    capital_parado_total: round(todos.reduce((s, p) => s + (p.capital_parado || 0), 0), 2),
+    produtos: todos.slice(0, limite),
+  };
 }
 
 function produtoPorEan(loja, ean, opts = {}) {

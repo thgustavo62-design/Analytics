@@ -1,84 +1,15 @@
-// Site estático que se regenera — TUDO num único HTML.
-//
-// A cada ingestão, o servidor bate na própria API local (com cookie de sessão válido) e
-// "assa" todas as respostas — as DUAS lojas, todos os períodos, todas as telas (Painel,
-// Marketing, Intelligence, Conexões, Análise Comercial, Histórico, Configurações) — dentro
-// de um só arquivo: <VA_PUBLIC_DIR>/analytics.html. Ele abre sem servidor, com o app shell
-// completo (seletor de loja e período funcionando, navegação por abas, gráficos).
+// Cópia estática que se regenera — TUDO num único HTML (publico/analytics.html).
+// As duas lojas, todos os períodos, todas as telas, assados dentro do arquivo. Abre sem
+// servidor, com o app shell completo (seletor de loja/período, navegação, gráficos).
 //
 // Aponte VA_PUBLIC_DIR para uma pasta do OneDrive / Google Drive / GitHub Pages / Netlify e
-// o link público passa a se atualizar sozinho, sem expor o servidor.
+// o arquivo público se atualiza sozinho, sem expor o servidor.
 
 const fs = require("fs");
 const path = require("path");
+const { coletarTudo, MK_MARKETING, MK_INTEL } = require("./coletar-tudo");
 
 const FONTS_LINK = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">';
-
-// sufixo da rota -> chave no pacote assado
-const MK_MARKETING = {
-  "produtos": "produtos", "recommended-products": "recommended", "do-not-promote": "dnp",
-  "stagnant-stock": "parado", "baskets": "baskets", "combos": "combos",
-  "campaign-efficiency": "eficiencia", "campaign-builder": "builder",
-};
-const MK_INTEL = {
-  "war-room": "warRoom", "signals": "signals", "investigations": "investigations",
-  "decisions": "decisions", "patterns": "patterns", "editorial-plan": "editorial",
-};
-
-async function coletarLoja(get, nome) {
-  const L = encodeURIComponent(nome);
-  const periodos = (await get(`/api/periodos/${L}`)) || [];
-  const comVendas = Array.isArray(periodos) ? periodos.filter((p) => p.temVendas) : [];
-  const analise = {};
-  const ontologia = {};
-  for (const p of comVendas) {
-    analise[`${nome}|${p.periodo}`] = await get(`/api/analise/${L}/${p.periodo}`);
-    ontologia[`${nome}|${p.periodo}`] = await get(`/api/ontologia/${L}/${p.periodo}`);
-  }
-  const ultimo = comVendas.length ? (comVendas.find((p) => p.atual) || comVendas[0]).periodo : null;
-
-  const analiseComercial = {};
-  const acLatest = await get(`/api/analise-comercial/${L}`);
-  if (acLatest && !acLatest.__erro && !acLatest.erro) {
-    analiseComercial[nome] = acLatest;
-    for (const ym of acLatest.meses || []) analiseComercial[`${nome}|${ym}`] = await get(`/api/analise-comercial/${L}/${ym}`);
-  } else {
-    analiseComercial[nome] = acLatest; // guarda o {erro:...} p/ a tela mostrar o estado vazio
-  }
-
-  let marketing = null;
-  let intelligence = null;
-  if (ultimo) {
-    marketing = {
-      produtos: await get(`/api/marketing/${L}/${ultimo}/produtos?limite=90`),
-      recommended: await get(`/api/marketing/${L}/${ultimo}/recommended-products`),
-      dnp: await get(`/api/marketing/${L}/${ultimo}/do-not-promote`),
-      parado: await get(`/api/marketing/${L}/${ultimo}/stagnant-stock`),
-      baskets: await get(`/api/marketing/${L}/${ultimo}/baskets`),
-      combos: await get(`/api/marketing/${L}/${ultimo}/combos`),
-      eficiencia: await get(`/api/marketing/${L}/campaign-efficiency`),
-      builder: await get(`/api/marketing/${L}/${ultimo}/campaign-builder`),
-    };
-    intelligence = {
-      warRoom: await get(`/api/intelligence/${L}/war-room`),
-      signals: await get(`/api/intelligence/${L}/signals?limite=120`),
-      investigations: await get(`/api/intelligence/${L}/investigations`),
-      decisions: await get(`/api/intelligence/${L}/decisions`),
-      patterns: await get(`/api/intelligence/${L}/patterns`),
-      editorial: await get(`/api/intelligence/${L}/editorial-plan`),
-    };
-  }
-
-  return {
-    periodos: { [nome]: periodos },
-    analise, ontologia,
-    ontologiaUlt: { [nome]: ultimo ? ontologia[`${nome}|${ultimo}`] : null },
-    analiseComercial,
-    marketing: { [nome]: marketing },
-    intelligence: { [nome]: intelligence },
-    catalogo: { [nome]: await get(`/api/catalogo/${L}`) },
-  };
-}
 
 function stubScript(B) {
   return `
@@ -90,7 +21,7 @@ function stubScript(B) {
     var MKM = ${JSON.stringify(MK_MARKETING)}, MKI = ${JSON.stringify(MK_INTEL)};
     function pick(u) {
       var s = String(u).replace(/^https?:\\/\\/[^/]+/, "").split("?")[0].split("/").filter(Boolean).map(function (x) { try { return decodeURIComponent(x); } catch (e) { return x; } });
-      if (s[0] === "logout") return {};                 // no-op
+      if (s[0] === "logout") return {};
       if (s[0] !== "api") return undefined;
       if (s[1] === "lojas") return B.lojas;
       if (s[1] === "periodos") return B.periodos[s[2]] || [];
@@ -141,45 +72,16 @@ ${body}
 let _rodando = false;
 let _pendente = null;
 
-async function regenerar({ port, cookie, outDir, root = __dirname, arquivo = "analytics.html" } = {}) {
+async function regenerar({ port, cookie, outDir, root = __dirname, arquivo = "analytics.html", B: pronto } = {}) {
   if (_rodando) { _pendente = { port, cookie, outDir, root, arquivo }; return { adiado: true }; }
   _rodando = true;
   try {
     fs.mkdirSync(outDir, { recursive: true });
-    const H = { headers: cookie ? { Cookie: `va_session=${cookie}` } : {} };
-    const get = async (p) => {
-      try {
-        const r = await fetch(`http://localhost:${port}${p}`, H);
-        return r.ok ? await r.json() : { __erro: r.status };
-      } catch (e) {
-        return { __erro: e.message };
-      }
-    };
-
-    const lojas = (await get("/api/lojas")) || [];
-    const B = {
-      geradoEm: new Date().toISOString(),
-      lojas,
-      periodos: {}, analise: {}, ontologia: {}, ontologiaUlt: {},
-      analiseComercial: {}, marketing: {}, intelligence: {}, catalogo: {},
-    };
-    let comDados = 0;
-    for (const l of lojas) {
-      const parte = await coletarLoja(get, l.nome);
-      Object.assign(B.periodos, parte.periodos);
-      Object.assign(B.analise, parte.analise);
-      Object.assign(B.ontologia, parte.ontologia);
-      Object.assign(B.ontologiaUlt, parte.ontologiaUlt);
-      Object.assign(B.analiseComercial, parte.analiseComercial);
-      Object.assign(B.marketing, parte.marketing);
-      Object.assign(B.intelligence, parte.intelligence);
-      Object.assign(B.catalogo, parte.catalogo);
-      if (parte.marketing[l.nome]) comDados++;
-    }
-
+    const B = pronto || (await coletarTudo({ port, cookie })).B;
     const html = montarHtml(root, B);
     const dest = path.join(outDir, arquivo);
     fs.writeFileSync(dest, html);
+    const comDados = Object.values(B.marketing).filter(Boolean).length;
     return { arquivo: dest, bytes: Buffer.byteLength(html), lojas_com_dados: comDados, geradoEm: B.geradoEm };
   } finally {
     _rodando = false;

@@ -13,3 +13,5 @@ test/fixtures/*.pdf
 .env
 publico/
 data/servidor.log
+vercel/node_modules/
+vercel/.vercel/

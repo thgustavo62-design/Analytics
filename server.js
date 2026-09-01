@@ -9,6 +9,18 @@ const crypto = require("crypto");
 const express = require("express");
 const multer = require("multer");
 
+// .env leve (sem dependência) — para SUPABASE_DB_URL, ANTHROPIC_API_KEY, etc.
+try {
+  for (const linha of fs.readFileSync(path.join(__dirname, ".env"), "utf8").split(/\r?\n/)) {
+    const m = linha.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (m && !linha.trimStart().startsWith("#") && process.env[m[1]] === undefined) {
+      process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+    }
+  }
+} catch (e) {
+  /* sem .env, tudo bem */
+}
+
 const {
   LOJAS_VALIDAS,
   getOrCreatePeriodo,
@@ -48,15 +60,30 @@ const LOJAS_CFG = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "loj
 // Site estático que se regenera (VA_PUBLIC_DIR — aponte p/ OneDrive/Drive/GitHub Pages/Netlify)
 const PUBLIC_DIR = process.env.VA_PUBLIC_DIR || path.join(__dirname, "publico");
 const publicar = require("./publicar");
+const supabaseSync = require("./supabase-sync");
+const { coletarTudo } = require("./coletar-tudo");
 let _pubTimer = null;
+let _pubRodando = false;
+async function regenerarAgora() {
+  if (_pubRodando) return;
+  _pubRodando = true;
+  try {
+    const { B } = await coletarTudo({ port: PORT, cookie: makeToken() }); // coleta UMA vez
+    const r = await publicar.regenerar({ outDir: PUBLIC_DIR, root: __dirname, B });
+    if (r && r.arquivo) console.log(`  publico: analytics.html (${(r.bytes / 1048576).toFixed(1)} MB, ${r.lojas_com_dados} loja(s))`);
+    if (supabaseSync.ativo()) {
+      const s = await supabaseSync.sincronizar({ B });
+      if (s && s.linhas) console.log(`  supabase: ${s.linhas} snapshots enviados`);
+    }
+  } catch (e) {
+    console.error("[publicar/supabase]", e.message);
+  } finally {
+    _pubRodando = false;
+  }
+}
 function regenerarPublicoEmBreve(ms = 4000) {
   clearTimeout(_pubTimer);
-  _pubTimer = setTimeout(() => {
-    publicar
-      .regenerar({ port: PORT, cookie: makeToken(), outDir: PUBLIC_DIR, root: __dirname })
-      .then((r) => r && r.arquivo && console.log(`  publico: analytics.html regenerado (${(r.bytes / 1048576).toFixed(1)} MB, ${r.lojas_com_dados} loja(s) com dados)`))
-      .catch((e) => console.error("[publico]", e.message));
-  }, ms);
+  _pubTimer = setTimeout(() => { regenerarAgora(); }, ms);
 }
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -353,11 +380,21 @@ app.get("/api/periodos/:loja", (req, res) => {
 // eventos da pasta inbox/ (o que foi ingerido, quando, e o que falhou)
 app.get("/api/ingest-log", (req, res) => res.json({ inbox: INBOX_DIR, pollMin: POLL_MIN, eventos: getLog() }));
 
-// força a regeneração da cópia estática agora (normalmente é automática após cada ingestão)
+// força a regeneração da cópia estática + o envio pro Supabase agora
+// (normalmente é automático após cada ingestão)
 app.post("/api/publicar", async (req, res) => {
   try {
-    const r = await publicar.regenerar({ port: PORT, cookie: makeToken(), outDir: PUBLIC_DIR, root: __dirname });
-    res.json({ ok: true, dir: PUBLIC_DIR, ...r });
+    const { B } = await coletarTudo({ port: PORT, cookie: makeToken() });
+    const r = await publicar.regenerar({ outDir: PUBLIC_DIR, root: __dirname, B });
+    let supabase = { pulado: "SUPABASE_DB_URL não definida" };
+    if (supabaseSync.ativo()) {
+      try {
+        supabase = await supabaseSync.sincronizar({ B });
+      } catch (e) {
+        supabase = { erro: e.message };
+      }
+    }
+    res.json({ ok: true, dir: PUBLIC_DIR, ...r, supabase });
   } catch (e) {
     res.status(500).json({ erro: e.message });
   }
@@ -441,12 +478,13 @@ function lojaOk(req, res) {
 app.get("/api/marketing/:loja/:periodo/produtos", (req, res) => {
   if (!lojaOk(req, res)) return;
   const ctx = contextoMarketing(req.params.loja, req.params.periodo);
-  const r = mpa.analisarProdutos(req.params.loja, { ...ctx, limite: +req.query.limite || 0 });
+  const r = mpa.analisarProdutos(req.params.loja, ctx);
   if (r.erro) return res.status(404).json(r);
-  if (req.query.classe) r.produtos = r.produtos.filter((p) => p.classe === req.query.classe);
-  if (req.query.categoria) r.produtos = r.produtos.filter((p) => p.categoria === req.query.categoria);
-  if (req.query.limite) r.produtos = r.produtos.slice(0, +req.query.limite);
-  res.json(r);
+  let lista = r.produtos;
+  if (req.query.classe) lista = lista.filter((p) => p.classe === req.query.classe);
+  if (req.query.categoria) lista = lista.filter((p) => p.categoria === req.query.categoria);
+  if (req.query.limite) lista = lista.slice(0, +req.query.limite);
+  res.json({ ...r, produtos: lista, total_catalogo: r.total });
 });
 
 app.get("/api/marketing/:loja/:periodo/recommended-products", (req, res) => {

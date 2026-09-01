@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analytics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">📊</div>
+      <div class="name">Analytics<small>MINAS FARMA · FARMA E FARMA</small></div>
+    </div>
+    <div class="tagline">
+      <strong>Mais dados. Melhores decisões.</strong><br>
+      Baixo Guandu/ES
+    </div>
+    <div class="spacer"></div>
+    <div class="topbar-actions">
+      <span class="pill-select">🏬 <select id="sel-loja" aria-label="Loja"></select></span>
+      <span class="pill-select">📅 <select id="sel-periodo" aria-label="Período"></select></span>
+      <button class="btn-ghost" id="btn-sair" type="button">⇥ Sair</button>
+    </div>
+  </header>
+
+  <aside class="sidebar">
+    <nav class="nav" id="nav">
+      <a href="#painel" data-view="painel"><span class="ico">🏠</span> Painel</a>
+      <a href="#marketing" data-view="marketing"><span class="ico">🎯</span> Marketing</a>
+      <a href="#intelligence" data-view="intelligence"><span class="ico">🧠</span> Intelligence</a>
+      <a href="#conexoes" data-view="conexoes"><span class="ico">🕸️</span> Conexões</a>
+      <a href="#analise" data-view="analise"><span class="ico">🧭</span> Análise Comercial</a>
+      <a href="#upload" data-view="upload"><span class="ico">⬆️</span> Upload de dados</a>
+      <a href="#historico" data-view="historico"><span class="ico">🕘</span> Histórico</a>
+      <a href="#config" data-view="config"><span class="ico">⚙️</span> Configurações</a>
+    </nav>
+    <div class="foot">
+      <div class="sidebar-card">
+        <div class="h">📊 Analytics</div>
+        Minas Farma e Farma e Farma<br>Baixo Guandu/ES
+      </div>
+    </div>
+  </aside>
+
+  <main class="main" id="view"><div class="empty">Carregando…</div></main>
+
+</div>
+
+<script>if(!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname))document.write('<script src="/hosted.js"><\/script>');</script>
+<script src="/app.js"></script>
+</body>
+</html>
