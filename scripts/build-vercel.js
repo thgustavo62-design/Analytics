@@ -1,7 +1,8 @@
-// Copia o front (index.html, app.js, styles.css) de public/ para vercel/public/, para o
-// deploy do Vercel usar EXATAMENTE o mesmo app do localhost. Roda antes de cada deploy:
+// Copia o front (index.html, app.js, styles.css) de public/ para vercel/, para o deploy do
+// Vercel usar EXATAMENTE o mesmo app do localhost. Roda antes de cada deploy:
 //   node scripts/build-vercel.js
 //
+// vercel/ é um site estático plano (index.html na raiz) + api/proxy.js como function.
 // A única diferença: o index.html copiado carrega /hosted.js quando NÃO está em localhost
 // (marca modo somente-leitura + faixa). Localhost segue rodando o app completo.
 
@@ -10,9 +11,7 @@ const path = require("path");
 
 const ROOT = path.join(__dirname, "..");
 const SRC = path.join(ROOT, "public");
-const OUT = path.join(ROOT, "vercel", "public");
-
-fs.mkdirSync(OUT, { recursive: true });
+const OUT = path.join(ROOT, "vercel");
 
 for (const f of ["app.js", "styles.css"]) {
   fs.copyFileSync(path.join(SRC, f), path.join(OUT, f));
@@ -25,5 +24,5 @@ const guard =
 html = html.replace('<script src="/app.js"></script>', guard + '<script src="/app.js"></script>');
 fs.writeFileSync(path.join(OUT, "index.html"), html);
 
-console.log("vercel/public/ atualizado: index.html, app.js, styles.css, hosted.js");
-console.log("deploy:  cd vercel && vercel deploy --prod   (com SUPABASE_DB_URL nas env do projeto)");
+console.log("vercel/ atualizado: index.html, app.js, styles.css (hosted.js e api/proxy.js já versionados)");
+console.log("deploy:  cd vercel && vercel deploy --prod");
