@@ -399,6 +399,18 @@ app.get("/api/periodos/:loja", (req, res) => {
 // eventos da pasta inbox/ (o que foi ingerido, quando, e o que falhou)
 app.get("/api/ingest-log", (req, res) => res.json({ inbox: INBOX_DIR, pollMin: POLL_MIN, eventos: getLog() }));
 
+// aba Concorrentes — comparação automática + análise
+const concAnalise = require("./concorrencia-analise");
+app.get("/api/concorrencia/:loja", (req, res) => {
+  if (!LOJAS_VALIDAS.includes(req.params.loja)) return res.status(404).json({ erro: "loja desconhecida" });
+  try {
+    res.json(concAnalise.analisarConcorrencia(req.params.loja));
+  } catch (e) {
+    console.error("[api/concorrencia]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 // força a regeneração da cópia estática + o envio pro Supabase agora
 // (normalmente é automático após cada ingestão)
 app.post("/api/publicar", async (req, res) => {

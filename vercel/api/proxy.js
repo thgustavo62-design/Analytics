@@ -34,6 +34,7 @@ function chaveDe(p) {
   if (h === "ontologia") return key(r[0], "ontologia", r[1]);
   if (h === "analise-comercial") return key(r[0], "analise-comercial", r[1] || null);
   if (h === "catalogo") return key(r[0], "catalogo", null);
+  if (h === "concorrencia") return key(r[0], "concorrencia", null);
   if (h === "marketing") return key(r[0], "marketing/" + r[r.length - 1], null);
   if (h === "intelligence") return key(r[0], "intelligence/" + r[r.length - 1], null);
   return null;

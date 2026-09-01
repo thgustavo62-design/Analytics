@@ -988,17 +988,17 @@
   }
   function prodRow(p) {
     return "<tr><td>" + esc(p.descricao) + (p.ean ? '<div class="cs">EAN ' + p.ean + "</div>" : "") + "</td>" +
-      "<td>" + classeChip(p.classe) + "</td>" +
-      '<td class="num">' + int(p.unidades[30]) + "</td>" +
-      '<td class="num">R$ ' + brl(p.receita.d30) + "</td>" +
-      "<td>" + tendChip(p.tendencia) + "</td>" +
-      "<td>" + (p.cobertura_rotulo === "SEM_ESTOQUE" ? '<span class="cs">s/ feed</span>' : '<span class="tag">' + (p.cobertura_infinita ? "∞" : p.dias_cobertura + "d") + " · " + p.cobertura_rotulo + "</span>") + "</td>" +
-      "<td>" + (p.margem_pct == null ? '<span class="cs">s/ custo</span>' : pct(p.margem_pct * 100)) + "</td>" +
-      "<td>" + scoreBar(p.opportunity.score) + ' <span class="cs">conf ' + p.opportunity.confianca + "</span></td></tr>";
+      '<td data-l="Classe">' + classeChip(p.classe) + "</td>" +
+      '<td class="num" data-l="Un 30d">' + int(p.unidades[30]) + "</td>" +
+      '<td class="num" data-l="Receita 30d">R$ ' + brl(p.receita.d30) + "</td>" +
+      '<td data-l="Tendência">' + tendChip(p.tendencia) + "</td>" +
+      '<td data-l="Cobertura">' + (p.cobertura_rotulo === "SEM_ESTOQUE" ? '<span class="cs">s/ feed</span>' : '<span class="tag">' + (p.cobertura_infinita ? "∞" : p.dias_cobertura + "d") + " · " + p.cobertura_rotulo + "</span>") + "</td>" +
+      '<td data-l="Margem">' + (p.margem_pct == null ? '<span class="cs">s/ custo</span>' : pct(p.margem_pct * 100)) + "</td>" +
+      '<td data-l="Opportunity">' + scoreBar(p.opportunity.score) + ' <span class="cs">conf ' + p.opportunity.confianca + "</span></td></tr>";
   }
   function prodTable(items, cols) {
     if (!items || !items.length) return '<div class="empty">Nada aqui neste período.</div>';
-    return '<table class="tbl"><thead><tr><th>Produto</th><th>Classe</th><th class="num">Un 30d</th><th class="num">Receita 30d</th><th>Tendência</th><th>Cobertura</th><th>Margem</th><th>Opportunity</th></tr></thead><tbody>' +
+    return '<table class="tbl mobile-cards"><thead><tr><th>Produto</th><th>Classe</th><th class="num">Un 30d</th><th class="num">Receita 30d</th><th>Tendência</th><th>Cobertura</th><th>Margem</th><th>Opportunity</th></tr></thead><tbody>' +
       items.map(prodRow).join("") + "</tbody></table>";
   }
   async function mktFetch(path) {
@@ -1388,13 +1388,90 @@
     });
   }
 
+  // ---------- Concorrentes ----------
+  function renderConcorrentes() {
+    state.view = "concorrentes";
+    document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === "concorrentes"); });
+    if (!state.loja) { view.innerHTML = '<div class="empty">Escolha uma loja.</div>'; return; }
+    view.innerHTML = '<div class="page-head"><div><h1>⚔️ Concorrentes</h1><div class="sub">' + esc(state.loja) + ' · comparação automática de preço + análise (dados da coleta na inbox)</div></div></div><div id="ccBody"><div class="empty">Carregando…</div></div>';
+    getJSON("/api/concorrencia/" + encodeURIComponent(state.loja)).then(function (d) {
+      view.querySelector("#ccBody").innerHTML = concorrentesHtml(d);
+    }).catch(function (e) {
+      view.querySelector("#ccBody").innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>";
+    });
+  }
+  function pressPill(p) {
+    var c = p === "ALTA" ? "var(--down)" : p === "MÉDIA" || p === "MEDIA" ? "var(--warn)" : "var(--muted)";
+    return '<span class="tag" style="background:' + c + ';color:#fff">' + esc(p) + "</span>";
+  }
+  function concorrentesHtml(d) {
+    if (!d || d.erro) return '<div class="empty">' + esc((d && d.erro) || "erro") + "</div>";
+    if (d.pendente) {
+      return '<div class="card"><div class="empty" style="padding:18px 6px">' + esc(d.nota) + "</div>" +
+        (d.concorrentes && d.concorrentes.length ? '<table class="tbl mobile-cards"><thead><tr><th>Concorrente</th><th>Perfil</th><th>Nota</th></tr></thead><tbody>' +
+          d.concorrentes.map(function (c) { return '<tr><td data-l="Concorrente">' + esc(c.concorrente) + '</td><td data-l="Perfil">' + esc(c.handle || "—") + '</td><td data-l="Nota">' + esc(c.nota || "—") + "</td></tr>"; }).join("") + "</tbody></table>" : "") + "</div>";
+    }
+    var pa = d.panorama;
+    var out = "";
+    // panorama
+    out += '<div class="cc-kpis">' +
+      ccKpi("Ofertas coletadas", int(pa.total_ofertas)) +
+      ccKpi("Comparáveis c/ nosso preço", int(pa.comparaveis)) +
+      ccKpi("Abaixo do nosso", int(pa.abaixo_do_nosso), pa.abaixo_do_nosso > 0 ? "var(--down)" : null) +
+      ccKpi("Mais barato em média", pa.desconto_medio_vs_nosso_pct == null ? "—" : "−" + pa.desconto_medio_vs_nosso_pct + "%") +
+      "</div>";
+    // resumo + ações
+    out += '<div class="card cc-resumo"><div class="chead"><div class="ci red">🧭</div><div><h3>Leitura automática</h3></div></div>' +
+      "<ul>" + (d.resumo || []).map(function (r) { return "<li>" + esc(r) + "</li>"; }).join("") + "</ul>" +
+      (d.acoes && d.acoes.length ? '<div class="cc-acoes"><b>Ações sugeridas</b><ul>' + d.acoes.map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") + "</ul></div>" : "") + "</div>";
+    // onde reagir
+    var reagir = (d.onde_reagir || []).filter(function (r) { return r.score >= 30; });
+    out += '<div class="card"><div class="chead"><div class="ci gold">🎯</div><div><h3>Onde reagir</h3><div class="cs">produto que eles baixaram e a gente vende — priorizado por volume × desconto × se dá pra cobrir</div></div></div>' +
+      (reagir.length ? '<table class="tbl mobile-cards"><thead><tr><th>Produto</th><th>Concorrente</th><th class="num">Eles</th><th class="num">Nós</th><th class="num">Dif.</th><th class="num">Nosso giro 30d</th><th>Margem</th><th>Veredito</th></tr></thead><tbody>' +
+        reagir.map(function (r) {
+          return "<tr><td data-l=\"Produto\">" + esc(r.produto) + (r.nossa_classe ? ' <span class="chip">' + esc(r.nossa_classe) + "</span>" : "") + "</td>" +
+            '<td data-l="Concorrente">' + esc(r.concorrente) + (r.confianca ? ' <span class="cs">(' + esc(r.confianca) + ")</span>" : "") + "</td>" +
+            '<td class="num" data-l="Eles">R$ ' + brl(r.preco_deles) + "</td>" +
+            '<td class="num" data-l="Nós">' + (r.nosso_preco == null ? "—" : "R$ " + brl(r.nosso_preco)) + "</td>" +
+            '<td class="num" data-l="Dif." style="color:var(--down)">' + (r.diff_pct == null ? "—" : "−" + r.diff_pct + "%") + "</td>" +
+            '<td class="num" data-l="Giro 30d">' + (r.nossa_receita_30d == null ? "—" : "R$ " + brl(r.nossa_receita_30d)) + "</td>" +
+            '<td data-l="Margem">' + (r.nossa_margem_pct == null ? '<span class="cs">s/ custo</span>' : pct(r.nossa_margem_pct * 100)) + "</td>" +
+            '<td data-l="Veredito">' + esc(r.veredito) + "</td></tr>";
+        }).join("") + "</tbody></table>" : '<div class="empty">Nada relevante para reagir — eles não baixaram nada que a gente venda em volume.</div>') + "</div>";
+    // por concorrente
+    out += '<div class="card"><div class="chead"><div class="ci conc">🏬</div><div><h3>Por concorrente</h3></div></div>' +
+      d.concorrentes.map(function (c) {
+        return '<div class="cc-conc">' +
+          '<div class="cc-conc-h"><b>' + esc(c.concorrente) + "</b>" + (c.handle ? ' <span class="cs">' + esc(c.handle) + "</span>" : "") +
+          (c.temColeta ? '<span class="tag" style="margin-left:auto">' + c.abaixo + " abaixo · " + c.ofertas + " ofertas</span>" : '<span class="tag conf-baixa" style="margin-left:auto">sem coleta</span>') + "</div>" +
+          (c.nota ? '<div class="cs">' + esc(c.nota) + "</div>" : "") +
+          (c.categorias_atacadas && c.categorias_atacadas.length ? '<div class="cs" style="margin-top:4px">Ataca: ' + c.categorias_atacadas.map(esc).join(", ") + "</div>" : "") +
+          (c.exemplos && c.exemplos.length ? '<ul class="cc-ex">' + c.exemplos.map(function (e) { return "<li>" + esc(e.produto) + " — <b>R$ " + brl(e.preco_deles) + "</b>" + (e.diff_pct != null ? ' <span style="color:var(--down)">(−' + e.diff_pct + "%)</span>" : "") + (e.nosso ? " vs nosso R$ " + brl(e.nosso) : "") + "</li>"; }).join("") + "</ul>" : "") +
+          "</div>";
+      }).join("") + "</div>";
+    // por categoria
+    out += '<div class="card"><div class="chead"><div class="ci cat">📊</div><div><h3>Pressão por categoria</h3></div></div>' +
+      (d.categorias.length ? '<table class="tbl mobile-cards"><thead><tr><th>Categoria</th><th class="num">Ofertas</th><th class="num">Abaixo</th><th class="num">Desc. médio</th><th class="num">Nossa tendência</th><th>Pressão</th></tr></thead><tbody>' +
+        d.categorias.map(function (c) {
+          return "<tr><td data-l=\"Categoria\">" + esc(c.categoria) + '</td><td class="num" data-l="Ofertas">' + int(c.ofertas) + '</td><td class="num" data-l="Abaixo">' + int(c.abaixo) + '</td>' +
+            '<td class="num" data-l="Desc">' + (c.desconto_medio_vs_nosso_pct == null ? "—" : "−" + c.desconto_medio_vs_nosso_pct + "%") + '</td>' +
+            '<td class="num" data-l="Tendência">' + (c.nossa_tendencia_pct == null ? "—" : (c.nossa_tendencia_pct > 0 ? "+" : "") + c.nossa_tendencia_pct + "%") + '</td>' +
+            '<td data-l="Pressão">' + pressPill(c.pressao) + "</td></tr>";
+        }).join("") + "</tbody></table>" : '<div class="empty">Sem categoria com dados.</div>') + "</div>";
+    return out;
+  }
+  function ccKpi(label, val, cor) {
+    return '<div class="cc-kpi"><span>' + esc(label) + '</span><b' + (cor ? ' style="color:' + cor + '"' : "") + ">" + val + "</b></div>";
+  }
+
   // ---------- nav ----------
-  var VIEWS = ["painel", "marketing", "intelligence", "conexoes", "analise", "upload", "historico", "config"];
+  var VIEWS = ["painel", "marketing", "concorrentes", "intelligence", "conexoes", "analise", "upload", "historico", "config"];
   function go(v) {
     state.view = v;
     document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === v); });
     if (v === "painel") { if (state.data) renderPainel(); else loadAnalise(); }
     else if (v === "marketing") { mkt.cache = {}; renderMarketing(); }
+    else if (v === "concorrentes") renderConcorrentes();
     else if (v === "intelligence") { itl.cache = {}; renderIntelligence(); }
     else if (v === "conexoes") renderConexoes();
     else if (v === "analise") renderAnalise();
@@ -1424,6 +1501,7 @@
       else if (state.view === "conexoes") { renderConexoes(); loadPeriodos(); }
       else if (state.view === "marketing") { mkt.cache = {}; loadPeriodos().then(function () { renderMarketing(); }); }
       else if (state.view === "intelligence") { itl.cache = {}; loadPeriodos().then(function () { renderIntelligence(); }); }
+      else if (state.view === "concorrentes") { loadPeriodos().then(function () { renderConcorrentes(); }); }
       else loadPeriodos();
     });
     selPeriodo.addEventListener("change", function () {
