@@ -81,6 +81,8 @@ async function regenerar({ port, cookie, outDir, root = __dirname, arquivo = "an
     const html = montarHtml(root, B);
     const dest = path.join(outDir, arquivo);
     fs.writeFileSync(dest, html);
+    // index.html = mesma coisa, para o Vercel/host servir em "/" direto (deploy 100% estático)
+    fs.writeFileSync(path.join(outDir, "index.html"), html);
     const comDados = Object.values(B.marketing).filter(Boolean).length;
     return { arquivo: dest, bytes: Buffer.byteLength(html), lojas_com_dados: comDados, geradoEm: B.geradoEm };
   } finally {

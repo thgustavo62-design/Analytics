@@ -11,7 +11,8 @@ inbox/*
 test/fixtures/*.pdf
 *.log
 .env
-publico/
+publico/*
+!publico/index.html
 data/servidor.log
 vercel/node_modules/
 vercel/.vercel/
