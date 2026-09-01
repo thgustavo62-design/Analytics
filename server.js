@@ -266,6 +266,12 @@ function processarConcorrentes(periodoId, loja, ano, mes, file) {
     referenceDate: new Date().toISOString().slice(0, 10) < refDate ? refDate : new Date().toISOString().slice(0, 10),
   });
   replaceConcorrencia(periodoId, ofertas);
+  // concorrência mexe no COMPETITOR_PRICE_ATTACK e no Opportunity Score — re-detecta
+  try {
+    require("./intelligence").rodarDeteccao(loja);
+  } catch (e) {
+    console.error("[upload/concorrentes] detecção:", e.message);
+  }
   return { ofertas: ofertas.length, ...resumo };
 }
 
@@ -346,6 +352,7 @@ app.post("/upload/instagram", (req, res) => {
     const periodoId = getOrCreatePeriodo(loja, ano, mes);
     const metricas = normalizeInstagram(req.body.metricas || req.body);
     replaceInstagram(periodoId, metricas);
+    regenerarPublicoEmBreve();
     res.json({ ok: true, instagram: { metricas: metricas.length } });
   } catch (e) {
     res.status(e.status || 500).json({ erro: e.message });
@@ -358,7 +365,9 @@ app.post("/upload/concorrentes", upload.single("arquivo"), (req, res) => {
     if (!req.file) throw httpErr(400, "Arquivo 'arquivo' (xlsx) obrigatório.");
     if (!findPeriodo(loja, ano, mes)) throw httpErr(400, "Período ainda não existe — envie o relatório de vendas primeiro.");
     const periodoId = getOrCreatePeriodo(loja, ano, mes);
-    res.json({ ok: true, concorrentes: processarConcorrentes(periodoId, loja, ano, mes, req.file) });
+    const r = processarConcorrentes(periodoId, loja, ano, mes, req.file);
+    regenerarPublicoEmBreve();
+    res.json({ ok: true, concorrentes: r });
   } catch (e) {
     res.status(e.status || 500).json({ erro: e.message });
   }
@@ -646,6 +655,17 @@ app.post("/api/intelligence/:loja/detect", (req, res) => {
     res.json(intel.rodarDeteccao(req.params.loja, { persistir: req.query.dry !== "1" }));
   } catch (e) {
     console.error("[detect]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// "Palantir": sinais cruzados entre si -> decisões recomendadas (ação + efeito + evidências)
+app.get("/api/intelligence/:loja/recommendations", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    res.json(intel.recomendarDecisoes(req.params.loja));
+  } catch (e) {
+    console.error("[recommendations]", e);
     res.status(500).json({ erro: e.message });
   }
 });

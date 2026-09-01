@@ -48,7 +48,7 @@ function achatar(B) {
   for (const [k, v] of Object.entries(B.ontologia)) { const [loja, ym] = k.split(SEP); add(loja, "ontologia", ym, v); }
   for (const [k, v] of Object.entries(B.analiseComercial)) {
     const [loja, ym] = k.split(SEP);
-    add(loja, ym ? "analise-comercial" : "analise-comercial", ym || null, v);
+    add(loja, "analise-comercial", ym || null, v);
   }
   for (const [loja, c] of Object.entries(B.catalogo)) add(loja, "catalogo", null, c);
   for (const [loja, mk] of Object.entries(B.marketing)) {

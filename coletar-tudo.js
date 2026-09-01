@@ -11,6 +11,7 @@ const MK_MARKETING = {
 const MK_INTEL = {
   "war-room": "warRoom", "signals": "signals", "investigations": "investigations",
   "decisions": "decisions", "patterns": "patterns", "editorial-plan": "editorial",
+  "recommendations": "recommendations",
 };
 
 function fazGet(port, cookie) {
@@ -60,6 +61,7 @@ async function coletarLoja(get, nome) {
     intelligence = {
       warRoom: await get(`/api/intelligence/${L}/war-room`),
       signals: await get(`/api/intelligence/${L}/signals?limite=120`),
+      recommendations: await get(`/api/intelligence/${L}/recommendations`),
       investigations: await get(`/api/intelligence/${L}/investigations`),
       decisions: await get(`/api/intelligence/${L}/decisions`),
       patterns: await get(`/api/intelligence/${L}/patterns`),

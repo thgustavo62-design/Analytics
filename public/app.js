@@ -1155,7 +1155,7 @@
   // ---------- Intelligence (Fases 5–12) ----------
   var itl = { tab: "warroom", cache: {} };
   var ITL_TABS = [
-    ["warroom", "War Room"], ["sinais", "Sinais"], ["investigacoes", "Investigações"],
+    ["warroom", "War Room"], ["recomendacoes", "Recomendações"], ["sinais", "Sinais"], ["investigacoes", "Investigações"],
     ["decisoes", "Decisões"], ["padroes", "Padrões"], ["pauta", "Pauta 7 dias"], ["perguntar", "Perguntar"],
   ];
   function itlGet(url, noCache) {
@@ -1204,6 +1204,11 @@
         var w = await itlGet("/api/intelligence/" + L + "/war-room", true);
         host.innerHTML = warRoomHtml(w);
         wireSigActions(host);
+        wireRecs(host, L);
+      } else if (itl.tab === "recomendacoes") {
+        var d = await itlGet("/api/intelligence/" + L + "/recommendations", true);
+        host.innerHTML = recsHtml(d, true);
+        wireRecs(host, L);
       } else if (itl.tab === "sinais") {
         var arr = await itlGet("/api/intelligence/" + L + "/signals?limite=200", true);
         host.innerHTML = arr.length ? '<div class="itl-grid">' + arr.map(sinalCard).join("") + "</div>" : '<div class="empty">Nenhum sinal. Rode a detecção.</div>';
@@ -1231,6 +1236,47 @@
       host.innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>";
     }
   }
+  var REC_ICO = { DEFENDER_CATEGORIA: "🛡️", CAMPANHA_SEM_ESTOQUE: "⛽", APROVEITAR_ALTA: "📈", DESOVAR_COMBO: "🔗", REVISAR_DADO: "⚠️", SINAL_ISOLADO: "•" };
+  function recCard(r, aberto) {
+    return '<div class="rec" data-rec="' + esc(r.codigo) + '">' +
+      '<div class="rec-h"><span class="rec-ico">' + (REC_ICO[r.tipo] || "•") + '</span><b>' + esc(r.titulo) + '</b><span class="rec-p">P' + Math.round(r.prioridade) + "</span></div>" +
+      '<div class="rec-acao">👉 ' + esc(r.acao) + "</div>" +
+      '<div class="rec-efeito">' + esc(r.efeito_esperado || "") + '</div>' +
+      '<div class="rec-meta">' + esc(r.codigo) + " · conf " + (r.confianca != null ? r.confianca.toFixed(2) : "—") +
+        " · sinais " + (r.sinais_codigos || []).join(", ") + "</div>" +
+      (aberto && r.evidencias && r.evidencias.length
+        ? '<ul class="rec-ev">' + r.evidencias.map(function (e) { return "<li><b>" + esc(e.campo) + ":</b> " + esc(String(e.valor)) + (e.fonte ? ' <span class="cs">(' + esc(e.fonte) + ")</span>" : "") + "</li>"; }).join("") + "</ul>"
+        : "") +
+      '<div class="rec-a"><button data-rec-act="decidir" data-rec="' + esc(r.codigo) + '">Registrar como decisão</button></div>' +
+      "</div>";
+  }
+  function recsHtml(d, aberto) {
+    if (!d || d.erro) return '<div class="empty">' + esc((d && d.erro) || "sem recomendações") + "</div>";
+    var recs = d.recomendacoes || [];
+    if (!recs.length) return '<div class="empty">Sem recomendações agora — nenhuma combinação de sinais pede ação. Rode a detecção se acabou de subir dados.</div>';
+    RECS_CACHE = {}; recs.forEach(function (r) { RECS_CACHE[r.codigo] = r; });
+    return '<div class="cs" style="margin-bottom:10px">Decisões propostas cruzando os sinais abertos entre si (modelo Palantir) — cada uma traz a ação, o efeito esperado e a cadeia de evidências.</div>' +
+      recs.map(function (r) { return recCard(r, aberto); }).join("");
+  }
+  var RECS_CACHE = {};
+  function wireRecs(host, L) {
+    host.querySelectorAll('[data-rec-act="decidir"]').forEach(function (b) {
+      b.addEventListener("click", async function () {
+        var r = RECS_CACHE[b.getAttribute("data-rec")];
+        if (!r) return;
+        var titulo = prompt("Título da decisão:", r.titulo);
+        if (!titulo) return;
+        var tipoMap = { DEFENDER_CATEGORIA: "CAMPANHA", CAMPANHA_SEM_ESTOQUE: "ESTOQUE", APROVEITAR_ALTA: "EDITORIAL", DESOVAR_COMBO: "CAMPANHA", REVISAR_DADO: "OUTRO", SINAL_ISOLADO: "OUTRO" };
+        try {
+          await fetch("/api/intelligence/" + L + "/decisions", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ titulo: titulo, tipo: tipoMap[r.tipo] || "OUTRO", contexto: r.acao + "\n\nEfeito esperado: " + r.efeito_esperado, sinais: r.sinais || [], acoes: [{ texto: r.acao }] }),
+          });
+          itl.tab = "decisoes"; itl.cache = {}; renderIntelligence();
+        } catch (e) { alert("Falhou: " + e.message); }
+      });
+    });
+  }
   function warRoomHtml(w) {
     if (w.erro) return '<div class="empty">' + esc(w.erro) + "</div>";
     var k = w.kpis;
@@ -1243,6 +1289,7 @@
         '<div class="wr-kpi opp"><span>Oportunidades</span><b>' + k.oportunidades_abertas + "</b></div>" +
       "</div>" +
       (p1 ? '<div class="wr-p1"><div class="wr-p1-tag">PRIORIDADE #1 · ' + esc(p1.codigo) + ' · P' + Math.round(p1.prioridade) + '</div><div class="wr-p1-t">' + esc(p1.titulo) + "</div><div class=\"wr-p1-r\">" + esc(p1.resumo || "") + '</div><button class="wr-btn" data-act="why" data-id="' + p1.id + '">Por quê?</button> <button class="wr-btn" data-act="dec" data-id="' + p1.id + '">Virar decisão</button><div class="itl-why" id="why-' + p1.id + '" hidden></div></div>' : '<div class="wr-p1 calm">Sem prioridade urgente. Operação dentro do esperado.</div>') +
+      ((w.recomendacoes && w.recomendacoes.length) ? '<div class="wr-recs"><h3>🎯 Decisões recomendadas (sinais cruzados)</h3>' + recsHtml({ recomendacoes: w.recomendacoes.slice(0, 5) }, false) + '</div>' : "") +
       '<div class="wr-cols">' +
         '<div class="wr-col"><h3>🔴 Threat Map</h3>' + (w.threat_map.length ? w.threat_map.map(miniSig).join("") : '<div class="wr-empty">nada</div>') + "</div>" +
         '<div class="wr-col"><h3>🟢 Opportunity Map</h3>' + (w.opportunity_map.length ? w.opportunity_map.map(miniSig).join("") : '<div class="wr-empty">nada</div>') + "</div>" +

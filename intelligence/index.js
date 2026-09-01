@@ -8,6 +8,7 @@ const db = require("../db");
 const { montarContexto } = require("./contexto");
 const detectores = require("./detectores");
 const { prioridade } = require("./priorizacao");
+const { recomendarDecisoes } = require("./decisao");
 
 function rodarDeteccao(loja, { persistir = true, contexto } = {}) {
   const ctx = contexto || montarContexto(loja);
@@ -71,6 +72,14 @@ function warRoom(loja) {
     sob_pressao: ctx.concorrenciaCategorias.has(c.categoria),
   }));
 
+  // "Palantir": cruza os sinais abertos entre si e propõe decisões
+  let recomendacoes = [];
+  try {
+    recomendacoes = (recomendarDecisoes(loja).recomendacoes || []).slice(0, 8);
+  } catch (e) {
+    recomendacoes = [];
+  }
+
   return {
     loja,
     refDate: ctx.refDate,
@@ -83,8 +92,10 @@ function warRoom(loja) {
       sinais_abertos: abertos.length,
       ameacas_abertas: ameacas.length,
       oportunidades_abertas: oportunidades.length,
+      recomendacoes: recomendacoes.length,
     },
     prioridade_1: todos[0] || null,
+    recomendacoes,
     threat_map: ameacas.slice(0, 12),
     opportunity_map: oportunidades.slice(0, 12),
     contradicoes,
@@ -93,4 +104,4 @@ function warRoom(loja) {
   };
 }
 
-module.exports = { rodarDeteccao, warRoom, montarContexto };
+module.exports = { rodarDeteccao, warRoom, montarContexto, recomendarDecisoes };
