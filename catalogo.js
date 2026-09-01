@@ -170,9 +170,14 @@ function ingestPlanilhaProduto(filePath) {
   let aplicadas = 0;
   let semProduto = 0;
   let baixaConfianca = 0;
+  const extra = { estoque: 0, preco: 0, preco_promocional: 0, custo: 0 }; // sub-tipos vindos do MESMO arquivo
   const lojasIds = {};
   for (const l of LOJAS) lojasIds[l] = db.lojaId(l);
 
+  // uma transação só — a planilha da rede tem ~15k linhas e cada uma pode gerar 4 escritas
+  // historizadas (estoque + preço + promo + custo). Sem isto, são dezenas de milhares de commits.
+  db.db.exec("BEGIN");
+  try {
   for (let r = cab.linha + 1; r < rows.length; r++) {
     const row = rows[r];
     if (!row) continue;
@@ -190,15 +195,31 @@ function ingestPlanilhaProduto(filePath) {
 
     if (tipo === "estoque") {
       const q = num(row[idx.quantidade]);
-      if (q == null && idx.disponivel == null) continue;
-      db.inserirEstoque(lid, resolvido.produtoId, {
-        quantidade: q,
-        reservado: idx.reservado != null ? num(row[idx.reservado]) : null,
-        disponivel: idx.disponivel != null ? num(row[idx.disponivel]) : null,
-        data_referencia: (idx.data_referencia != null ? iso(row[idx.data_referencia]) : null) || dataArq,
-        fonte: base,
-      });
-      aplicadas++;
+      const di = (idx.data_referencia != null ? iso(row[idx.data_referencia]) : null) || dataArq;
+      if (q != null || idx.disponivel != null) {
+        db.inserirEstoque(lid, resolvido.produtoId, {
+          quantidade: q,
+          reservado: idx.reservado != null ? num(row[idx.reservado]) : null,
+          disponivel: idx.disponivel != null ? num(row[idx.disponivel]) : null,
+          data_referencia: di,
+          fonte: base,
+        });
+        aplicadas++;
+        extra.estoque++;
+      }
+      // o export de estoque da rede já carrega preço e custo — aproveita do MESMO arquivo
+      if (idx.preco != null) {
+        const pv = num(row[idx.preco]);
+        if (pv != null && pv > 0) { db.inserirPreco(lid, resolvido.produtoId, pv, di, "normal", base); extra.preco++; }
+      }
+      if (idx.preco_promocional != null) {
+        const pp = num(row[idx.preco_promocional]);
+        if (pp != null && pp > 0) { db.inserirPreco(lid, resolvido.produtoId, pp, di, "promocional", base); extra.preco_promocional++; }
+      }
+      if (idx.custo != null && idx.custo !== idx.preco && idx.custo !== idx.preco_promocional) {
+        const c = num(row[idx.custo]);
+        if (c != null && c > 0) { db.inserirCusto(lid, resolvido.produtoId, c, di, base); extra.custo++; }
+      }
     } else if (tipo === "custo") {
       const c = num(row[idx.custo]);
       if (c == null || c <= 0) continue;
@@ -214,8 +235,20 @@ function ingestPlanilhaProduto(filePath) {
       }
     }
   }
+    db.db.exec("COMMIT");
+  } catch (e) {
+    db.db.exec("ROLLBACK");
+    throw e;
+  }
 
-  return { tipo: "catalogo-" + tipo, aba: alvo.aba, linhas_aplicadas: aplicadas, sem_produto: semProduto, casados_por_nome: baixaConfianca };
+  return {
+    tipo: "catalogo-" + tipo,
+    aba: alvo.aba,
+    linhas_aplicadas: aplicadas,
+    sem_produto: semProduto,
+    casados_por_nome: baixaConfianca,
+    feeds_do_arquivo: tipo === "estoque" ? extra : undefined,
+  };
 }
 
 module.exports = { sincronizarProdutosDeVendas, ingestPlanilhaProduto, detectarTipoPlanilha, normalizarEan };

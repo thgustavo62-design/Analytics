@@ -12,9 +12,15 @@ process.env.VA_DB_PATH = TMP_DB;
 for (const s of ["", "-wal", "-shm"]) { try { fs.unlinkSync(TMP_DB + s); } catch {} }
 
 const db = require("../db");
-const { sincronizarProdutosDeVendas, normalizarEan } = require("../catalogo");
+const { sincronizarProdutosDeVendas, normalizarEan, ingestPlanilhaProduto, detectarTipoPlanilha } = require("../catalogo");
 const { classificar } = require("../classify");
 const { parseVendasPdf } = require("../parsers/vendas");
+
+const ESTOQUE_FIX = [
+  process.env.ESTOQUE_FIXTURE,
+  path.join(__dirname, "fixtures", "estoque-minas-farma.xlsx"),
+  "C:\\Users\\Admin\\Downloads\\estoque minas farma.xlsx",
+].filter(Boolean).find((p) => fs.existsSync(p));
 
 const FIX = [
   process.env.VENDAS_FIXTURE,
@@ -58,6 +64,27 @@ test("sincronizarProdutosDeVendas popula o catálogo a partir das vendas", { ski
   const r2 = sincronizarProdutosDeVendas(periodoId);
   assert.equal(r2.criados, 0);
   assert.equal(db.contagemCatalogo().produtos, c.produtos);
+});
+
+test("planilha de estoque da rede alimenta estoque + custo + preço + promoção do MESMO arquivo", { skip: ESTOQUE_FIX ? false : "fixture de estoque não encontrada" }, () => {
+  assert.equal(detectarTipoPlanilha(path.basename(ESTOQUE_FIX).toLowerCase()), "estoque");
+  const r = ingestPlanilhaProduto(ESTOQUE_FIX);
+  assert.ok(r.feeds_do_arquivo, "não reportou os sub-feeds");
+  assert.ok(r.feeds_do_arquivo.estoque > 500, "poucas linhas de estoque");
+  assert.ok(r.feeds_do_arquivo.custo > 100, "não leu 'Últ. Prc. Entrada' como custo");
+  assert.ok(r.feeds_do_arquivo.preco > 100 && r.feeds_do_arquivo.preco_promocional > 100);
+  assert.ok(r.sem_produto < r.linhas_aplicadas * 0.05, "muitos produtos não casaram");
+
+  const fr = db.freshnessCatalogo("Minas Farma");
+  assert.ok(fr.estoque.ultima && fr.custo.ultima && fr.preco.ultima, "freshness não registrou os 3 feeds");
+
+  // um produto qualquer com EAN tem estoque, custo e preço coerentes (custo <= preço)
+  const lid = db.lojaId("Minas Farma");
+  const hoje = new Date().toISOString().slice(0, 10);
+  const p = db.db.prepare("SELECT id FROM produtos WHERE ean IS NOT NULL AND fonte IN ('catalogo','vendas') LIMIT 1").get();
+  const cst = db.getCustoEm(lid, p.id, hoje);
+  const prc = db.getPrecoEm(lid, p.id, hoje, "normal");
+  if (cst && prc) assert.ok(cst.custo > 0 && prc.preco >= cst.custo, "custo maior que preço — mapeamento de coluna trocado");
 });
 
 test("custo é historizado (fecha a vigência anterior; consulta por data)", () => {
