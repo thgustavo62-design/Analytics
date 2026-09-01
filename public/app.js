@@ -239,11 +239,12 @@
   function cardCategoria(d) {
     var tot = d.kpis.faturamento;
     var legend = d.categories.map(function (c, i) {
-      return '<div class="row"><span class="legend-dot"><i style="background:' + (c.color || CAT_COLORS[i % 7]) + '"></i></span>' +
+      return '<div class="row cx-jump" data-cat="' + esc(c.catRaw || c.label) + '" title="ver no mapa de conexões" style="cursor:pointer">' +
+        '<span class="legend-dot"><i style="background:' + (c.color || CAT_COLORS[i % 7]) + '"></i></span>' +
         '<span class="nm">' + esc(c.label) + '</span><span class="pc">' + pct(c.v / tot * 100) + "</span></div>";
     }).join("");
     return '<div class="card"><div class="chead"><div class="ci cat">📅</div><div><h3>Vendas por Categoria</h3>' +
-      '<div class="cs">Baseada em palavra-chave (categoria estimada)</div></div></div>' +
+      '<div class="cs">Baseada em palavra-chave · clique numa categoria p/ ver as conexões</div></div></div>' +
       '<div class="donut-wrap"><div class="donut-host" data-chart="donut"></div><div class="cat-legend">' + legend + "</div></div>" +
       '<div class="note">ⓘ Categoria estimada por palavra-chave. Não é o cadastro do sistema.</div></div>';
   }
@@ -353,6 +354,13 @@
   function wirePainel(d) {
     var b = view.querySelector("#btn-baixar");
     if (b) b.onclick = function () { window.location.href = "/export/" + encodeURIComponent(d.loja) + "/" + d.periodo; };
+    if (!view._cxDelegated) {
+      view._cxDelegated = true;
+      view.addEventListener("click", function (ev) {
+        var j = ev.target.closest && ev.target.closest(".cx-jump");
+        if (j && state.view === "painel") abrirConexoes("cat:" + j.getAttribute("data-cat"));
+      });
+    }
     view.querySelectorAll("[data-tab]").forEach(function (el) {
       el.addEventListener("click", function (ev) {
         ev.preventDefault();
@@ -579,6 +587,7 @@
       '<div class="page-head"><div><h1>🧭 Análise Comercial</h1><div class="sub">' + esc(d.loja) + " · " + esc(d.periodo) +
         (meses.length > 1 ? ' &nbsp; <select id="acMes" class="inp" style="width:auto;display:inline-block">' + sel + "</select>" : "") + "</div></div>" +
         '<div style="display:flex;gap:8px">' +
+        (EXPORT ? "" : '<button class="btn secondary" id="acMapa" title="Ver os achados ligados aos objetos">🕸️ Ver no mapa</button>') +
         (!EXPORT && d.podeGerar ? '<button class="btn secondary" id="acRegerar" title="Regera com a API da Anthropic">🧠 Regerar</button>' : "") +
         (EXPORT ? "" : '<button class="btn secondary" id="acBaixar">⬇ Baixar (HTML)</button>') + "</div></div>" +
       (metaLine ? '<div class="note" style="margin:-8px 0 16px">' + metaLine + "</div>" : "") +
@@ -600,6 +609,8 @@
     if (acB) acB.addEventListener("click", function () { window.location.href = "/export-analise/" + encodeURIComponent(d.loja) + "/" + d.periodo; });
     var acR = view.querySelector("#acRegerar");
     if (acR) acR.addEventListener("click", function () { gerarAnaliseAgora(acR, d.periodo); });
+    var acM = view.querySelector("#acMapa");
+    if (acM) acM.addEventListener("click", function () { state.periodo = d.periodo; abrirConexoes(); });
   }
 
   async function gerarAnaliseAgora(btn, ym) {
@@ -731,16 +742,217 @@
       (a.limitacoes && a.limitacoes.length ? '<div class="lims">Limitações: ' + a.limitacoes.map(esc).join(" · ") + "</div>" : "") + "</div>";
   }
 
+  // ---------- Conexões (ontologia — grafo de objetos interligados) ----------
+  var NODE_COR = {
+    loja: "#111827", categoria: "var(--s1)", campanha: "var(--s3)", canal: "var(--s4)",
+    concorrente: "var(--s2)", sinal: "#6b7280", risco: "#dc2626", oportunidade: "#16a34a",
+    acao: "#2563eb", decisao: "#7c3aed", veredito: "#7c3aed",
+  };
+  var EDGE_COR = {
+    vende: "#c9ced6", canal: "#93b4e6", promove: "#7fca9f", pressiona: "#e88", afeta: "#e88",
+    causa: "#e88", risco: "#e88", sobre: "#b7a4e0", veredito: "#b7a4e0", decisao: "#b7a4e0",
+    oportunidade: "#7fca9f", acao: "#93b4e6", campanha: "#c9ced6", concorrente: "#c9ced6",
+    sinal: "#c9ced6", explica: "#c9ced6",
+  };
+  var TIPO_LABEL = { loja: "Loja", categoria: "Categoria", campanha: "Campanha", canal: "Canal", concorrente: "Concorrente", sinal: "Sinal", risco: "Risco", oportunidade: "Oportunidade", acao: "Ação", decisao: "Decisão", veredito: "Veredito de campanha" };
+  var REL_LABEL = { vende: "vende", canal: "canal", promove: "promove", pressiona: "pressão de preço em", afeta: "afeta", causa: "origem", risco: "risco", sobre: "sobre", veredito: "veredito de", decisao: "decisão", oportunidade: "oportunidade", acao: "ação", campanha: "campanha", concorrente: "concorrente", sinal: "sinal", explica: "explica" };
+
+  function circMean(angs) {
+    if (!angs.length) return null;
+    var x = 0, y = 0;
+    angs.forEach(function (a) { x += Math.cos(a); y += Math.sin(a); });
+    return Math.atan2(y / angs.length, x / angs.length);
+  }
+
+  var CX_ONT = 620, CY_ONT = 430;
+  function layoutOntologia(g) {
+    var pos = {};
+    pos["loja"] = { x: CX_ONT, y: CY_ONT, r: 32, ang: 0 };
+    var viz = {};
+    g.edges.forEach(function (e) {
+      (viz[e.de] = viz[e.de] || []).push(e.para);
+      (viz[e.para] = viz[e.para] || []).push(e.de);
+    });
+    // anel de categorias — distribuído por igual, ordenado por receita
+    var cats = g.nodes.filter(function (n) { return n.tipo === "categoria"; }).sort(function (a, b) { return (b.valor || 0) - (a.valor || 0); });
+    var maxVal = Math.max.apply(null, cats.map(function (c) { return c.valor || 1; }).concat([1]));
+    cats.forEach(function (n, i) {
+      var ang = (i / Math.max(1, cats.length)) * Math.PI * 2 - Math.PI / 2;
+      pos[n.id] = { x: CX_ONT + Math.cos(ang) * 185, y: CY_ONT + Math.sin(ang) * 185, r: 7 + 15 * Math.sqrt((n.valor || 1) / maxVal), ang: ang, ring: 1 };
+    });
+    // anéis externos — ângulo preferido = média dos vizinhos já posicionados; depois
+    // distribui por igual respeitando essa ordem (garante que não encavala).
+    function anel(tipos, radius, stagger) {
+      var arr = g.nodes.filter(function (n) { return tipos.indexOf(n.tipo) >= 0 && !pos[n.id]; });
+      if (!arr.length) return;
+      arr.forEach(function (n) {
+        var angs = (viz[n.id] || []).map(function (v) { return pos[v] ? pos[v].ang : null; }).filter(function (a) { return a != null; });
+        n._pref = circMean(angs);
+        if (n._pref == null) n._pref = Math.random() * Math.PI * 2;
+      });
+      arr.sort(function (a, b) { return a._pref - b._pref; });
+      arr.forEach(function (n, i) {
+        var ang = (i / arr.length) * Math.PI * 2 - Math.PI / 2;
+        var rr = radius + (stagger && i % 2 ? 42 : 0);
+        pos[n.id] = { x: CX_ONT + Math.cos(ang) * rr, y: CY_ONT + Math.sin(ang) * rr, r: 12, ang: ang, ring: radius };
+      });
+    }
+    anel(["campanha", "canal"], 300);
+    anel(["concorrente", "sinal", "risco", "oportunidade", "acao", "decisao", "veredito"], 400, true);
+    return pos;
+  }
+  function boundsOf(pos) {
+    var xs = [], ys = [];
+    for (var k in pos) { xs.push(pos[k].x); ys.push(pos[k].y); }
+    var pad = 140;
+    var minX = Math.min.apply(null, xs) - pad, maxX = Math.max.apply(null, xs) + pad;
+    var minY = Math.min.apply(null, ys) - pad, maxY = Math.max.apply(null, ys) + pad;
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+
+  async function renderConexoes(ym) {
+    state.view = "conexoes";
+    document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === "conexoes"); });
+    view.innerHTML = '<div class="empty">Montando o mapa…</div>';
+    var periodo = ym || state.periodo;
+    try {
+      if (!periodo) {
+        var ps = (await getJSON("/api/periodos/" + encodeURIComponent(state.loja))).filter(function (p) { return p.temVendas; });
+        if (!ps.length) throw { body: { erro: "sem dados para " + state.loja } };
+        periodo = (ps.filter(function (p) { return p.atual; })[0] || ps[0]).periodo;
+      }
+      var g = await getJSON("/api/ontologia/" + encodeURIComponent(state.loja) + "/" + periodo);
+      state.conexoes = { g: g, periodo: periodo, pos: layoutOntologia(g), filtro: null };
+      drawConexoes();
+    } catch (e) {
+      view.innerHTML = '<div class="page-head"><div><h1>🕸️ Conexões</h1><div class="sub">' + esc(state.loja) + "</div></div></div>" +
+        '<div class="empty"><div class="big">' + esc((e.body && e.body.erro) || "Não deu para montar o mapa") + ".</div><p>Suba um relatório de vendas primeiro.</p></div>";
+    }
+  }
+
+  function drawConexoes() {
+    var C = state.conexoes;
+    if (!C) return;
+    var g = C.g, pos = C.pos;
+    var focus = state.conexoesFocus && g.nodes.some(function (n) { return n.id === state.conexoesFocus; }) ? state.conexoesFocus : null;
+    var vizIds = {};
+    if (focus) { vizIds[focus] = 1; g.edges.forEach(function (e) { if (e.de === focus) vizIds[e.para] = 1; if (e.para === focus) vizIds[e.de] = 1; }); }
+    var visivel = function (n) { return !C.filtro || n.tipo === C.filtro || n.tipo === "loja" || (focus && vizIds[n.id]); };
+
+    var tipos = [];
+    g.nodes.forEach(function (n) { if (n.tipo !== "loja" && tipos.indexOf(n.tipo) < 0) tipos.push(n.tipo); });
+    var chips = '<button class="cx-chip' + (!C.filtro ? " on" : "") + '" data-f="">Tudo</button>' + tipos.map(function (t) {
+      return '<button class="cx-chip' + (C.filtro === t ? " on" : "") + '" data-f="' + t + '"><i style="background:' + (NODE_COR[t] || "#999") + '"></i>' + (TIPO_LABEL[t] || t) + " (" + (g.contagem[t] || 0) + ")</button>";
+    }).join("");
+
+    // SVG — viewBox ajustado ao conteúdo
+    var bb = boundsOf(pos), parts = [];
+    g.edges.forEach(function (e) {
+      var a = pos[e.de], b = pos[e.para];
+      if (!a || !b) return;
+      var n1 = g.nodes.find(function (n) { return n.id === e.de; }), n2 = g.nodes.find(function (n) { return n.id === e.para; });
+      if (!visivel(n1) || !visivel(n2)) return;
+      var on = !focus || e.de === focus || e.para === focus;
+      var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      var cxp = mx + (CX_ONT - mx) * 0.14, cyp = my + (CY_ONT - my) * 0.14;
+      parts.push('<path d="M' + a.x.toFixed(0) + " " + a.y.toFixed(0) + " Q" + cxp.toFixed(0) + " " + cyp.toFixed(0) + " " + b.x.toFixed(0) + " " + b.y.toFixed(0) +
+        '" fill="none" stroke="' + (on ? (EDGE_COR[e.tipo] || "#c9ced6") : "#eceef1") + '" stroke-width="' + (on ? Math.min(4, 1 + (e.peso || 1) / 6) : 1) + '" opacity="' + (on ? 0.85 : 0.35) + '"/>');
+      if (e.rotulo && on && focus) parts.push('<text x="' + mx.toFixed(0) + '" y="' + (my - 3).toFixed(0) + '" text-anchor="middle" class="cx-elabel">' + esc(e.rotulo) + "</text>");
+    });
+    g.nodes.forEach(function (n) {
+      var p = pos[n.id];
+      if (!p || !visivel(n)) return;
+      var dim = focus && !vizIds[n.id];
+      var ring = { risco: "#dc2626", oportunidade: "#16a34a", atencao: "#d97706", decisao: "#7c3aed" }[n.destaque];
+      parts.push('<g class="cx-node" data-id="' + esc(n.id) + '" opacity="' + (dim ? 0.22 : 1) + '" style="cursor:pointer">');
+      if (ring) parts.push('<circle cx="' + p.x + '" cy="' + p.y + '" r="' + (p.r + 4) + '" fill="none" stroke="' + ring + '" stroke-width="2.5"/>');
+      parts.push('<circle cx="' + p.x + '" cy="' + p.y + '" r="' + p.r + '" fill="' + (NODE_COR[n.tipo] || "#999") + '" stroke="' + (n.id === focus ? "#111" : "#fff") + '" stroke-width="' + (n.id === focus ? 3 : 2) + '"/>');
+      // rótulo: nós externos empurram o texto para fora do centro
+      var out = n.tipo === "loja" ? 0 : 1;
+      var lx = out ? p.x + Math.cos(p.ang) * (p.r + 4) : p.x;
+      var ly = out ? p.y + Math.sin(p.ang) * (p.r + 4) + 4 : p.y + p.r + 12;
+      var anchor = !out ? "middle" : Math.cos(p.ang) > 0.35 ? "start" : Math.cos(p.ang) < -0.35 ? "end" : "middle";
+      var txt = n.rotulo.length > 30 ? n.rotulo.slice(0, 29) + "…" : n.rotulo;
+      parts.push('<text x="' + lx.toFixed(0) + '" y="' + ly.toFixed(0) + '" text-anchor="' + anchor + '" class="cx-nlabel' + (n.id === focus ? " f" : "") + '">' + esc(txt) + "</text>");
+      parts.push("</g>");
+    });
+
+    view.innerHTML =
+      '<div class="page-head"><div><h1>🕸️ Conexões <span class="cs" style="font-weight:500">' + esc(state.loja) + " · " + esc(C.periodo) + "</span></h1>" +
+        '<div class="sub">Cada objeto — categoria, campanha, canal, concorrente, risco — ligado ao que ele toca. Clique para focar.' +
+        (g.tem_analise_comercial ? " Inclui os achados da Análise Comercial." : " (gere a Análise Comercial para trazer riscos e ações pro mapa.)") + "</div></div></div>" +
+      '<div class="cx-chips">' + chips + "</div>" +
+      '<div class="cx-wrap"><div class="cx-graph"><svg viewBox="' + bb.x.toFixed(0) + " " + bb.y.toFixed(0) + " " + bb.w.toFixed(0) + " " + bb.h.toFixed(0) + '" class="cx-svg">' + parts.join("") + "</svg></div>" +
+      '<div class="cx-panel" id="cxPanel">' + cxPanelHtml(focus ? g.nodes.find(function (n) { return n.id === focus; }) : null, g) + "</div></div>";
+
+    view.querySelectorAll(".cx-chip").forEach(function (b) {
+      b.addEventListener("click", function () { C.filtro = b.getAttribute("data-f") || null; state.conexoesFocus = null; drawConexoes(); });
+    });
+    view.querySelectorAll(".cx-node").forEach(function (el) {
+      el.addEventListener("click", function () { state.conexoesFocus = el.getAttribute("data-id"); drawConexoes(); });
+    });
+    view.querySelectorAll("[data-goto]").forEach(function (el) {
+      el.addEventListener("click", function () { state.conexoesFocus = el.getAttribute("data-goto"); drawConexoes(); });
+    });
+    var lim = view.querySelector("#cxLimpar");
+    if (lim) lim.addEventListener("click", function () { state.conexoesFocus = null; drawConexoes(); });
+  }
+
+  function cxPanelHtml(node, g) {
+    if (!node) {
+      var destaques = g.nodes.filter(function (n) { return ["risco", "oportunidade"].indexOf(n.destaque) >= 0 || n.tipo === "sinal" || n.tipo === "risco" || n.tipo === "oportunidade"; });
+      return '<div class="cx-p-empty"><b>Selecione um objeto</b><p>ou comece pelos pontos de atenção:</p>' +
+        destaques.slice(0, 8).map(function (n) {
+          return '<div class="cx-link" data-goto="' + esc(n.id) + '"><span class="cx-dot" style="background:' + (NODE_COR[n.tipo] || "#999") + '"></span>' + esc(n.rotulo) + "</div>";
+        }).join("") + "</div>";
+    }
+    var conn = [];
+    g.edges.forEach(function (e) {
+      if (e.de === node.id) conn.push({ rel: e.tipo, id: e.para, rotulo: e.rotulo });
+      else if (e.para === node.id) conn.push({ rel: e.tipo, id: e.de, rotulo: e.rotulo });
+    });
+    var porRel = {};
+    conn.forEach(function (c) {
+      var alvo = g.nodes.find(function (n) { return n.id === c.id; });
+      if (!alvo) return;
+      (porRel[c.rel] = porRel[c.rel] || []).push({ alvo: alvo, rotulo: c.rotulo });
+    });
+    var metr = Object.keys(node.metricas || {}).map(function (k) {
+      return '<div class="cx-m"><span>' + esc(k) + "</span><b>" + esc(node.metricas[k]) + "</b></div>";
+    }).join("");
+    var conexHtml = Object.keys(porRel).map(function (rel) {
+      return '<div class="cx-relgrp"><div class="cx-rel">' + esc(REL_LABEL[rel] || rel) + "</div>" +
+        porRel[rel].map(function (x) {
+          return '<div class="cx-link" data-goto="' + esc(x.alvo.id) + '"><span class="cx-dot" style="background:' + (NODE_COR[x.alvo.tipo] || "#999") + '"></span>' +
+            esc(x.alvo.rotulo) + (x.rotulo ? ' <span class="cx-tag">' + esc(x.rotulo) + "</span>" : "") + "</div>";
+        }).join("") + "</div>";
+    }).join("");
+    return '<div class="cx-p-head"><span class="cx-badge" style="background:' + (NODE_COR[node.tipo] || "#999") + '">' + esc(TIPO_LABEL[node.tipo] || node.tipo) + "</span>" +
+      (node.destaque ? '<span class="cx-badge d-' + node.destaque + '">' + node.destaque + "</span>" : "") + "</div>" +
+      "<h3>" + esc(node.rotulo) + "</h3>" +
+      (node.nota ? '<p class="cx-nota">' + esc(node.nota) + "</p>" : "") +
+      (metr ? '<div class="cx-metrs">' + metr + "</div>" : "") +
+      (node.lista ? '<div class="cx-lista"><b>' + esc(node.lista.titulo) + "</b>" + node.lista.itens.map(function (i) { return "<div>• " + esc(i) + "</div>"; }).join("") + "</div>" : "") +
+      (conexHtml ? '<div class="cx-conex"><div class="cx-conex-h">Conectado a</div>' + conexHtml + "</div>" : "") +
+      '<button class="btn secondary" id="cxLimpar" style="margin-top:12px">← limpar foco</button>';
+  }
+
   // ---------- nav ----------
-  var VIEWS = ["painel", "analise", "upload", "historico", "config"];
+  var VIEWS = ["painel", "conexoes", "analise", "upload", "historico", "config"];
   function go(v) {
     state.view = v;
     document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === v); });
     if (v === "painel") { if (state.data) renderPainel(); else loadAnalise(); }
+    else if (v === "conexoes") renderConexoes();
     else if (v === "analise") renderAnalise();
     else if (v === "upload") renderUpload();
     else if (v === "historico") renderHistorico();
     else if (v === "config") renderConfig();
+  }
+  function abrirConexoes(focusId) {
+    state.conexoesFocus = focusId || null;
+    location.hash = "conexoes";
+    if (state.view === "conexoes") renderConexoes();
   }
 
   // ---------- boot ----------
@@ -756,9 +968,14 @@
       state.loja = selLoja.value;
       LS.setItem("va_loja", state.loja);
       if (state.view === "analise") { renderAnalise(); loadPeriodos(); }
+      else if (state.view === "conexoes") { renderConexoes(); loadPeriodos(); }
       else loadPeriodos();
     });
-    selPeriodo.addEventListener("change", loadAnalise);
+    selPeriodo.addEventListener("change", function () {
+      state.periodo = selPeriodo.value;
+      if (state.view === "conexoes") { state.conexoesFocus = null; renderConexoes(selPeriodo.value); }
+      else loadAnalise();
+    });
     document.getElementById("btn-sair").addEventListener("click", function () {
       fetch("/logout", { method: "POST" }).then(function () { location.href = "/login"; });
     });

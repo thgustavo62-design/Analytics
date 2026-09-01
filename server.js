@@ -36,6 +36,7 @@ const { startWatcher, getLog } = require("./watcher");
 const { validate: validateAnalise } = require("./validate-analise");
 const analiseStore = require("./analise-store");
 const { gerarAnalise, podeGerar, MODEL: ANALISE_MODEL } = require("./motor");
+const { construirOntologia } = require("./ontologia");
 
 const PORT = process.env.PORT || 4180;
 const UPLOAD_DIR = path.join(__dirname, "data", "uploads");
@@ -344,6 +345,32 @@ app.get("/api/analise-comercial/:loja/:ym", (req, res) => {
   const doc = analiseStore.read(loja, req.params.ym);
   if (!doc) return res.status(404).json({ erro: "sem análise comercial para este período", podeGerar: podeGerar(), model: ANALISE_MODEL });
   res.json({ loja, periodo: req.params.ym, meses: analiseStore.listMeses(loja), analise: doc, podeGerar: podeGerar(), model: ANALISE_MODEL });
+});
+
+// ontologia — grafo de objetos interligados (tela "Conexões")
+app.get("/api/ontologia/:loja/:periodo", (req, res) => {
+  try {
+    const loja = req.params.loja;
+    if (!LOJAS_VALIDAS.includes(loja)) return res.status(404).json({ erro: "loja desconhecida" });
+    const m = String(req.params.periodo).match(/^(\d{4})-(\d{2})$/);
+    if (!m) return res.status(400).json({ erro: "período deve ser AAAA-MM" });
+    const periodo = findPeriodo(loja, +m[1], +m[2]);
+    if (!periodo) return res.status(404).json({ erro: "sem dados para este período" });
+    const vendasRows = getVendas(periodo.id);
+    if (!vendasRows.length) return res.status(404).json({ erro: "período sem vendas" });
+    const grafo = construirOntologia({
+      loja,
+      periodo: req.params.periodo,
+      vendasRows,
+      concRows: getConcorrencia(periodo.id),
+      lojaCfg: LOJAS_CFG[loja] || {},
+      analiseComercial: analiseStore.read(loja, req.params.periodo),
+    });
+    res.json(grafo);
+  } catch (e) {
+    console.error("[api/ontologia]", e);
+    res.status(500).json({ erro: e.message });
+  }
 });
 
 // gerar sob demanda (botão "Gerar análise agora") — usa a API da Anthropic

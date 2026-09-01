@@ -74,6 +74,12 @@ Variáveis de ambiente:
 
 - **Painel** — 4 cartões de resumo + abas (Visão Geral · Vendas · Redes Sociais ·
   Concorrência · Categorias · Top Produtos · Tendência). Abre no **mês corrente**.
+- **Conexões** — mapa de objetos interligados (estilo Palantir): loja, categorias, canais,
+  campanhas, concorrentes, sinais e os achados da Análise Comercial, todos como nós de um
+  grafo ligados pelo que cada um toca (categoria ↔ campanha que a promove, concorrente ↔
+  categoria que ele pressiona no preço, risco ↔ campanha afetada, decisão ↔ objetos, …).
+  Clique num nó para focar e navegar pelas conexões. `ontologia.js` monta o grafo;
+  `GET /api/ontologia/:loja/:AAAA-MM`.
 - **Análise Comercial** — a análise profunda mensal (Fase 2): diagnóstico executivo,
   decisão principal, KPIs, baseline semanal, scorecard de campanhas (com selo de decisão),
   canais, riscos, oportunidades, plano de ação, "o que mudou" e a faixa final SIM/NÃO.
@@ -154,6 +160,7 @@ analytics-deep.js    agregados profundos p/ o Motor (ticket mediano, baseline c/
                      intradiária por campanha, canais convênio/delivery, concentração cliente/convênio,
                      operadores, resumo da coleta de concorrentes)
 motor.js             gera o JSON via API da Anthropic a partir dos agregados profundos (opt-in por ANTHROPIC_API_KEY)
+ontologia.js         monta o grafo de objetos interligados da tela "Conexões" (nós + arestas com significado + cruzamentos)
 db.js                node:sqlite — acesso, sempre por loja/período
 schema.sql           tabelas
 parsers/vendas.js    PDF "Analítico de Vendas" -> transações + empresa (CNPJ) + validação da soma
