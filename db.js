@@ -219,6 +219,151 @@ function listAnalisesComerciais(loja) {
     .map((r) => ({ ano: r.ano, mes: r.mes, periodo: `${r.ano}-${String(r.mes).padStart(2, "0")}`, geradoEm: r.gerado_em, atualizadoEm: r.atualizado_em }));
 }
 
+// --- Fase 1: catálogo (produtos) + histórico de estoque / custo / preço --------
+
+function getProdutoPorEan(ean) {
+  return ean ? db.prepare("SELECT * FROM produtos WHERE ean = ?").get(ean) || null : null;
+}
+function getProdutoPorNorm(norm) {
+  return db.prepare("SELECT * FROM produtos WHERE ean IS NULL AND descricao_normalizada = ?").get(norm) || null;
+}
+function getProdutoPorId(id) {
+  return db.prepare("SELECT * FROM produtos WHERE id = ?").get(id) || null;
+}
+
+// upsert por EAN (ou por descrição normalizada quando não há EAN). Nunca rebaixa a fonte
+// (manual > catalogo > vendas) nem mexe nos campos *_manual.
+function upsertProduto(p) {
+  const ts = nowIso();
+  const norm = p.descricao_normalizada;
+  const existente = p.ean ? getProdutoPorEan(p.ean) : getProdutoPorNorm(norm);
+  if (!existente) {
+    const info = db
+      .prepare(
+        `INSERT INTO produtos (ean, descricao, descricao_normalizada, marca, categoria, subcategoria, fonte, primeira_venda, ultima_venda, criado_em, atualizado_em)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(p.ean || null, p.descricao, norm, p.marca || null, p.categoria || null, p.subcategoria || null, p.fonte || "vendas", p.primeira_venda || null, p.ultima_venda || null, ts, ts);
+    return { id: Number(info.lastInsertRowid), criado: true };
+  }
+  const rank = { vendas: 0, catalogo: 1, manual: 2 };
+  const fonte = (rank[p.fonte] ?? 0) > (rank[existente.fonte] ?? 0) ? p.fonte : existente.fonte;
+  const descricao = p.descricao && p.descricao.length > (existente.descricao || "").length ? p.descricao : existente.descricao;
+  const primeira = !existente.primeira_venda || (p.primeira_venda && p.primeira_venda < existente.primeira_venda) ? p.primeira_venda || existente.primeira_venda : existente.primeira_venda;
+  const ultima = !existente.ultima_venda || (p.ultima_venda && p.ultima_venda > existente.ultima_venda) ? p.ultima_venda || existente.ultima_venda : existente.ultima_venda;
+  db.prepare(
+    `UPDATE produtos SET descricao = ?, descricao_normalizada = ?, marca = COALESCE(?, marca),
+       categoria = COALESCE(?, categoria), subcategoria = COALESCE(?, subcategoria),
+       ean = COALESCE(ean, ?), fonte = ?, primeira_venda = ?, ultima_venda = ?, atualizado_em = ?
+     WHERE id = ?`
+  ).run(descricao, norm, p.marca || null, p.categoria || null, p.subcategoria || null, p.ean || null, fonte, primeira, ultima, ts, existente.id);
+  return { id: existente.id, criado: false };
+}
+
+// correção manual — prevalece sobre a classificação automática
+function setProdutoOverride(id, campos) {
+  const ok = ["descricao_manual", "marca_manual", "categoria_manual", "subcategoria_manual", "ativo"];
+  const sets = [];
+  const vals = [];
+  for (const k of ok) if (k in campos) { sets.push(`${k} = ?`); vals.push(campos[k]); }
+  if (!sets.length) return getProdutoPorId(id);
+  db.prepare(`UPDATE produtos SET ${sets.join(", ")}, fonte = 'manual', atualizado_em = ? WHERE id = ?`).run(...vals, nowIso(), id);
+  return getProdutoPorId(id);
+}
+
+// visão "efetiva" do produto: override manual vence a classificação automática
+function produtoEfetivo(p) {
+  if (!p) return null;
+  return {
+    id: p.id, ean: p.ean,
+    descricao: p.descricao_manual || p.descricao,
+    marca: p.marca_manual || p.marca || null,
+    categoria: p.categoria_manual || p.categoria || null,
+    subcategoria: p.subcategoria_manual || p.subcategoria || null,
+    fonte: p.fonte, ativo: !!p.ativo,
+    primeira_venda: p.primeira_venda, ultima_venda: p.ultima_venda,
+    tem_override: !!(p.categoria_manual || p.marca_manual || p.descricao_manual || p.subcategoria_manual),
+  };
+}
+
+function listProdutos(filtro = {}) {
+  const cond = [];
+  const args = [];
+  if (filtro.categoria) { cond.push("COALESCE(categoria_manual, categoria) = ?"); args.push(filtro.categoria); }
+  if (filtro.semEan) cond.push("ean IS NULL");
+  if (filtro.q) { cond.push("descricao_normalizada LIKE ?"); args.push("%" + String(filtro.q).toLowerCase() + "%"); }
+  const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
+  const lim = Math.min(2000, filtro.limite || 500);
+  return db.prepare(`SELECT * FROM produtos ${where} ORDER BY ultima_venda DESC NULLS LAST, id DESC LIMIT ${lim}`).all(...args).map(produtoEfetivo);
+}
+
+function contagemCatalogo() {
+  const g = db.prepare("SELECT COUNT(*) n, SUM(ean IS NOT NULL) com_ean, SUM(COALESCE(categoria_manual,categoria) IS NULL) sem_cat, SUM(fonte='manual') manuais FROM produtos").get();
+  return { produtos: g.n || 0, comEan: g.com_ean || 0, semCategoria: g.sem_cat || 0, comOverride: g.manuais || 0 };
+}
+
+// snapshot de estoque (um por loja/produto/data)
+function inserirEstoque(lojaId0, produtoId, r) {
+  db.prepare(
+    `INSERT INTO produto_estoque (loja_id, produto_id, quantidade, reservado, disponivel, data_referencia, fonte, criado_em)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(loja_id, produto_id, data_referencia) DO UPDATE SET
+       quantidade = excluded.quantidade, reservado = excluded.reservado, disponivel = excluded.disponivel, fonte = excluded.fonte`
+  ).run(lojaId0, produtoId, r.quantidade ?? null, r.reservado ?? null, r.disponivel ?? (r.quantidade != null ? r.quantidade - (r.reservado || 0) : null), r.data_referencia, r.fonte || null, nowIso());
+}
+
+// custo/preço historizados: fecha a vigência aberta anterior e abre a nova
+function _inserirHistorico(tabela, campoValor, lojaId0, produtoId, valor, dataInicio, extra) {
+  const ts = nowIso();
+  const anterior = db.prepare(`SELECT id, data_inicio, ${campoValor} v FROM ${tabela} WHERE loja_id = ? AND produto_id = ? ${extra.tipoPreco ? "AND tipo_preco = ?" : ""} AND data_fim IS NULL ORDER BY data_inicio DESC LIMIT 1`)
+    .get(...(extra.tipoPreco ? [lojaId0, produtoId, extra.tipoPreco] : [lojaId0, produtoId]));
+  if (anterior) {
+    if (anterior.data_inicio === dataInicio) {
+      db.prepare(`UPDATE ${tabela} SET ${campoValor} = ? WHERE id = ?`).run(valor, anterior.id);
+      return { atualizado: true };
+    }
+    if (Math.abs((anterior.v ?? 0) - valor) < 0.005 && anterior.data_inicio <= dataInicio) return { semMudanca: true };
+    const fim = new Date(new Date(dataInicio + "T12:00:00").getTime() - 86400000).toISOString().slice(0, 10);
+    db.prepare(`UPDATE ${tabela} SET data_fim = ? WHERE id = ?`).run(fim, anterior.id);
+  }
+  if (extra.tipoPreco) {
+    db.prepare(`INSERT INTO produto_preco (loja_id, produto_id, preco, tipo_preco, data_inicio, fonte, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(lojaId0, produtoId, valor, extra.tipoPreco, dataInicio, extra.fonte || null, ts);
+  } else {
+    db.prepare(`INSERT INTO produto_custo (loja_id, produto_id, custo, data_inicio, fonte, criado_em) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(lojaId0, produtoId, valor, dataInicio, extra.fonte || null, ts);
+  }
+  return { inserido: true };
+}
+function inserirCusto(lojaId0, produtoId, custo, dataInicio, fonte) {
+  return _inserirHistorico("produto_custo", "custo", lojaId0, produtoId, custo, dataInicio, { fonte });
+}
+function inserirPreco(lojaId0, produtoId, preco, dataInicio, tipoPreco, fonte) {
+  return _inserirHistorico("produto_preco", "preco", lojaId0, produtoId, preco, dataInicio, { tipoPreco: tipoPreco || "normal", fonte });
+}
+
+function getEstoqueEm(lojaId0, produtoId, data) {
+  return db.prepare("SELECT * FROM produto_estoque WHERE loja_id = ? AND produto_id = ? AND data_referencia <= ? ORDER BY data_referencia DESC LIMIT 1").get(lojaId0, produtoId, data || "9999-12-31") || null;
+}
+function getCustoEm(lojaId0, produtoId, data) {
+  return db.prepare("SELECT * FROM produto_custo WHERE loja_id = ? AND produto_id = ? AND data_inicio <= ? AND (data_fim IS NULL OR data_fim >= ?) ORDER BY data_inicio DESC LIMIT 1").get(lojaId0, produtoId, data, data) || null;
+}
+function getPrecoEm(lojaId0, produtoId, data, tipoPreco) {
+  return db.prepare("SELECT * FROM produto_preco WHERE loja_id = ? AND produto_id = ? AND tipo_preco = ? AND data_inicio <= ? AND (data_fim IS NULL OR data_fim >= ?) ORDER BY data_inicio DESC LIMIT 1").get(lojaId0, produtoId, tipoPreco || "normal", data, data) || null;
+}
+
+function freshnessCatalogo(lojaNome) {
+  const lid = lojaId(lojaNome);
+  const e = db.prepare("SELECT MAX(data_referencia) d, COUNT(DISTINCT produto_id) n FROM produto_estoque WHERE loja_id = ?").get(lid);
+  const c = db.prepare("SELECT MAX(data_inicio) d, COUNT(DISTINCT produto_id) n FROM produto_custo WHERE loja_id = ?").get(lid);
+  const p = db.prepare("SELECT MAX(data_inicio) d, COUNT(DISTINCT produto_id) n FROM produto_preco WHERE loja_id = ?").get(lid);
+  return {
+    estoque: { ultima: e.d || null, produtos: e.n || 0 },
+    custo: { ultima: c.d || null, produtos: c.n || 0 },
+    preco: { ultima: p.d || null, produtos: p.n || 0 },
+  };
+}
+
 // --- períodos --------------------------------------------------------------
 
 function findPeriodo(loja, ano, mes) {
@@ -265,4 +410,20 @@ module.exports = {
   saveAnaliseComercial,
   getAnaliseComercial,
   listAnalisesComerciais,
+  // Fase 1 — catálogo / estoque / custo / preço
+  getProdutoPorEan,
+  getProdutoPorNorm,
+  getProdutoPorId,
+  upsertProduto,
+  setProdutoOverride,
+  produtoEfetivo,
+  listProdutos,
+  contagemCatalogo,
+  inserirEstoque,
+  inserirCusto,
+  inserirPreco,
+  getEstoqueEm,
+  getCustoEm,
+  getPrecoEm,
+  freshnessCatalogo,
 };

@@ -465,6 +465,28 @@
   async function renderConfig() {
     view.innerHTML = '<div class="page-head"><div><h1>⚙️ Configurações</h1><div class="sub">Somente leitura aqui. Edite os arquivos em <b>config/</b> e o site recarrega.</div></div></div><div id="cc"><div class="empty">Carregando…</div></div>';
     var log = await getJSON("/api/ingest-log");
+    var cat = null;
+    try { cat = await getJSON("/api/catalogo/" + encodeURIComponent(state.loja)); } catch (e) {}
+    var catHtml = "";
+    if (cat) {
+      var fr = cat.freshness;
+      var frRow = function (nm, o) {
+        return "<tr><td>" + nm + "</td><td>" + (o.ultima ? o.ultima : '<span class="tag up-price">sem dados</span>') + "</td><td class=\"num\">" + int(o.produtos) + "</td></tr>";
+      };
+      catHtml =
+        '<div class="card" style="margin-bottom:16px"><div class="chead"><div class="ci cat">🧬</div><div><h3>Catálogo (EAN) — ' + esc(state.loja) + "</h3>" +
+        '<div class="cs">produtos vêm dos códigos de barras das vendas; estoque/custo/preço vêm de planilhas na inbox (Estoque_/Custo_/Precos_*.xlsx)</div></div></div>' +
+        '<div class="cx-metrs" style="margin-bottom:10px">' +
+          '<div class="cx-m"><span>Produtos no catálogo</span><b>' + int(cat.contagem.produtos) + "</b></div>" +
+          '<div class="cx-m"><span>Com EAN</span><b>' + int(cat.contagem.comEan) + "</b></div>" +
+          '<div class="cx-m"><span>Sem categoria</span><b>' + int(cat.contagem.semCategoria) + "</b></div>" +
+          '<div class="cx-m"><span>Com correção manual</span><b>' + int(cat.contagem.comOverride) + "</b></div>" +
+        "</div>" +
+        '<table class="tbl"><thead><tr><th>Feed</th><th>Última atualização</th><th class="num">Produtos</th></tr></thead><tbody>' +
+          frRow("Estoque", fr.estoque) + frRow("Custo", fr.custo) + frRow("Preço", fr.preco) + "</tbody></table>" +
+        (cat.faltando && cat.faltando.length ? '<div class="note" style="color:var(--down)">⚠ Sem feed de ' + cat.faltando.join(", ") + " — days-of-cover, margem e simulador ficam indisponíveis até você subir essas planilhas (Fase 2).</div>" : "") +
+        "</div>";
+    }
     var evs = log.eventos.slice(0, 20).map(function (e) {
       return "<tr><td>" + new Date(e.ts).toLocaleString("pt-BR") + "</td><td>" + esc(e.arquivo) + "</td><td>" +
         (e.ok ? '<span class="tag disc">ok</span>' : '<span class="tag up-price">erro</span>') + "</td><td>" +
@@ -473,7 +495,8 @@
     view.querySelector("#cc").innerHTML =
       '<div class="card" style="margin-bottom:16px"><div class="chead"><div class="ci red">📥</div><div><h3>Pasta de entrada</h3>' +
         '<div class="cs">' + esc(log.inbox) + "</div></div></div>" +
-        '<p style="font-size:13px;color:var(--ink-2)">Jogue aqui o "Analítico de Vendas" (.pdf) e o Concorrentes_Coleta_*.xlsx. O painel do mês corrente se atualiza sozinho (a cada ' + log.pollMin + ' min no navegador).</p></div>' +
+        '<p style="font-size:13px;color:var(--ink-2)">Jogue aqui o "Analítico de Vendas" (.pdf), o Concorrentes_Coleta_*.xlsx e as planilhas Estoque_/Custo_/Precos_*.xlsx. O painel do mês corrente se atualiza sozinho (a cada ' + log.pollMin + ' min no navegador).</p></div>' +
+      catHtml +
       '<div class="card"><div class="chead"><div class="ci gold">🧾</div><div><h3>Últimos arquivos processados</h3></div></div>' +
         (evs ? '<table class="tbl"><thead><tr><th>Quando</th><th>Arquivo</th><th>Status</th><th>Detalhe</th></tr></thead><tbody>' + evs + "</tbody></table>" : '<div class="empty">Nada ainda.</div>') + "</div>";
   }

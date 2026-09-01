@@ -309,6 +309,44 @@ app.get("/api/periodos/:loja", (req, res) => {
 // eventos da pasta inbox/ (o que foi ingerido, quando, e o que falhou)
 app.get("/api/ingest-log", (req, res) => res.json({ inbox: INBOX_DIR, pollMin: POLL_MIN, eventos: getLog() }));
 
+// --- Fase 1: catálogo (produtos por EAN) + freshness de estoque/custo/preço ---
+const dbCat = require("./db");
+
+app.get("/api/catalogo/:loja", (req, res) => {
+  const loja = req.params.loja;
+  if (!LOJAS_VALIDAS.includes(loja)) return res.status(404).json({ erro: "loja desconhecida" });
+  res.json({
+    loja,
+    contagem: dbCat.contagemCatalogo(),
+    freshness: dbCat.freshnessCatalogo(loja),
+    faltando: (() => {
+      const f = dbCat.freshnessCatalogo(loja);
+      const falta = [];
+      if (!f.estoque.ultima) falta.push("estoque");
+      if (!f.custo.ultima) falta.push("custo");
+      if (!f.preco.ultima) falta.push("preço");
+      return falta;
+    })(),
+  });
+});
+
+app.get("/api/catalogo/:loja/produtos", (req, res) => {
+  if (!LOJAS_VALIDAS.includes(req.params.loja)) return res.status(404).json({ erro: "loja desconhecida" });
+  res.json(dbCat.listProdutos({ categoria: req.query.categoria, semEan: req.query.sem_ean === "1", q: req.query.q, limite: +req.query.limite || 500 }));
+});
+
+app.post("/api/catalogo/produtos/:id", (req, res) => {
+  const id = +req.params.id;
+  if (!id) return res.status(400).json({ erro: "id inválido" });
+  const p = dbCat.getProdutoPorId(id);
+  if (!p) return res.status(404).json({ erro: "produto não encontrado" });
+  const campos = {};
+  for (const k of ["descricao_manual", "marca_manual", "categoria_manual", "subcategoria_manual", "ativo"]) {
+    if (k in req.body) campos[k] = req.body[k];
+  }
+  res.json(dbCat.produtoEfetivo(dbCat.setProdutoOverride(id, campos)));
+});
+
 // --- Fase 2: Motor de Análise Comercial (o backend só recebe/valida/guarda/serve o JSON) ---
 
 // recebe o JSON gerado pela tarefa agendada externa (Cowork/rotina)

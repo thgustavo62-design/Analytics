@@ -95,7 +95,14 @@ async function ingestVendas(filePath, { lojaForcada = null } = {}) {
       printedTotal: umMesSo ? parsed.printedTotal : null,
       geradoEm: parsed.headerTimestamp,
     });
-    atualizados.push({ loja, periodo: ym, linhas: mrows.length });
+    // Fase 1: mantém o catálogo (produtos) em dia a partir dos EAN das vendas
+    let catalogo = null;
+    try {
+      catalogo = require("./catalogo").sincronizarProdutosDeVendas(periodoId);
+    } catch (e) {
+      console.error("[ingest] sincronização de catálogo:", e.message);
+    }
+    atualizados.push({ loja, periodo: ym, linhas: mrows.length, catalogo });
   }
 
   return {
@@ -185,7 +192,9 @@ async function ingestFile(filePath) {
   if (ext === ".pdf") return ingestVendas(filePath);
   if (ext === ".xlsx") {
     if (/concorrente|coleta|varredura|confronto/.test(base)) return ingestConcorrentes(filePath);
-    throw new Error("xlsx não reconhecido — esperado Concorrentes_Coleta_*.xlsx.");
+    const { detectarTipoPlanilha, ingestPlanilhaProduto } = require("./catalogo");
+    if (detectarTipoPlanilha(base)) return ingestPlanilhaProduto(filePath);
+    throw new Error("xlsx não reconhecido — esperado Concorrentes_Coleta_*.xlsx, ou Estoque_/Custo_/Precos_*.xlsx.");
   }
   if (ext === ".json") {
     const payload = JSON.parse(fs.readFileSync(filePath, "utf8"));

@@ -163,6 +163,9 @@ Toda agregação filtra por `periodo_id` — nunca soma Minas Farma com Farma e 
 | `vendas_transacoes` | uma linha por item vendido: `periodo_id`, `data`, `hora`, `lancamento` (nº da venda), `barras`, `descricao`, `categoria` (do classificador), `preco_unit`, `quantidade`, `valor_liquido`, `forma_pagto` (`A VISTA`\|`A PRAZO`), `emp_id` (convênio), `cli_id` (cliente) |
 | `instagram_metricas` | `periodo_id`, `metrica`, `rotulo`, `valor_exibicao` (`"414,3 mil"`), `delta_pct`, `observacao`, `ordem` |
 | `concorrencia_ofertas` | `periodo_id`, `concorrente`, `categoria`, `produto`, `preco_normal`, `preco_promo`, `validade`, `nivel_confianca`, `status_validacao`, `nosso_preco_medio`, `abaixo_do_nosso` (1/0/null) |
+| `produtos` | catálogo global por **EAN**: `ean` (UNIQUE, pode ser null), `descricao(_normalizada)`, `marca`, `categoria`, `subcategoria`, `*_manual` (correção que prevalece), `fonte` (vendas|catalogo|manual), `primeira/ultima_venda`. Populado dos `barras` das vendas. |
+| `produto_estoque` | snapshot por `loja_id`,`produto_id`,`data_referencia` (UNIQUE): `quantidade`, `reservado`, `disponivel`. Histórico, não sobrescreve. |
+| `produto_custo` / `produto_preco` | histórico com `data_inicio`/`data_fim` (nunca sobrescreve). `produto_preco.tipo_preco` = normal|promocional|planejado. |
 | `analises_comerciais` | `loja_id`, `ano`, `mes`, `gerado_em`, `json` (documento inteiro), `criado_em`, `atualizado_em`. `UNIQUE(loja_id, ano, mes)` |
 
 Gitignored (dados / não versionados): `data/analytics.db*`, `data/uploads/`, `data/analises/`,

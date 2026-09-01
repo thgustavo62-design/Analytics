@@ -69,6 +69,80 @@ CREATE TABLE IF NOT EXISTS concorrencia_ofertas (
 );
 CREATE INDEX IF NOT EXISTS ix_conc_periodo ON concorrencia_ofertas(periodo_id);
 
+-- ============================================================================
+-- EVOLUÇÃO / FASE 1 — Data Foundation (catálogo por EAN + histórico de estoque/custo/preço)
+-- ============================================================================
+
+-- Catálogo GLOBAL de produtos (a mesma EAN é o mesmo produto nas duas lojas).
+-- Populado automaticamente a partir dos 'barras' das vendas; enriquecido por planilhas.
+-- Campos *_manual têm precedência sobre a classificação automática.
+CREATE TABLE IF NOT EXISTS produtos (
+  id                    INTEGER PRIMARY KEY,
+  ean                   TEXT UNIQUE,           -- pode ser NULL (produto sem código de barras)
+  descricao             TEXT NOT NULL,
+  descricao_normalizada TEXT NOT NULL,
+  marca                 TEXT,
+  categoria             TEXT,                  -- classificada automaticamente
+  subcategoria          TEXT,
+  descricao_manual      TEXT,
+  marca_manual          TEXT,
+  categoria_manual      TEXT,
+  subcategoria_manual   TEXT,
+  fonte                 TEXT NOT NULL DEFAULT 'vendas',  -- vendas | catalogo | manual
+  ativo                 INTEGER NOT NULL DEFAULT 1,
+  primeira_venda        TEXT,
+  ultima_venda          TEXT,
+  criado_em             TEXT NOT NULL,
+  atualizado_em         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_produtos_norm ON produtos(descricao_normalizada);
+CREATE INDEX IF NOT EXISTS ix_produtos_cat  ON produtos(categoria);
+
+-- Histórico de estoque por loja/produto/data (nunca sobrescreve; um snapshot por dia).
+CREATE TABLE IF NOT EXISTS produto_estoque (
+  id              INTEGER PRIMARY KEY,
+  loja_id         INTEGER NOT NULL REFERENCES lojas(id),
+  produto_id      INTEGER NOT NULL REFERENCES produtos(id),
+  quantidade      REAL,
+  reservado       REAL,
+  disponivel      REAL,
+  data_referencia TEXT NOT NULL,               -- 'AAAA-MM-DD'
+  fonte           TEXT,
+  criado_em       TEXT NOT NULL,
+  UNIQUE(loja_id, produto_id, data_referencia)
+);
+CREATE INDEX IF NOT EXISTS ix_estoque_lp   ON produto_estoque(loja_id, produto_id);
+CREATE INDEX IF NOT EXISTS ix_estoque_data ON produto_estoque(loja_id, data_referencia);
+
+-- Histórico de custo por loja/produto (vigência com data_inicio/data_fim; nunca sobrescreve).
+CREATE TABLE IF NOT EXISTS produto_custo (
+  id          INTEGER PRIMARY KEY,
+  loja_id     INTEGER NOT NULL REFERENCES lojas(id),
+  produto_id  INTEGER NOT NULL REFERENCES produtos(id),
+  custo       REAL NOT NULL,
+  data_inicio TEXT NOT NULL,
+  data_fim    TEXT,
+  fonte       TEXT,
+  criado_em   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_custo_lp ON produto_custo(loja_id, produto_id, data_inicio);
+
+-- Histórico de preço por loja/produto (normal | promocional | planejado).
+CREATE TABLE IF NOT EXISTS produto_preco (
+  id          INTEGER PRIMARY KEY,
+  loja_id     INTEGER NOT NULL REFERENCES lojas(id),
+  produto_id  INTEGER NOT NULL REFERENCES produtos(id),
+  preco       REAL NOT NULL,
+  tipo_preco  TEXT NOT NULL DEFAULT 'normal',  -- normal | promocional | planejado
+  data_inicio TEXT NOT NULL,
+  data_fim    TEXT,
+  fonte       TEXT,
+  criado_em   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_preco_lp ON produto_preco(loja_id, produto_id, tipo_preco, data_inicio);
+
+-- ============================================================================
+
 -- Fase 2: análise comercial mensal (JSON do Motor). Guardado no banco para não se perder
 -- se os arquivos forem mexidos; data/analises/*.json é só um espelho/exportação.
 CREATE TABLE IF NOT EXISTS analises_comerciais (
