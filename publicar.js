@@ -25,11 +25,21 @@ function credHashes() {
 function gateScript() {
   const hashes = credHashes();
   if (!hashes.length) return "";
+  // portão do site estático. Lembra o acesso por até TTL_H horas (localStorage) e volta a
+  // pedir depois disso — não some "para sempre". "Sair" no app limpa o acesso.
   return `
   (function () {
     var OK = ${JSON.stringify(hashes)};
-    var KEY = "analytics_gate_v1";
-    try { if (OK.indexOf(localStorage.getItem(KEY)) >= 0) return; } catch (e) {}
+    var KEY = "analytics_gate_v2", TTL = 12 * 3600 * 1000;
+    function lido() {
+      try {
+        var raw = localStorage.getItem(KEY); if (!raw) return false;
+        var p = raw.split("|"); if (OK.indexOf(p[0]) < 0) return false;
+        return (Date.now() - (+p[1] || 0)) < TTL;
+      } catch (e) { return false; }
+    }
+    window.__gateLogout__ = function () { try { localStorage.removeItem(KEY); localStorage.removeItem("analytics_gate_v1"); } catch (e) {} location.reload(); };
+    if (lido()) return;
     var d = document, ov = d.createElement("div");
     ov.id = "gate";
     ov.style.cssText = "position:fixed;inset:0;z-index:99999;background:#f4f5f7;display:flex;align-items:center;justify-content:center;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif";
@@ -41,14 +51,18 @@ function gateScript() {
       '<button style="margin-top:14px;width:100%;padding:10px;border:0;border-radius:8px;background:#d81f2a;color:#fff;font-size:15px;font-weight:700;cursor:pointer">Entrar</button>' +
       '<div id="ge" style="color:#d81f2a;font-size:12.5px;margin-top:10px;display:none">Usuário ou senha incorretos.</div></form>';
     d.documentElement.style.overflow = "hidden";
-    (d.body || d.documentElement).appendChild(ov);
-    ov.querySelector("#gf").addEventListener("submit", async function (e) {
+    function mostra() { (d.body || d.documentElement).appendChild(ov); }
+    if (d.body) mostra(); else d.addEventListener("DOMContentLoaded", mostra);
+    ov.addEventListener("submit", async function (e) {
       e.preventDefault();
       var s = ov.querySelector("#gu").value.trim() + ":" + ov.querySelector("#gp").value;
-      var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-      var hex = Array.from(new Uint8Array(buf)).map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
-      if (OK.indexOf(hex) >= 0) {
-        try { localStorage.setItem(KEY, hex); } catch (x) {}
+      var hex = "";
+      try {
+        var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+        hex = Array.from(new Uint8Array(buf)).map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+      } catch (x) {}
+      if (hex && OK.indexOf(hex) >= 0) {
+        try { localStorage.setItem(KEY, hex + "|" + Date.now()); } catch (x) {}
         d.documentElement.style.overflow = ""; ov.remove();
       } else { ov.querySelector("#ge").style.display = "block"; }
     });

@@ -30,7 +30,9 @@ processa sozinho e entrega:
   matriz (vaca leiteira / isca cara / peso morto / aposta / sumindo / ruptura), capital parado
 - **Campanhas** — eficiência (DEMAND_LIFT), Campaign Builder, Offer Simulator; **Campaign
   Builder 2.0** (Fase B): campanha inteira — elenco por papel com preço sugerido + ângulo de
-  venda + forecast por perna, combos viáveis, score da campanha 0–100, forecast em 3 cenários
+  venda + forecast por perna, combos viáveis, score da campanha 0–100, forecast em 3 cenários;
+  **Medição** (Fase C): o que a campanha fez de fato — baseline pelo mesmo dia da semana,
+  receita/unidades/lucro incremental, ROAS, retorno sobre margem, canibalização
 - **Cesta** — market basket (support/confidence/lift), combos
 - **Concorrentes** — pressão competitiva, "onde reagir" priorizado, registro por formulário /
   colar encarte / planilha
@@ -128,6 +130,7 @@ do Supabase (Vercel + GitHub Pages).
 | `marketing/command-center.js` | **Fase A** — `commandCenter(loja)`: plano do dia de uma loja — `anunciar[]` (ranqueado, com papel + ação + 3 motivos com evidência + sub-scores), `nao_anunciar[]` (motivo curto + motivos + substituto), `alertas[]` (ruptura com venda relevante, categoria sob ataque, capital parado, feed faltando) |
 | `marketing/angulos.js` | **Fase B** — Motor de Ângulos: pontua PREÇO / URGÊNCIA / VOLUME / CONVENIÊNCIA / COMPARAÇÃO / RECORRÊNCIA a partir de dado real (desconto planejado, margem, papel, janela, pressão de concorrência) → ângulo primário + ranking + sugestão de copy (template). `config/angulos.json`. |
 | `marketing/campaign-builder.js` | **Fase B** — `montarCampanha(loja, {dias, tema, categorias})`: janela contígua, elenco por papel (Fase A) com preço sugerido (respeita piso de margem) + ângulo + forecast por perna, combos viáveis do elenco, lista de evitar, **forecast da campanha inteira** (3 cenários + margem incremental + estoque necessário) e **score da campanha 0–100** (cobertura de papéis + margem prevista + estoque + força da âncora). `config/campaign-plan.json`. |
+| `marketing/campaign-measure.js` | **Fase C** — `medirCampanha(loja, {nome \| dias+categorias, janelaDias, investimento})`: **baseline pelo mesmo dia da semana** (fallback "demais dias" com `confianca: baixa`), receita/unidades/lucro incremental, % sobre baseline, **ROAS** e **retorno sobre margem** (com investimento), **canibalização** (variação das outras categorias — só medida com baseline do mesmo dia da semana). Leitura observacional, com aviso. |
 
 ### Camada de inteligência (`intelligence/`)
 | Arquivo | Papel |
@@ -208,6 +211,7 @@ POST `/analise-comercial/upload` (token próprio). `VA_NO_AUTH=1` desliga (só l
 
 **Marketing** — `GET /api/marketing/:loja/command-center` (Fase A — plano do dia) ·
 `GET|POST /api/marketing/:loja/campaign-plan` (Fase B — Campaign Builder 2.0: `dias`, `tema`, `categorias`) ·
+`GET /api/marketing/:loja/campaign-measure` (Fase C — `nome` ou `dias`+`categorias`, `investimento`; sem params = todas as campanhas do calendário) ·
 `GET /api/marketing/:loja/:periodo/`{`resultado`, `produtos`, `recommended-products`,
 `do-not-promote`, `stagnant-stock`, `baskets`, `combos`, `campaign-builder`, `products/:ean`} ·
 `GET /api/marketing/:loja/campaign-efficiency` · `POST /api/marketing/:loja/offer-simulator` ·
@@ -240,7 +244,7 @@ CRUD `GET/POST/PATCH/DELETE /api/marketing/:loja/campaigns[/:id]`.
 |---|---|
 | **Command Center** (Fase A · tela de abertura) | Alertas (ruptura com venda relevante / concorrência atacando / capital parado / feed faltando) · linha de resumo (analisados · anunciáveis · bloqueados · mix de papéis) · **🔥 O que anunciar hoje** — cards ranqueados por Opportunity: papel + ação sugerida, mini-barras dos sub-scores (Opport./Tráfego/Lucro/Desova/Campanha/Criativo), interpretação, 3 motivos com evidência, chips de tendência/cobertura/margem · **⛔ O que NÃO anunciar** — motivo curto + motivos com evidência + substituto |
 | **Painel** | 4 cartões de resumo + abas: Visão Geral · Vendas · Redes Sociais · Concorrência · Categorias · Top Produtos · Tendência. Gráficos SVG (combo barras+linha, donut, dia-da-semana, tendência). |
-| **Marketing** (9 abas) | **Resultado** (KPIs de lucro/capital parado/risco + matriz visual + tabelas top-lucro / vende-e-não-lucra / custo-a-conferir / peso-morto / ruptura / sumindo) · Produtos · Recomendados · Não anunciar · Estoque parado · Cestas & Combos · Eficiência · **Montar campanha** (Campaign Builder 2.0: escolhe dias + tema → campanha inteira com score, elenco por papel, preço/ângulo/forecast por item, combos e forecast em 3 cenários) · Simulador de oferta |
+| **Marketing** (10 abas) | **Resultado** (KPIs de lucro/capital parado/risco + matriz visual + tabelas top-lucro / vende-e-não-lucra / custo-a-conferir / peso-morto / ruptura / sumindo) · Produtos · Recomendados · Não anunciar · Estoque parado · Cestas & Combos · Eficiência · **Medição** (por campanha do calendário: baseline mesmo dia da semana, incremental, canibalização + campo de investimento → ROAS e retorno sobre margem) · **Montar campanha** (Campaign Builder 2.0: escolhe dias + tema → campanha inteira com score, elenco por papel, preço/ângulo/forecast por item, combos e forecast em 3 cenários) · Simulador de oferta |
 | **Concorrentes** | Botão **➕ Registrar oferta** (formulário rápido **ou** "colar encarte/post" → preview → salvar em lote) · KPIs (ofertas, abaixo do nosso, desconto médio) · Leitura automática + ações · **Onde reagir** (priorizado, com veredito) · Por concorrente (pressão + categorias atacadas) · Pressão por categoria |
 | **Intelligence** (7 abas) | **War Room** (bloco escuro: prioridade #1, decisões recomendadas, Threat/Opportunity Map, contradições, situação por categoria) · **Recomendações** (decisões cruzadas + "Registrar como decisão") · Sinais (com "Por quê?", Observando, Resolver, Virar decisão) · Investigações · Decisões · Padrões · Pauta 7 dias · Perguntar |
 | **Conexões** | grafo radial SVG — nós (loja/categoria/canal/campanha/concorrente/sinal/…) ligados por arestas com significado; clique → foco + painel lateral navegável |
@@ -284,9 +288,10 @@ KPIs/matriz em 2 colunas.
   Cookie `va_session` assinado (HMAC-SHA256, `SESSION_SECRET`), 30 dias.
 - **Site estático** (Vercel/Pages): `publicar.js` embute um **portão** — overlay de login que
   compara `SHA-256("usuario:senha")` (via `crypto.subtle` no navegador) contra os hashes de
-  `config/usuarios.json`; sucesso salva em `localStorage`. ⚠️ É um portão **leve** (o HTML é
-  estático) — segura link compartilhado casual, **não** é segurança forte. Segurança real
-  exigiria a função serverless.
+  `config/usuarios.json`. O acesso fica lembrado em `localStorage` (`analytics_gate_v2`) por
+  **até 12 h** e depois volta a pedir; o botão **Sair** limpa (`window.__gateLogout__`). ⚠️ É
+  um portão **leve** (o HTML é estático) — segura link compartilhado casual, **não** é
+  segurança forte. Segurança real exigiria a função serverless.
 
 ---
 
@@ -338,7 +343,7 @@ leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 
 ## 11. Testes
 
-`npm test` (`node --test`) — **74 testes**, arquivos em separado (`process.env.VA_DB_PATH`
+`npm test` (`node --test`) — **83 testes**, arquivos em separado (`process.env.VA_DB_PATH`
 isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\Admin\Downloads\`.
 
 | Arquivo | Cobre |
@@ -346,6 +351,7 @@ isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\A
 | `vendas.test.js` | soma == "Total:" impresso (agosto das 2 lojas), ARREDONDAMENTO negativo, aborta quando não bate |
 | `command-center.test.js` | **Fase A** — papel por produto (HERO / DESOVA / GIRO fallback / supressão por do-not-promote), sub-scores (profit null sem custo, clearance null sem estoque, creative sempre null, campaign cortado se bloqueado), plano do dia ranqueado com evidência e papel válido |
 | `campaign-builder.test.js` | **Fase B** — ângulo segue o desconto planejado / o papel / a concorrência; preço sugerido respeita o piso de margem; `parseDias`; combos com flag `viavel` + filtro `apenasViaveis`; `montarCampanha` — janela contígua, elenco por papel, forecast em 3 cenários monotônicos, score 0–100, margem null sem custo |
+| `campaign-measure.test.js` | **Fase C** — erro claro fora do calendário; exige nome ou dias+categorias; incremento total ≈ (média − baseline) × dias; canibalização só com baseline do mesmo dia da semana; ROAS/retorno só com investimento; lucro null sem custo; `medirTodasDoCalendario`; medição ad-hoc por dias+categorias |
 | `concorrentes.test.js` | filtro de marca, parse de validade/preço, resolução de loja por CNPJ |
 | `catalogo.test.js` | `normalizarEan`, `sincronizarProdutosDeVendas`, histórico de custo, planilha combinada estoque+custo+preço |
 | `marketing-product.test.js` | janelas monotônicas, clamp de tendência, 7 componentes do score somando ao score, confiança < 1 sem feed, classes, do-not-promote |
@@ -364,7 +370,6 @@ Ver [`docs/AUDITORIA.md`](docs/AUDITORIA.md) (Decision Intelligence, 7 fases) e
 [`docs/MARKETING-COMMAND-CENTER.md`](docs/MARKETING-COMMAND-CENTER.md) (brief de marketing,
 7 fases — **Fase A entregue**). Faltam, principalmente:
 
-- **Medição de campanha** — incremental real, ROAS, ROI-sobre-margem, canibalização (Fase C)
 - **Playbooks por categoria** + product fatigue (Fase D) · **Share of Promotions** (Fase E)
 - **Creative Intelligence** + Content Gap — travado no feed de log de publicações (Fase F)
 - **Marketing Calendar** dinâmico + ciclo fechado (Fase G)

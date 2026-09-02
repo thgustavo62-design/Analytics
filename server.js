@@ -744,6 +744,28 @@ function planoDeCampanha(req, res) {
 app.get("/api/marketing/:loja/campaign-plan", planoDeCampanha);
 app.post("/api/marketing/:loja/campaign-plan", express.json({ limit: "512kb" }), planoDeCampanha);
 
+// Fase C — Medição de campanha: incremento real (baseline mesmo dia da semana), ROAS,
+// retorno sobre margem, canibalização.
+const campaignMeasure = require("./marketing/campaign-measure");
+app.get("/api/marketing/:loja/campaign-measure", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const q = req.query;
+    const opts = { janelaDias: +q.janela || undefined, investimento: q.investimento };
+    if (q.nome) opts.nome = q.nome;
+    if (q.dias) opts.dias = q.dias;
+    if (q.categorias) opts.categorias = q.categorias;
+    if (!q.nome && !q.dias) {
+      return res.json({ loja: req.params.loja, campanhas: campaignMeasure.medirTodasDoCalendario(req.params.loja, opts) });
+    }
+    const r = campaignMeasure.medirCampanha(req.params.loja, opts);
+    res.status(r.erro ? 404 : 200).json(r);
+  } catch (e) {
+    console.error("[api/marketing campaign-measure]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 app.post("/api/marketing/:loja/offer-simulator", express.json({ limit: "1mb" }), (req, res) => {
   if (!lojaOk(req, res)) return;
   try {

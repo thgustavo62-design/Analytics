@@ -964,7 +964,7 @@
   var mkt = { tab: "resultado", cache: {} };
   var MKT_TABS = [
     ["resultado", "Resultado"], ["produtos", "Produtos"], ["recomendados", "Recomendados"], ["nao-anunciar", "Não anunciar"],
-    ["estoque-parado", "Estoque parado"], ["cestas", "Cestas & Combos"], ["eficiencia", "Eficiência"],
+    ["estoque-parado", "Estoque parado"], ["cestas", "Cestas & Combos"], ["eficiencia", "Eficiência"], ["medicao", "Medição"],
     ["builder", "Montar campanha"], ["simulador", "Simulador de oferta"],
   ];
   function mktPeriodo() { return state.periodo || (state.periodos[0] && state.periodos[0].periodo) || null; }
@@ -1126,6 +1126,10 @@
             (e.dados_ausentes.length ? '<div class="cs" style="margin-top:4px">sem: ' + e.dados_ausentes.map(esc).join("; ") + "</div>" : "") +
             '<div class="cs" style="margin-top:4px">' + esc(e.aviso) + "</div></div>";
         }).join("") + "</div>";
+      } else if (mkt.tab === "medicao") {
+        var md = await mktFetch("/api/marketing/" + L + "/campaign-measure");
+        host.innerHTML = medicaoHtml(md);
+        wireMedicao();
       } else if (mkt.tab === "builder") {
         host.innerHTML = renderBuilderForm();
         wireBuilder(ym);
@@ -1217,6 +1221,66 @@
       } catch (e) { out.innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>"; }
     });
   }
+  // ---- Medição de campanha (Fase C) ----
+  var DOW_ABBR = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+  function medVeredito(v) {
+    var c = /incremental real/.test(v) ? "var(--s1)" : /parcialmente/.test(v) ? "var(--s3)" : /deslocou/.test(v) ? "var(--down)" : "var(--muted)";
+    return '<span class="tag" style="background:' + c + ';color:#fff">' + esc(v) + "</span>";
+  }
+  function medCard(m) {
+    if (m.erro) return '<div class="card"><div class="empty">' + esc(m.erro) + "</div></div>";
+    var b = m.baseline, inc = m.incremental, ret = m.retorno, can = m.canibalizacao;
+    var nome = (m.campanha && m.campanha.nome) || "Campanha";
+    var dias = (m.campanha.dias_semana || []).map(function (d) { return DOW_ABBR[d]; }).join(", ");
+    var confTag = m.confianca === "alta"
+      ? '<span class="tag" style="background:var(--s1);color:#fff">confiança alta</span>'
+      : '<span class="tag" style="background:var(--warn,#c98a00);color:#fff">confiança baixa</span>';
+    return '<div class="card med-card" data-nome="' + esc(nome) + '">' +
+      '<div class="chead"><div class="ci red">📊</div><div><h3>' + esc(nome) + " " + confTag + '</h3><div class="cs">' + esc(dias) + " · " + esc((m.campanha.categorias || []).join(", ")) + " · janela " + esc(m.janela.inicio) + "→" + esc(m.janela.fim) + (m.amostra.suficiente ? "" : ' · <b style="color:var(--down)">amostra curta</b>') + "</div></div></div>" +
+      '<div class="cs" style="margin-bottom:8px">Baseline: <b>' + esc(b.metodo) + "</b> — R$ " + brl(b.receita_media_dia_campanha) + "/dia na campanha vs R$ " + brl(b.receita_media_dia_baseline) + "/dia baseline (" + b.n_dias_campanha + " dias)</div>" +
+      '<div class="cc-kpis">' +
+        ccKpi("Receita incremental", inc.receita_total == null ? "—" : "R$ " + brl(inc.receita_total), inc.receita_total > 0 ? "var(--ok)" : "var(--down)") +
+        ccKpi("Sobre o baseline", inc.pct_sobre_baseline == null ? "—" : (inc.pct_sobre_baseline > 0 ? "+" : "") + pct(inc.pct_sobre_baseline)) +
+        ccKpi("Unid. incrementais", inc.unidades_total == null ? "—" : int(inc.unidades_total)) +
+        ccKpi("Lucro incremental", inc.lucro_total == null ? "s/ custo" : "R$ " + brl(inc.lucro_total), inc.lucro_total != null && inc.lucro_total < 0 ? "var(--down)" : null) +
+      "</div>" +
+      '<div class="med-row"><b>Canibalização:</b> ' + medVeredito(can.veredito) +
+        (can.canibalizacao_pct != null ? ' <span class="cs">' + pct(can.canibalizacao_pct) + " do ganho veio de outras categorias · líquido R$ " + brl(can.incremento_liquido_dia) + "/dia</span>" : "") + "</div>" +
+      '<form class="med-form"><label class="f">Investimento (R$)</label><input class="inp" name="inv" type="number" step="0.01" value="' + (m.investimento != null ? m.investimento : "") + '" placeholder="ex.: 250"><button class="btn" type="submit">Calcular retorno</button></form>' +
+      '<div class="med-ret">' +
+        (ret.ROAS == null ? '<span class="cs">informe o investimento para ROAS / retorno sobre margem</span>' :
+          '<span class="tag">ROAS ' + ret.ROAS + "×</span> " +
+          (ret.retorno_sobre_margem != null ? '<span class="tag" style="background:' + (ret.pagou ? "var(--s1)" : "var(--down)") + ';color:#fff">retorno s/ margem ' + ret.retorno_sobre_margem + "× " + (ret.pagou ? "(pagou)" : "(não pagou)") + "</span> " : "") +
+          (ret.break_even_receita != null ? '<span class="cs">break-even: R$ ' + brl(ret.break_even_receita) + " de receita incremental</span>" : "")) +
+      "</div>" +
+      (m.dados_ausentes && m.dados_ausentes.length ? '<div class="cs" style="margin-top:6px">sem: ' + m.dados_ausentes.map(esc).join("; ") + "</div>" : "") +
+      '<div class="cs" style="margin-top:4px">' + esc(m.aviso) + "</div></div>";
+  }
+  function medicaoHtml(md) {
+    if (!md || md.erro) return '<div class="empty">' + esc((md && md.erro) || "erro") + "</div>";
+    var arr = md.campanhas || [];
+    if (!arr.length) return '<div class="empty">Nenhuma campanha no calendário desta loja (config/lojas.json).</div>';
+    return '<div class="cs" style="margin-bottom:10px">Mede o que cada campanha recorrente do calendário fez de fato: incremento vs. o mesmo dia da semana, canibalização de outras categorias e — com o investimento — ROAS e retorno sobre a margem.</div>' +
+      arr.map(medCard).join("");
+  }
+  function wireMedCard(card) {
+    var nome = card.getAttribute("data-nome");
+    card.querySelector(".med-form").addEventListener("submit", async function (ev) {
+      ev.preventDefault();
+      var inv = ev.target.inv.value.trim();
+      var ret = card.querySelector(".med-ret");
+      ret.innerHTML = '<span class="cs">calculando…</span>';
+      try {
+        var qs = "?nome=" + encodeURIComponent(nome) + (inv ? "&investimento=" + encodeURIComponent(inv) : "");
+        var m = await getJSON("/api/marketing/" + encodeURIComponent(state.loja) + "/campaign-measure" + qs);
+        var tmp = document.createElement("div"); tmp.innerHTML = medCard(m);
+        var novo = tmp.firstElementChild;
+        card.replaceWith(novo);
+        wireMedCard(novo);
+      } catch (e) { ret.innerHTML = '<span class="result err">' + esc((e.body && e.body.erro) || e.message) + "</span>"; }
+    });
+  }
+  function wireMedicao() { view.querySelectorAll(".med-card").forEach(wireMedCard); }
   function renderSimForm() {
     return '<div class="card form-card"><form id="simForm"><fieldset><legend>Produto e oferta</legend><div class="rowf">' +
       '<div><label class="f">EAN</label><input class="inp" name="ean" placeholder="7891..." required></div>' +
@@ -1774,6 +1838,7 @@
       else loadAnalise();
     });
     document.getElementById("btn-sair").addEventListener("click", function () {
+      if ((window.__PUBLICO__ || window.__HOSTED__) && typeof window.__gateLogout__ === "function") { window.__gateLogout__(); return; }
       fetch("/logout", { method: "POST" }).then(function () { location.href = "/login"; });
     });
     document.querySelectorAll(".nav a").forEach(function (a) {

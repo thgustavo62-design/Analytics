@@ -73,10 +73,16 @@ O que entrega valor primeiro e não depende de feed novo.
 - ✅ `roles.js` ganhou pisos absolutos de volume (HERO ≥ R$120/30d, TRÁFEGO ≥ 10 cupons, CHAMARIZ ≥ 8) — vale também para a Fase A.
 - ✅ Testes: `test/campaign-builder.test.js` (+11 → 74).
 
-### Fase C — Medir o que a campanha realmente fez  ·  pontos 7, 8, 15
-- Baseline por produto por **mesmo dia da semana**; janela de campanha × baseline → incremento provável (+N).
-- `campaign-efficiency` ganha: receita relacionada, receita/lucro incremental, ROAS, **ROI sobre margem**, e canibalização (delta líquido da categoria).
-- Exige `campanhas.investimento` preenchido — UI para lançar investimento por campanha.
+### Fase C — Medir o que a campanha realmente fez  ·  pontos 7, 8, 15  ·  ✅ ENTREGUE (2026-09-02)
+- ✅ `marketing/campaign-measure.js` + `GET /api/marketing/:loja/campaign-measure` — `medirCampanha(loja, {nome | dias+categorias, janelaDias, investimento})`:
+  - **baseline pelo mesmo dia da semana** (fallback "demais dias" quando a campanha ocupa todo o dia-da-semana → `confianca: "baixa"` e caveat explícito)
+  - receita / unidades / **lucro incremental** (só com custo) + % sobre baseline
+  - **ROAS** e **retorno sobre margem** + break-even (com o campo de investimento)
+  - **canibalização** = variação das outras categorias nos dias de campanha → só é medida com baseline do mesmo dia da semana (senão "não medível")
+- ✅ Tela: nova aba **Medição** em Marketing — cartão por campanha do calendário com badge de confiança, KPIs de incremento, veredito de canibalização e campo de investimento que recalcula ROAS/retorno.
+- ✅ Investimento entra como parâmetro por medição (transiente); persistir em `campanhas.investimento` fica para quando as campanhas viram entidade de verdade.
+- ✅ Testes: `test/campaign-measure.test.js` (+9 → 83).
+- Nota: para as campanhas recorrentes atuais (ocupam todo o Fri/Sat/Sun ou Seg/Ter) o baseline "mesmo dia da semana" não existe → resultado sai com confiança baixa. Medição de alta confiança precisa de campanhas pontuais (rodadas em algumas semanas só).
 
 ### Fase D — Memória de marketing  ·  pontos 9, 10, 14
 - `marketing/padroes-mkt.js` — agrega campanhas repetidas (produto/categoria) → dia-da-semana × faixa de desconto × lift, com significância mínima.
@@ -112,8 +118,8 @@ Depois: cruzamento com métricas do Instagram + vendas → Creative Score real (
 
 ## Recomendação
 
-**Fases A e B entregues** (2026-09-02). Próximo passo: **Fase C** — medir o que a campanha
-realmente fez (baseline por mesmo dia da semana → incremento provável, ROAS, ROI-sobre-margem,
-canibalização). Precisa de uma UI para lançar o **investimento por campanha**
-(`campanhas.investimento`) — é o único dado que falta para o ROAS/ROI. Em paralelo, definir o
-**log de publicações** (Fase F), o único gargalo de meses.
+**Fases A, B e C entregues** (2026-09-02). Próximo passo: **Fase D** — memória de marketing:
+`marketing/padroes-mkt.js` agrega campanhas repetidas (produto/categoria) → dia-da-semana ×
+faixa de desconto × lift; tela **Playbooks** por categoria; **Product Fatigue** (nº de
+campanhas em 30 d + lift decrescente → trocar produto/ângulo). Em paralelo, definir o **log de
+publicações** (Fase F), o único gargalo de meses.

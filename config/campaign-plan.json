@@ -25,5 +25,12 @@
     "margem_prevista_positiva": 0.30,
     "estoque_suficiente": 0.25,
     "forca_ancora": 0.20
+  },
+  "medicao": {
+    "janela_dias_padrao": 90,
+    "amostra_min_dias_campanha": 3,
+    "amostra_min_dias_baseline": 6,
+    "canibalizacao_parcial": 0.15,
+    "canibalizacao_alta": 0.5
   }
 }
