@@ -1,365 +1,361 @@
-# Analytics — Documentação do Sistema
+# ANALYTICS — documentação do sistema inteiro
 
-Referência completa do sistema **Analytics** (Minas Farma · Farma e Farma, Baixo Guandu/ES).
-Para começar rápido, veja o `README.md`. Este arquivo detalha arquitetura, módulos, dados,
-rotas, configuração e fluxos.
+> Auditoria técnica e funcional completa. Estado em **2026-09-02** (commit `3874959`).
+> Duas farmácias: **Minas Farma** e **Farma e Farma** (Baixo Guandu/ES). As duas lojas
+> **nunca são somadas** — toda agregação passa por `loja_id` / `periodo_id`.
 
-- **Diretório:** `C:\Sistema Marketing`
-- **Repositório:** https://github.com/thgustavo62-design/Analytics
-- **Stack:** Node.js (≥ 22) · Express · `node:sqlite` · sem framework de frontend, sem build
-- **Independente** do `app_minasfarma/` — não lê nem escreve nada lá dentro
-
----
-
-## 1. O que é
-
-Um site local **autoalimentável** que transforma os documentos brutos do mês (relatório de
-vendas em PDF, planilha de concorrentes, métricas de Instagram) em:
-
-1. **Painel** — vendas + redes sociais + concorrência, com o mês corrente "ao vivo" e
-   histórico por loja/mês.
-2. **Análise Comercial** — diagnóstico profundo mensal (diagnóstico executivo, decisão
-   principal, scorecard de campanhas, riscos, plano de ação), gerada pela API da Anthropic
-   a partir de agregados calculados no próprio sistema.
-3. **Conexões** — mapa de objetos interligados (estilo Palantir): categorias, campanhas,
-   canais, concorrentes, sinais e os achados da Análise Comercial, todos ligados pelo que
-   cada um toca.
-
-Você joga arquivos numa pasta (`inbox/`) e o site percebe sozinho. Roda como servidor
-sempre ligado nesta máquina; o navegador acessa `http://localhost:4180`.
+Documentos irmãos: [`docs/AUDITORIA.md`](docs/AUDITORIA.md) (gap analysis vs. o brief de
+Decision Intelligence + plano em 7 fases), [`docs/EVOLUCAO-INTELLIGENCE.md`](docs/EVOLUCAO-INTELLIGENCE.md),
+[`docs/intelligence.md`](docs/intelligence.md), [`docs/marketing-opportunity.md`](docs/marketing-opportunity.md),
+[`docs/campaign-engine.md`](docs/campaign-engine.md), [`docs/publicar.md`](docs/publicar.md),
+[`docs/supabase-vercel.md`](docs/supabase-vercel.md), [`docs/integracoes.md`](docs/integracoes.md).
 
 ---
 
-## 2. Rodar e manter no ar
+## 1. O que o sistema faz
 
-```bash
-npm install
-npm start            # http://localhost:4180 — senha 1234
+Recebe documentos brutos das farmácias (relatório de vendas em PDF, planilha de
+estoque+custo+preço, coleta de concorrentes, métricas de Instagram) jogados numa pasta,
+processa sozinho e entrega:
+
+- **Painel** de resultados (faturamento, ticket, categorias, top produtos, Instagram, concorrência)
+- **Marketing Product Intelligence** — por produto: giro 7–90d, tendência, dias de cobertura,
+  margem, classe (HERO/TRÁFEGO/…), **Opportunity Score 0–100** com breakdown, do-not-promote
+- **Resultado** — cruzamento vendas × estoque × custo × margem: lucro estimado por produto,
+  matriz (vaca leiteira / isca cara / peso morto / aposta / sumindo / ruptura), capital parado
+- **Campanhas** — eficiência (DEMAND_LIFT), Campaign Builder, Offer Simulator
+- **Cesta** — market basket (support/confidence/lift), combos
+- **Concorrentes** — pressão competitiva, "onde reagir" priorizado, registro por formulário /
+  colar encarte / planilha
+- **Intelligence** — detectores → sinais priorizados (com evidência), War Room, **decisões
+  recomendadas cruzando sinais** ("modelo Palantir"), "Por quê?", Decision Journal, Pattern
+  Engine (aprende de decisão→resultado), Ontologia persistida, Pauta editorial de 7 dias,
+  "Pergunte ao Analytics"
+- **Análise Comercial** mensal via LLM (opt-in) — o modelo só interpreta agregados, nunca faz conta
+
+Tudo funciona **local** (`localhost:4180`) e é publicado como **site estático** que lê ao vivo
+do Supabase (Vercel + GitHub Pages).
+
+---
+
+## 2. Arquitetura e fluxo de dados
+
+```
+                 ┌──────────── inbox/ (chokidar) ────────────┐
+   arquivos ────>│ PDF vendas · xlsx estoque · xlsx conc.    │
+                 │ · JSON instagram · JSON análise comercial │
+                 └───────────────┬──────────────────────────┘
+                     watcher.js  │  (ou /upload/* manual, mesmo caminho)
+                                 v
+   ingest.js (dispatcher por extensão + nome)
+     .pdf   -> parsers/vendas.js  (regra de ouro: Σ == "Total:" impresso, senão LANÇA)
+             -> resolve loja pelo CNPJ do cabeçalho · split por mês
+             -> replaceVendas + catalogo.sincronizarProdutosDeVendas + basket.calcularCesta
+             -> intelligence.rodarDeteccao
+     .xlsx  -> concorrente?  parsers/concorrentes.js (36 col OU planilha simples, config-driven)
+             -> estoque/custo/preço?  catalogo.ingestPlanilhaProduto (1 arquivo alimenta os 3)
+             -> em ambos: rodarDeteccao das lojas tocadas
+     .json  -> análise comercial (validate-analise.js) OU instagram
+                                 v
+   db.js  (node:sqlite / DatabaseSync)  —  data/analytics.db  —  27 tabelas
+                                 v
+   ┌─ camada determinística ──────────────────────────────────────────────┐
+   │ aggregate · analytics-deep · classify · insights · match             │
+   │ marketing-product-analytics (Opportunity Score, classes, cobertura)  │
+   │ analise-cruzada (resultado/matriz) · concorrencia-analise            │
+   │ campanhas (eficiência, builder, simulador) · basket (cesta, combos)  │
+   └─────────────────────────────────────────────────────────────────────┘
+                                 v
+   ┌─ camada de inteligência (intelligence/) ────────────────────────────┐
+   │ contexto -> detectores (11) -> priorizacao (0..100)                 │
+   │ index.rodarDeteccao (dedupe/reabre/resolve) -> intel_sinais         │
+   │ decisao (cruza sinais -> recomendações) · investigar ("Por quê?")   │
+   │ padroes (closed-loop) · ontologia2 (grafo persistido)               │
+   │ ask (Pergunte ao Analytics) · editorial (pauta 7 dias)              │
+   └─────────────────────────────────────────────────────────────────────┘
+                                 v
+   server.js (Express) — ~66 rotas — auth por usuário+senha (cookie)
+                                 v
+   ┌─ frontend local ─────────┐   ┌─ publicação (a cada ingestão) ─────────┐
+   │ public/ (vanilla JS,     │   │ coletar-tudo.js -> publicar.js         │
+   │ SVG à mão, sem framework) │   │   -> publico/index.html (autocontido,  │
+   │ 9 telas                   │   │      lê Supabase ao vivo + fallback)   │
+   └──────────────────────────┘   │ supabase-sync.js -> analytics_snapshots │
+                                  └───────────┬───────────────────────────┘
+                                              v
+                            Supabase (Postgres/PostgREST) — leitura pública (chave publishable)
+                                              v
+                     Vercel (sdawd-sage.vercel.app) + GitHub Pages (thgustavo62-design.github.io/Analytics)
+                     — estáticos, com portão de login no navegador
 ```
 
-Ou **duplo-clique em `iniciar.bat`**. Depois é só salvar arquivos em
-`C:\Sistema Marketing\inbox` (veja `inbox/LEIA-ME.txt`).
+---
 
-### Sempre ligado
-- **`iniciar.bat`** numa janela aberta (mais simples).
-- **Tarefa Agendada do Windows** no logon → programa `node`, argumento `server.js`,
-  "Iniciar em" `C:\Sistema Marketing`.
-- **Serviço do Windows** com [nssm](https://nssm.cc): `nssm install Analytics`.
+## 3. Módulos (arquivo → o que faz)
 
-### Variáveis de ambiente
+### Ingestão e parsing
+| Arquivo | Papel |
+|---|---|
+| `watcher.js` | observa `inbox/` com chokidar, serializa a ingestão, grava `data/inbox-log.json` |
+| `ingest.js` | dispatcher: extensão + nome do arquivo → função de ingestão; resolve loja pelo **CNPJ** do cabeçalho do PDF; split de PDF multi-mês; roda detecção pós-ingestão |
+| `parsers/vendas.js` | PDF "Analítico de Vendas" via `pdfjs-dist` → transações + empresa (CNPJ/razão social) + **validação da soma vs. "Total:"** (não bate → lança, nada é gravado) + detecção de dia parcial |
+| `parsers/concorrentes.js` | xlsx de concorrente — formato de 36 colunas **ou** planilha simples (Concorrente+Produto+Preço); colunas mapeadas por `config/concorrentes.json`; sem status = tudo confirmado |
+| `parsers/instagram.js` | normaliza o formulário / JSON de métricas do Instagram |
+| `catalogo.js` | `sincronizarProdutosDeVendas()` popula `produtos` pelos EAN das vendas; `ingestPlanilhaProduto()` lê planilha de estoque — **um arquivo alimenta estoque + preço de venda + preço de promoção + custo** ("Últ. Prc. Entrada"); nome com `geral`/`rede` aplica nas 2 lojas |
+| `classify.js` | categoria por palavra-chave (`config/categorias.json`) |
+| `match.js` | casamento de nome de produto (Jaccard de tokens + marca como filtro duro) |
 
-| Var | Default | Uso |
+### Camada determinística (nenhuma IA — só soma e conta)
+| Arquivo | Papel |
+|---|---|
+| `aggregate.js` | KPIs, série diária, dia-da-semana, categorias, top produtos, preço médio por produto |
+| `analytics-deep.js` | ticket médio E mediano, baseline semanal c/ desvio, incrementalidade intradiária por campanha, canais Convênio/Delivery/Balcão, concentração cliente/convênio, operadores, resumo de concorrência |
+| `insights.js` | 3 regras automáticas → cards (`config/insights.json`) |
+| `marketing-product-analytics.js` | **Fase 2** — por produto: unidades/receita/cupons 7/14/30/60/90d, venda média diária, tendência (14d×14d, clamp ±300%), `dias_cobertura` por categoria (`config/marketing-stock.json`), margem (só com custo), classes, **Opportunity Score** (7 componentes + peso + contribuição + fonte + confiança, `config/opportunity-score.json`), `do-not-promote` + substituto, estoque parado. Memo de 45s. |
+| `analise-cruzada.js` | vendas × estoque × custo × margem → `resultado_30d` (lucro estimado por produto), `capital_parado`, `giro_mensal`, **matriz** VACA_LEITEIRA/ISCA_CARA/PESO_MORTO/APOSTA/SUMINDO/RUPTURA/NORMAL, `custo_suspeito` (custo > 1,3× preço = erro de ERP, balde separado) |
+| `concorrencia-analise.js` | panorama, por concorrente (pressão + categorias atacadas + exemplos), por categoria (ALTA/MÉDIA/BAIXA), **"onde reagir"** priorizado por relevância × quão abaixo × dá pra cobrir (margem real), resumo + ações |
+| `campanhas.js` | **Fase 3** — `eficienciaCalendario` (DEMAND_LIFT dias-de-campanha vs. demais, veredito EXCELENTE→DESTRUTIVA; nunca DESTRUTIVA sem custo), **Campaign Builder** (elenco por papel), **Offer Simulator** (cenários conservador/provável/agressivo, nunca promete venda) |
+| `basket.js` | **Fase 4** — cesta por cupom (`data+lancamento`): support/confidence/lift; corte de ruído (mínimo por produto isolado); `centralidade()`; `combos()` |
+
+### Camada de inteligência (`intelligence/`)
+| Arquivo | Papel |
+|---|---|
+| `contexto.js` | monta o "pacote" determinístico da loja (Fase 2/3/4 + concorrência + Instagram + histórico + momentum de categoria 14d×14d; recua 1 dia se o último dia é parcial) |
+| `detectores.js` | **11 detectores**: COMPETITOR_PRICE_ATTACK, CATEGORY_DECLINE/GROWTH, STOCK_RISK (+ rollup), STAGNANT_STOCK, CAMPAIGN_UNDER/OVERPERFORMANCE, DEMAND_ANOMALY, CROSS_SELL/MARKETING_OPPORTUNITY, CREATIVE_FATIGUE, CONTRADICTION. Sem o feed necessário, não dispara e reporta em `indisponivel[]`. Limiares em `config/intelligence.json`. |
+| `priorizacao.js` | **Priority Engine** `prioridade 0..100` = média ponderada de severidade, confiança, impacto financeiro, recência (meia-vida), acionabilidade |
+| `index.js` | `rodarDeteccao` (dedupe por `dedupe_key`, reabre o que voltou, resolve o que sumiu) + `warRoom` (KPIs, prioridade #1, threat/opportunity map, contradições, situação por categoria, recomendações) |
+| `decisao.js` | **cruza os sinais abertos entre si** → decisões recomendadas (playbooks: DEFENDER_CATEGORIA = queda + ataque de preço; CAMPANHA_SEM_ESTOQUE; APROVEITAR_ALTA; DESOVAR_COMBO; REVISAR_DADO) — cada uma com ação, efeito esperado, confiança, cadeia de evidências, códigos dos sinais |
+| `investigar.js` | **"Por quê?"** — biblioteca de hipóteses por assunto (categoria/campanha/produto); cada hipótese vira `suportada`/`refutada`/`inconclusiva` com evidência |
+| `ontologia2.js` | persiste o grafo de `ontologia.js` em `ontology_nodes`/`ontology_edges` (força, confiança, `valid_from`) + enriquece com PRODUTO/MARCA + arestas `combina` (cesta) e `sobre` (sinal) |
+| `padroes.js` | **closed-loop** — quando uma decisão ganha resultado, deriva `chave = "(tipos de sinal) => (tipo de decisão)"` e atualiza `intel_padroes` (amostra, taxa de sucesso); `semelhantes()` |
+| `ontologia.js` (raiz) | grafo da tela **Conexões** (loja/categoria/canal/campanha/concorrente/sinal + achados da Análise Comercial), arestas com significado + cruzamentos |
+| `ask.js` (raiz) | **Pergunte ao Analytics** — roteia a pergunta por intenção → funções internas (`recomendados`, `investigar`, `combos`, `eficiencia`, `estoqueParado`, war-room) → resposta formato analista (conclusão/evidências/hipóteses/confiança/ação/monitorar); IA opcional recebe **só** o pacote agregado e é proibida de inventar |
+| `editorial.js` (raiz) | pauta de 7 dias — produto e ângulo saem do motor; CTA de template |
+
+### IA (opt-in `ANTHROPIC_API_KEY`)
+| Arquivo | Papel |
+|---|---|
+| `motor.js` | gera o JSON da **Análise Comercial mensal** via API da Anthropic a partir dos agregados de `analytics-deep.js` (o modelo interpreta, não calcula). `claude-opus-5`, thinking adaptive. |
+| `validate-analise.js` | validador sem dependência do JSON do Motor (chaves obrigatórias + tipos) |
+| `analise-store.js` | grava a análise no banco (`analises_comerciais`) + espelho em `data/analises/*.json` |
+
+### Publicação
+| Arquivo | Papel |
+|---|---|
+| `coletar-tudo.js` | bate na própria API local (cookie de sessão) e junta **todas** as respostas de todas as telas das 2 lojas num pacote `B` |
+| `publicar.js` | assa `B` + `app.js` + `styles.css` num `publico/index.html` autocontido; o stub troca `window.fetch` para ler **ao vivo do Supabase** (chave publishable) com fallback assado; embute o **portão de login** (SHA-256 de `usuario:senha`) |
+| `supabase-sync.js` | UPSERT em lote de cada pedaço de `B` em `analytics_snapshots` (Postgres); opt-in por `SUPABASE_DB_URL` |
+| `scripts/build-vercel.js` | copia `public/` → `vercel/` para o deploy do Vercel (fallback alternativo, hoje não usado) |
+
+---
+
+## 4. Banco de dados (`data/analytics.db`, SQLite via `node:sqlite`)
+
+27 tabelas. Migrations **idempotentes** no boot: `schema.sql` roda `CREATE TABLE IF NOT EXISTS`
++ bloco de `ALTER TABLE … ADD COLUMN` em try/catch (engole "duplicate column name"). Nada é
+destrutivo.
+
+| Grupo | Tabela | Chave / notas |
 |---|---|---|
-| `PORT` | `4180` | porta HTTP |
-| `APP_PASSWORD` | `1234` | senha única (login) |
-| `SESSION_SECRET` | aleatória por boot | assina o cookie de sessão; defina p/ sessão sobreviver a restart |
-| `VA_DB_PATH` | `data/analytics.db` | caminho do SQLite |
-| `VA_INBOX` | `./inbox` | pasta observada |
-| `VA_POLL_MIN` | `5` | minutos entre recargas automáticas do mês corrente no navegador |
-| `VA_ANALISES` | `data/analises` | espelho em disco dos JSONs de Análise Comercial |
-| `ANALISE_UPLOAD_TOKEN` | — | se definido, exige header `X-Analise-Token` no `POST /analise-comercial/upload` |
-| `ANTHROPIC_API_KEY` | — | se definido, o site **gera a Análise Comercial sozinho** (botão + auto + verificação diária) |
-| `ANTHROPIC_AUTH_TOKEN` | — | alternativa à API key (perfil OAuth) |
-| `ANALISE_MODEL` | `claude-opus-5` | modelo da geração (ex.: `claude-sonnet-5` p/ gastar menos) |
-| `AUTO_ANALISE` | ligado se há chave | `0` desliga a geração automática (mantém o botão manual) |
-| `VA_NO_AUTH` | — | `1` desliga a autenticação — **só teste local** |
-
-`GET /healthz` responde sem login.
-
----
-
-## 3. Arquitetura
-
-```mermaid
-flowchart TD
-  subgraph Entrada
-    INBOX["pasta inbox/ (PDF, xlsx, json)"]
-    UPLOAD["tela Upload de dados"]
-    POST["POST /analise-comercial/upload (token)"]
-  end
-  INBOX --> WATCHER[watcher.js - chokidar]
-  WATCHER --> INGEST[ingest.js]
-  UPLOAD --> SERVER
-  POST --> SERVER
-  INGEST -->|detecta loja pelo CNPJ, split por mês| DB[(analytics.db - node:sqlite)]
-  INGEST -->|json de análise| STORE[analise-store.js]
-  STORE --> DB
-  INGEST -->|vendas do mês corrente/anterior + ANTHROPIC_API_KEY| MOTOR
-
-  subgraph Backend [server.js - Express]
-    SERVER
-    BUILD["buildAnalise() -> agregação do painel"]
-    ONT["ontologia.js -> grafo de objetos"]
-    MOTOR["motor.js -> API da Anthropic"]
-  end
-  DB --> BUILD --> APIPAINEL["/api/analise/:loja/:mes"]
-  DB --> ONT --> APIONT["/api/ontologia/:loja/:mes"]
-  DB --> MOTOR --> STORE
-  STORE --> APIAC["/api/analise-comercial/:loja"]
-
-  APIPAINEL --> UI
-  APIONT --> UI
-  APIAC --> UI
-  UI["public/app.js - Painel · Conexões · Análise Comercial"]
-```
-
-### Pipeline de agregação (Painel)
-`vendas_transacoes` → `aggregate.js` (KPIs, série diária, dia da semana, categorias, top
-produtos) + `insights.js` (regras automáticas) + `getConcorrencia` + `config/lojas.json`
-→ `buildAnalise()` monta a resposta que `app.js` desenha.
-
-### Pipeline de análise profunda (Análise Comercial)
-`vendas_transacoes` (+ concorrência + calendário de campanhas) → `analytics-deep.js`
-(`analiseProfunda`: ticket médio/mediano, baseline semanal com desvio, Pareto,
-incrementalidade intradiária por campanha, canais convênio/delivery/balcão, concentração
-cliente/convênio, operadores, resumo de concorrentes) → `motor.js` monta o *system prompt*
-(`prompts/motor-analise-comercial.md`) + manda **só os agregados** → o modelo interpreta e
-devolve o JSON do contrato → `validate-analise.js` (1 retry) → `analise-store.js` grava no
-banco (tabela `analises_comerciais`) e num espelho `.json`.
-
-### Pipeline do grafo (Conexões)
-`analiseProfunda` + `getConcorrencia` + `config/lojas.json` + (se houver) a Análise
-Comercial → `ontologia.js` (`construirOntologia`) → nós + arestas com significado →
-`app.js` desenha um grafo SVG radial.
+| **Núcleo** | `lojas` | `id`, `nome` (Minas Farma / Farma e Farma) |
+| | `periodos` | `(loja_id, ano, mes)`; guarda `vendas_ultimo_dia[_parcial/_motivo]`, `vendas_total_impresso` |
+| | `vendas_transacoes` | `periodo_id`, `data`, `lancamento` (cupom), `barras` (EAN), `descricao`, `categoria`, `quantidade`, `valor_liquido`, `forma_pagto`, `emp_id`, `cli_id` |
+| | `instagram_metricas` | `periodo_id`, `metrica`, `valor_exibicao`, `delta_pct` |
+| | `concorrencia_ofertas` | `periodo_id`, `concorrente`, `produto`, `preco_normal/promo`, `validade`, `nivel_confianca`, `status_validacao`, `nosso_preco_medio`, `abaixo_do_nosso`, **`data_coleta`**, **`fonte`** (`coleta`/`manual`) |
+| **Catálogo (Fase 1)** | `produtos` | `ean` UNIQUE (nullable), `descricao[_normalizada]`, `categoria`, `*_manual` (override vence), `fonte` (`vendas`/`catalogo`/`manual`) |
+| | `produto_estoque` | snapshot por `(loja_id, produto_id, data_referencia)` |
+| | `produto_custo` | historizado — `data_inicio`/`data_fim` (vigência; nunca sobrescreve) |
+| | `produto_preco` | idem + `tipo_preco` (normal/promocional/planejado) |
+| **Campanhas (Fase 3)** | `campanhas` | `loja_id`, `nome`, `objetivo`, `data_inicio/fim`, `status`, `investimento`, `origem` |
+| | `campanha_produtos` | `papel` (CHAMARIZ/HERO/MARGEM/…), `preco_promocional` |
+| | `campanha_resultados` | `metricas_json`, `resultado` (EXCELENTE→DESTRUTIVA), `score` |
+| **Cesta (Fase 4)** | `cesta_pares` | `(loja_id, janela, produto_a, produto_b)`, `support`, `confidence`, `lift` |
+| **Inteligência (Fases 5–12)** | `intel_eventos` | log append-only (DETECCAO_RODOU, SINAL_ABERTO/REABERTO/RESOLVIDO, DECISAO_REGISTRADA) |
+| | `intel_sinais` | `classe` (SINAL/AMEACA/OPORTUNIDADE/CONTRADICAO), `tipo`, `severidade`, `confianca`, `impacto_estimado`, `prioridade` 0–100, `entidade_tipo/ref`, `status`, `dedupe_key` UNIQUE, `ocorrencias`. Código legível: `SIG-/THR-/OPP-/CON-000000` |
+| | `intel_evidencias` | `sinal_id` → `campo`, `valor`, `fonte`, `periodo` |
+| | `intel_investigacoes` / `intel_hipoteses` | "Por quê?" — hipóteses com `veredito` + `evidencias_json` |
+| | `intel_decisoes` / `intel_acoes` / `intel_resultados` | Decision Journal — decisão → ações → resultado medido (`antes`/`depois`/`veredito`) |
+| | `intel_padroes` | `(loja_id, chave)`, `amostra_n`, `sucessos`, `taxa_sucesso` |
+| **Ontologia (Fase 7)** | `ontology_nodes` | `(loja_id, chave)`, `tipo`, `rotulo`, `atributos_json` |
+| | `ontology_edges` | `(loja_id, de_chave, para_chave, tipo)`, `forca`, `confianca`, `valid_from/to` |
+| **Análise Comercial** | `analises_comerciais` | `(loja_id, ano, mes)`, `json` (documento inteiro) |
+| **Hospedado (Supabase)** | `analytics_snapshots` | `chave` = `"<loja>\|<endpoint>\|<periodo>"`, `payload` jsonb — o site lê daqui |
+| | `analytics_publicacao_meta` | carimbo `gerado_em` da última publicação |
 
 ---
 
-## 4. Módulos
+## 5. Rotas HTTP (`server.js`, ~66)
 
-| Arquivo | Responsabilidade |
+Todas atrás de sessão (cookie `va_session`), exceto `/healthz`, `/login`, `/publico/*` e o
+POST `/analise-comercial/upload` (token próprio). `VA_NO_AUTH=1` desliga (só local).
+
+**Auth** — `GET/POST /login` (usuário + senha), `POST /logout`.
+
+**Leitura base** — `GET /api/lojas`, `/api/periodos/:loja`, `/api/analise/:loja/:periodo` (Painel),
+`/api/catalogo/:loja[/produtos]`, `/api/ingest-log`.
+
+**Marketing** — `GET /api/marketing/:loja/:periodo/`{`resultado`, `produtos`, `recommended-products`,
+`do-not-promote`, `stagnant-stock`, `baskets`, `combos`, `campaign-builder`, `products/:ean`} ·
+`GET /api/marketing/:loja/campaign-efficiency` · `POST /api/marketing/:loja/offer-simulator` ·
+CRUD `GET/POST/PATCH/DELETE /api/marketing/:loja/campaigns[/:id]`.
+
+**Concorrentes** — `GET /api/concorrencia/:loja` (análise completa) ·
+`POST /api/concorrencia/:loja/ofertas` (registrar 1 ou N, vale p/ as 2 lojas) ·
+`POST /api/concorrencia/:loja/colar` (interpreta texto de encarte, não salva).
+
+**Intelligence** — `GET /api/intelligence/:loja/`{`war-room`, `recommendations`, `signals[/:id]`,
+`patterns`, `investigations[/:id]`, `decisions[/:id]`, `ontology`, `editorial-plan`} ·
+`POST …/detect`, `…/investigate`, `…/decisions`, `…/decisions/:id/outcomes`, `…/ontology/sync`,
+`…/ask` · `PATCH …/signals/:id`, `…/actions/:id`.
+
+**Conexões / Análise Comercial** — `GET /api/ontologia/:loja/:periodo` ·
+`GET /api/analise-comercial/:loja[/:ym]` · `POST /analise-comercial/upload` (token) ·
+`POST /analise-comercial/gerar/:loja/:ym` (usa a API da Anthropic).
+
+**Upload / publicação** — `POST /upload/`{`vendas`, `analise`, `concorrentes`, `instagram`} ·
+`POST /api/publicar` (força regenerar + Supabase) · `POST /api/catalogo/produtos/:id` (correção manual).
+
+**Export** — `GET /export/:loja/:periodo` e `/export-analise/:loja/:ym` (HTML autocontido de 1 tela) ·
+`GET /publico/*` (o site estático, sem login).
+
+---
+
+## 6. Telas (frontend `public/app.js` — vanilla JS, SVG à mão, sem framework)
+
+| Tela (sidebar) | Conteúdo |
 |---|---|
-| `server.js` | Rotas HTTP, auth por senha única, estáticos, `buildAnalise()`, exports `.html`, verificação diária da Análise Comercial. |
-| `db.js` | Acesso ao SQLite (`node:sqlite`). Cria/migra o schema, faz seed das lojas. **Toda consulta passa por `periodo_id`** (uma loja só). Helpers: `getOrCreatePeriodo`, `replaceVendas`/`setVendasMeta`/`getVendas`, `getFaturamento`, `getDiasComVenda`, `replaceInstagram`/`getInstagram`, `replaceConcorrencia`/`getConcorrencia`, `saveAnaliseComercial`/`getAnaliseComercial`/`listAnalisesComerciais`, `listPeriodos`. |
-| `schema.sql` | Definição das tabelas. |
-| `watcher.js` | Observa `inbox/` (`chokidar`), serializa a ingestão (parser de PDF é pesado), mantém `data/inbox-log.json`, dispara `maybeAutoAnalise` após ingest de vendas. |
-| `ingest.js` | Recebe **1 arquivo** e roteia: PDF → `ingestVendas` (detecta loja pelo CNPJ do cabeçalho via `resolveLoja`, split por mês, valida a soma, grava); xlsx `Concorrentes_Coleta_*` → `ingestConcorrentes` (aplica às 2 lojas); `*.json` com `meta`+`diagnostico_executivo` → `ingestAnaliseComercial`; `*instagram*.json` → `ingestInstagramJson`. |
-| `parsers/vendas.js` | PDF "Analítico de Vendas" via `pdfjs-dist`. Regex ancorada nos tokens fortes; tolera `Nº Cx` ausente e valores negativos (ARREDONDAMENTO). Extrai razão social + CNPJ do cabeçalho, timestamp `Pag.: 1/N`, período declarado, e detecta **dia parcial**. **Lança** se `Σ vl != "Total:"`. |
-| `parsers/concorrentes.js` | Lê a 1ª aba do xlsx (36 colunas). Mantém só `Status validação = Confirmada` e não expirada. Casa `Produto`+`Marca` com o que a loja vendeu (`match.js`), compara `Preço promo` com o nosso preço médio. **Marca é filtro duro.** |
-| `parsers/instagram.js` | Normaliza o formulário / JSON manual (6 métricas: valor de exibição + variação %). Sem OCR. |
-| `match.js` | Casamento de nome de produto por sobreposição de tokens (Jaccard) + `brand` como filtro duro. Portado de `app_minasfarma/match.js`. |
-| `classify.js` | Classificador de categoria por palavra-chave, lê `config/categorias.json` (recarrega ao editar). |
-| `aggregate.js` | `vendas_transacoes` → KPIs, série diária (dia parcial marcado e fora da tendência), dia da semana, categorias, top 15 produtos, preço médio por produto. |
-| `insights.js` | Regras automáticas → cards: (1) dia de pico ≥ +50% da média; (2) **cada campanha** vs. resto da semana; (3) "Diversos" > 5%; (4) conta única (convênio/cliente) > 5% do faturamento. Limiares em `config/insights.json`. |
-| `analytics-deep.js` | `analiseProfunda` — agregados dos Passos 1–8 do prompt (ver seção 3). Determinístico. Usa `emp_id`/`cli_id`. |
-| `motor.js` | `gerarAnalise` (chama a API da Anthropic: `claude-opus-5`, `thinking: adaptive`, `effort: high`, `max_tokens 16000`; extrai + valida com 1 retry; normaliza `meta`; grava). `podeGerar` (há chave?). `maybeAutoAnalise` (regen automática do mês corrente/anterior se não há análise < 20 dias). |
-| `validate-analise.js` | Validador (sem dependência) do contrato da Parte 2. Números aceitam `null`; duro em `meta`/`diagnostico_executivo`/`pergunta_central`, listas e itens. |
-| `analise-store.js` | Fonte de verdade = **banco**. `save` grava na tabela + espelho `.json`; `read` lê do banco (migra arquivo→banco se preciso); `saveErro` grava `*.INVALIDO.json`. |
-| `ontologia.js` | `construirOntologia` — grafo de nós (loja, categoria, canal, campanha, concorrente, sinal, risco, oportunidade, ação, decisão, veredito) + arestas (`vende`, `canal`, `promove`, `pressiona`, `afeta`, `causa`, `sobre`, …) + cruzamentos ("Campanha sob pressão em X", "Conta de convênio concentrada", "Concentração de SKUs"). |
-| `public/index.html` | App shell (top bar, sidebar, `#view`). |
-| `public/app.js` | Todo o frontend: carrega lojas/períodos, roteia as views por hash, desenha gráficos SVG à mão, o grafo de Conexões, a Análise Comercial. |
-| `public/styles.css` | Estilos (app shell + gráficos + grafo + Análise Comercial). |
-| `public/upload.html` | Redireciona para `/#upload`. |
+| **Painel** | 4 cartões de resumo + abas: Visão Geral · Vendas · Redes Sociais · Concorrência · Categorias · Top Produtos · Tendência. Gráficos SVG (combo barras+linha, donut, dia-da-semana, tendência). |
+| **Marketing** (9 abas) | **Resultado** (KPIs de lucro/capital parado/risco + matriz visual + tabelas top-lucro / vende-e-não-lucra / custo-a-conferir / peso-morto / ruptura / sumindo) · Produtos · Recomendados · Não anunciar · Estoque parado · Cestas & Combos · Eficiência · Montar campanha · Simulador de oferta |
+| **Concorrentes** | Botão **➕ Registrar oferta** (formulário rápido **ou** "colar encarte/post" → preview → salvar em lote) · KPIs (ofertas, abaixo do nosso, desconto médio) · Leitura automática + ações · **Onde reagir** (priorizado, com veredito) · Por concorrente (pressão + categorias atacadas) · Pressão por categoria |
+| **Intelligence** (7 abas) | **War Room** (bloco escuro: prioridade #1, decisões recomendadas, Threat/Opportunity Map, contradições, situação por categoria) · **Recomendações** (decisões cruzadas + "Registrar como decisão") · Sinais (com "Por quê?", Observando, Resolver, Virar decisão) · Investigações · Decisões · Padrões · Pauta 7 dias · Perguntar |
+| **Conexões** | grafo radial SVG — nós (loja/categoria/canal/campanha/concorrente/sinal/…) ligados por arestas com significado; clique → foco + painel lateral navegável |
+| **Análise Comercial** | diagnóstico executivo, decisão principal, KPIs, baseline semanal, scorecard de campanhas, canais, riscos, ações, "o que mudou", faixa SIM/NÃO (só se houver JSON do Motor) |
+| **Upload de dados** | envio manual (loja, mês, PDF, form do Instagram, xlsx) |
+| **Histórico** | todos os meses processados por loja |
+| **Configurações** | pasta `inbox/` + log dos últimos arquivos + card "Catálogo (EAN)" com freshness de estoque/custo/preço |
+
+**Mobile** — barra de navegação **fixa embaixo** (ícone + label), topbar compacta (marca +
+seletores lado a lado), tabelas viram cartões (rótulo por linha) ou rolam dentro do card,
+KPIs/matriz em 2 colunas.
 
 ---
 
-## 5. Modelo de dados (`data/analytics.db`)
+## 7. Configuração (`config/*.json` — editável sem tocar no código)
 
-Toda agregação filtra por `periodo_id` — nunca soma Minas Farma com Farma e Farma.
-
-| Tabela | Campos principais |
+| Arquivo | O que controla |
 |---|---|
-| `lojas` | `id`, `nome` (`Minas Farma` \| `Farma e Farma`) |
-| `periodos` | `id`, `loja_id`, `ano`, `mes`, `criado_em`, `atualizado_em`, `vendas_ultimo_dia`, `vendas_ultimo_dia_parcial`, `vendas_ultimo_dia_motivo`, `vendas_total_impresso`, `vendas_fonte_gerada_em`. `UNIQUE(loja_id, ano, mes)` |
-| `vendas_transacoes` | uma linha por item vendido: `periodo_id`, `data`, `hora`, `lancamento` (nº da venda), `barras`, `descricao`, `categoria` (do classificador), `preco_unit`, `quantidade`, `valor_liquido`, `forma_pagto` (`A VISTA`\|`A PRAZO`), `emp_id` (convênio), `cli_id` (cliente) |
-| `instagram_metricas` | `periodo_id`, `metrica`, `rotulo`, `valor_exibicao` (`"414,3 mil"`), `delta_pct`, `observacao`, `ordem` |
-| `concorrencia_ofertas` | `periodo_id`, `concorrente`, `categoria`, `produto`, `preco_normal`, `preco_promo`, `validade`, `nivel_confianca`, `status_validacao`, `nosso_preco_medio`, `abaixo_do_nosso` (1/0/null) |
-| `produtos` | catálogo global por **EAN**: `ean` (UNIQUE, pode ser null), `descricao(_normalizada)`, `marca`, `categoria`, `subcategoria`, `*_manual` (correção que prevalece), `fonte` (vendas|catalogo|manual), `primeira/ultima_venda`. Populado dos `barras` das vendas. |
-| `produto_estoque` | snapshot por `loja_id`,`produto_id`,`data_referencia` (UNIQUE): `quantidade`, `reservado`, `disponivel`. Histórico, não sobrescreve. |
-| `produto_custo` / `produto_preco` | histórico com `data_inicio`/`data_fim` (nunca sobrescreve). `produto_preco.tipo_preco` = normal|promocional|planejado. |
-| `analises_comerciais` | `loja_id`, `ano`, `mes`, `gerado_em`, `json` (documento inteiro), `criado_em`, `atualizado_em`. `UNIQUE(loja_id, ano, mes)` |
-
-Gitignored (dados / não versionados): `data/analytics.db*`, `data/uploads/`, `data/analises/`,
-`data/inbox-log.json`, `inbox/*` (exceto `LEIA-ME.txt`), `node_modules/`, `.env`, `*.log`.
+| `lojas.json` | por loja: `cnpj` (roteia o PDF), `razaoSocial`, `horaFechamento`, `concorrentes[]`, **`campanhas[{nome, dias, categorias}]`** (calendário recorrente) |
+| `categorias.json` | dicionário do classificador de categoria (regras `contem`/`igual`/`exceto`, ordenadas) |
+| `insights.json` | limiares das 3 regras de insight do Painel |
+| `catalogo.json` | como reconhecer/ler as planilhas de estoque/custo/preço (nome do arquivo + sinônimos de coluna); `nome_todas_as_lojas` |
+| `concorrentes.json` | pistas de nome de arquivo + sinônimos de coluna da coleta de concorrente |
+| `marketing-stock.json` | limiares de dias de cobertura (ruptura/atenção/normal/oportunidade/parado) por categoria; `margem_pct_minima_para_anunciar`, `margem_pct_lucrativo` |
+| `opportunity-score.json` | **pesos dos 7 componentes** do Opportunity Score + limiares de rótulo e de classe |
+| `basket-analysis.json` | mínimos de amostra/support/confidence/lift da cesta |
+| `intelligence.json` | pesos do Priority Engine + limiares dos 11 detectores + prefixos de código |
+| `usuarios.json` | `{ "Gustavo": "100603" }` — login do site (local + portão do site estático) |
 
 ---
 
-## 6. Configuração
+## 8. Autenticação
 
-### `config/lojas.json`
-Por loja: `endereco`, `instagram`, `cnpj` (roteia o PDF), `razaoSocial`, `horaFechamento`
-(marca dia parcial), `concorrentes[]` (cards do radar), e **`campanhas[]`**:
-
-```json
-"campanhas": [
-  { "nome": "Fralda e Leite (segunda e terça)", "dias": [1, 2], "categorias": ["Fraldas", "Leite Infantil"] },
-  { "nome": "Limpeza (sexta a domingo)",        "dias": [5, 6, 0], "categorias": ["Limpeza"] }
-]
-```
-
-`dias` na convenção JS `getDay()`: 0=domingo … 6=sábado. `categorias` aponta para categorias
-do classificador. A análise avalia **cada campanha** pelo método intradiário (participação
-da(s) categoria(s) no faturamento do próprio dia, campanha vs. 2 baselines).
-
-Calendário atual:
-
-| Loja | Campanha | Dias | Categorias |
-|---|---|---|---|
-| Minas Farma | Fralda e Leite | seg e ter | Fraldas, Leite Infantil |
-| Minas Farma | Limpeza | sex a dom | Limpeza |
-| Farma e Farma | Fralda e Leite | qua e qui | Fraldas, Leite Infantil |
-| Farma e Farma | Limpeza | sex a dom | Limpeza |
-
-### `config/categorias.json`
-Regras de palavra-chave, avaliadas de cima para baixo (`igual` / `contem` / `exceto`).
-Ordem atual: Taxa de Entrega → Diversos → Fraldas → Leite Infantil → Suplementos →
-**Limpeza** → Perfumaria/Higiene → *(fallback)* Medicamentos/Outros. "Limpeza" foi separada
-de Perfumaria/Higiene porque é categoria de campanha.
-
-### `config/insights.json`
-Limiares: `picoDia.acimaDaMediaPct` (0.5), `campanhaVsResto.diferencaMinimaPct` (0.15),
-`diversos.participacaoMaximaPct` (0.05).
+- **Local** (`server.js`): `POST /login` com **usuário + senha**. `autentica()` aceita um
+  usuário de `config/usuarios.json` **ou** o `APP_PASSWORD` do ambiente (mestre, default `1234`).
+  Cookie `va_session` assinado (HMAC-SHA256, `SESSION_SECRET`), 30 dias.
+- **Site estático** (Vercel/Pages): `publicar.js` embute um **portão** — overlay de login que
+  compara `SHA-256("usuario:senha")` (via `crypto.subtle` no navegador) contra os hashes de
+  `config/usuarios.json`; sucesso salva em `localStorage`. ⚠️ É um portão **leve** (o HTML é
+  estático) — segura link compartilhado casual, **não** é segurança forte. Segurança real
+  exigiria a função serverless.
 
 ---
 
-## 7. Fluxos
+## 9. Deploy e integrações
 
-### 7.1 Ingestão pela pasta `inbox/`
-1. Você salva um arquivo em `inbox/`.
-2. `watcher.js` (debounce/estabilização) chama `ingest.js`.
-3. Roteamento por extensão/conteúdo:
-   - **PDF** → parseia; **detecta a loja pelo CNPJ** do cabeçalho; agrupa por mês; para cada
-     mês cria/atualiza o período e grava as transações classificadas. Se `Σ vl != "Total:"`
-     do rodapé → **recusa, nada é gravado**, o erro aparece em Configurações → "Últimos
-     arquivos".
-   - **`Concorrentes_Coleta_AAAA-MM-DD.xlsx`** → aplica às **duas lojas** que já têm vendas
-     do mês da coleta (cada uma comparada com o próprio preço).
-   - **`*.json` com `meta` + `diagnostico_executivo`** → valida e grava como Análise
-     Comercial. Inválido → `*.INVALIDO.json`, mantém a anterior.
-   - **`*instagram*.json`** → `{ loja, periodo: "AAAA-MM", metricas: {...} }`.
-4. Após ingest de vendas do mês corrente/anterior, se `ANTHROPIC_API_KEY` estiver setada e
-   `AUTO_ANALISE != 0` e não houver análise recente (< 20 dias) → dispara `gerarAnalise` em
-   background.
-5. O painel do mês corrente ("AO VIVO") recarrega sozinho no navegador a cada `VA_POLL_MIN`.
+### Local (o "cérebro")
+`node server.js` na porta 4180 (`iniciar.bat`). Precisa ficar ligado — é ele que observa a
+`inbox/`, processa, roda a detecção e publica. Lê `.env` no boot (loader próprio, sem
+dependência).
 
-Também existe: tela **Upload de dados** (multipart) e `POST /analise-comercial/upload`
-(token) — mesmos caminhos, entrada manual.
+### Supabase (Postgres) — o "correio"
+`.env`: `SUPABASE_DB_URL` (connection string, pooler porta 5432 p/ o PC) + `SUPABASE_URL` +
+`SUPABASE_ANON_KEY` (chave **publishable** `sb_publishable_…`). Rode `sql/supabase.sql` uma vez
+(cria `analytics_snapshots` + `analytics_publicacao_meta`, prefixo `analytics_` porque o projeto
+já tem tabelas de outro sistema). A cada ingestão o PC faz UPSERT de ~43 snapshots. RLS:
+leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 
-### 7.2 Análise Comercial
-- **Gera sozinho** (com chave): botão "Gerar análise agora" / "Regerar" na tela; auto após
-  ingest; verificação diária no servidor. `analytics-deep.js` agrega, `motor.js` chama a
-  API com **os agregados + o calendário de campanhas + o resumo de concorrentes**; pede uma
-  entrada em `campanhas[]` por campanha do calendário.
-- **Sem chave**: entra por `inbox/` (`*.json`) ou `POST /analise-comercial/upload`.
-- Regra de ouro: JSON inválido → `422` / log, guarda `*.INVALIDO.json`, **mantém a análise
-  boa anterior no ar**.
-- `prompts/motor-analise-comercial.md` = *system prompt* (Parte 1) + contrato de saída
-  (Parte 2). `schemas/analise-comercial.example.json` = exemplo (fixture dos testes).
+### Sites estáticos — a "vitrine"
+- `publico/index.html` (≈1,6 MB) = o app inteiro assado, lê o Supabase ao vivo via PostgREST,
+  fallback nos dados embutidos.
+- **Vercel**: `https://sdawd-sage.vercel.app/` — `vercel.json` na raiz (`framework:null`,
+  `outputDirectory:publico`) + `.vercelignore` (bloqueia `server.js`) fazem o deploy ser 100%
+  estático independente do "Root Directory" do painel.
+- **GitHub Pages**: `https://thgustavo62-design.github.io/Analytics/` — branch `gh-pages`
+  (worktree), `index.html` + `.nojekyll`.
+- **Atualizar o código do site**: regenerar `publico/index.html` (`POST /api/publicar`), depois
+  `git push` na `main` (Vercel redeploya) e re-push do `gh-pages`. **Dados** não precisam de
+  push — são ao vivo pelo Supabase.
 
-### 7.3 Conexões
-`GET /api/ontologia/:loja/:mes` monta o grafo. Na tela: filtro por tipo, clique num nó →
-foco (destaca vizinhos, mostra rótulos das arestas) + painel lateral (métricas, nota,
-"Conectado a" navegável). Cruzamentos automáticos: **"Campanha sob pressão em <categoria>"**
-quando uma campanha promove uma categoria que um concorrente está batendo no preço.
-
-### 7.4 Exportação
-- `GET /export/:loja/:AAAA-MM` → painel autocontido em 1 `.html` (abre sem servidor).
-- `GET /export-analise/:loja/:AAAA-MM` → Análise Comercial autocontida em 1 `.html`.
-
----
-
-## 8. Rotas HTTP
-
-Todas atrás da sessão, exceto `/healthz`, `/login` e `POST /analise-comercial/upload`
-(token próprio). `VA_NO_AUTH=1` libera tudo (teste local).
-
-| Método | Rota | O quê |
-|---|---|---|
-| GET | `/healthz` | ping (sem login) |
-| GET/POST | `/login`, `/logout` | sessão (cookie assinado) |
-| GET | `/` | app shell (`index.html`) |
-| POST | `/upload/analise` | multipart: `loja`, `ano`, `mes`, `vendas` (pdf), `concorrentes` (xlsx), `instagram` (json string) |
-| POST | `/upload/vendas` \| `/upload/instagram` \| `/upload/concorrentes` | entradas individuais |
-| GET | `/api/lojas` | lojas + `campanhas` + endereço |
-| GET | `/api/periodos/:loja` | meses processados (com flag `atual`, `temVendas`, `linhas`) |
-| GET | `/api/analise/:loja/:AAAA-MM` | payload do Painel (kpis, daily, weekday, categories, topProducts, insights, instagram, concorrencia, meta) |
-| GET | `/api/ontologia/:loja/:AAAA-MM` | grafo de Conexões (`nodes`, `edges`, `contagem`, `tem_analise_comercial`) |
-| GET | `/api/ingest-log` | eventos da pasta `inbox/` + `inbox` (caminho) + `pollMin` |
-| POST | `/analise-comercial/upload` | recebe o JSON pronto (header `X-Analise-Token` se `ANALISE_UPLOAD_TOKEN`) |
-| GET | `/api/analise-comercial/:loja` \| `/:loja/:AAAA-MM` | última / mês específico + `meses[]` + `podeGerar` + `model` |
-| POST | `/analise-comercial/gerar/:loja/:AAAA-MM` | dispara a geração pela API (400 `SEM_CHAVE` se não há chave) |
-| GET | `/export/:loja/:AAAA-MM` | painel `.html` autocontido |
-| GET | `/export-analise/:loja/:AAAA-MM` | Análise Comercial `.html` autocontida |
-
----
-
-## 9. Telas (sidebar)
-
-| Tela | Conteúdo |
-|---|---|
-| **Painel** | 4 cartões de resumo + abas: Visão Geral · Vendas · Redes Sociais · Concorrência · Categorias · Top Produtos · Tendência. Abre no mês corrente ("AO VIVO"). Botão "Baixar painel (HTML)". |
-| **Conexões** | Grafo de objetos interligados. Filtro por tipo, clique → foco + painel lateral. |
-| **Análise Comercial** | Diagnóstico executivo + decisão principal, KPIs, baseline semanal, scorecard de campanhas (selo por decisão), canais, riscos, oportunidades, plano de ação, "o que mudou", faixa SIM/NÃO. Botões: "Gerar/Regerar", "Ver no mapa", "Baixar (HTML)". |
-| **Upload de dados** | Envio manual (loja, mês, PDF, formulário Instagram, xlsx). |
-| **Histórico** | Todos os meses processados, por loja; clique para abrir. |
-| **Configurações** | Caminho da `inbox/` + log dos últimos arquivos processados. |
+### GitHub
+`github.com/thgustavo62-design/Analytics` (público). `main` + `gh-pages`.
 
 ---
 
 ## 10. Regras não-negociáveis (implementadas)
 
-1. Minas Farma e Farma e Farma **nunca** são somadas — tudo passa por `periodo_id`.
-2. Painel/análise não sobem se `Σ transações != "Total:"` do PDF — o parser **lança** e o
-   endpoint responde erro **sem tocar no banco** (o período nem é criado).
-3. Categoria de produto é **estimada por palavra-chave** — a UI avisa; não é o cadastro do
-   sistema.
-4. **Dia parcial** (relatório extraído no meio do dia/mês) é marcado e **excluído do
-   gráfico de tendência** (fica só na tabela).
-5. Oferta de concorrente só entra na comparação se `Status validação = Confirmada` e não
-   expirada; nível de confiança vira badge. Casamento é aproximado → a UI diz isso.
-6. Análise Comercial fica **no banco** — apagar `data/analises/*.json` não perde nada.
-7. O modelo **nunca faz aritmética sobre a base bruta** — `analytics-deep.js` agrega, o LLM
-   interpreta os agregados.
-8. JSON de análise inválido nunca sobrescreve um bom.
+1. Minas Farma e Farma e Farma **nunca** são somadas — tudo por `loja_id`/`periodo_id`.
+2. Painel não é publicado se `Σ vendas ≠ "Total:"` do PDF — `parsers/vendas.js` **lança**, nada grava.
+3. Loja do PDF vem do **CNPJ** do cabeçalho; não reconheceu → lança em vez de adivinhar.
+4. **A IA nunca faz aritmética** sobre a base — a camada determinística agrega, o LLM interpreta.
+5. Toda conclusão de sinal/recomendação carrega **evidência** (campo, valor, fonte, período) e **confiança**.
+6. Feed ausente (sem custo/estoque/concorrência) → campo `null` + flag em `dados_ausentes` — **nunca estimado**.
+7. Categoria de produto é **estimada por palavra-chave** — a UI avisa; não é o cadastro oficial.
+8. Dia parcial (relatório do meio do dia) é marcado e **excluído dos gráficos de tendência**.
+9. Custo cadastrado > 1,3× preço → `custo_suspeito` (erro provável de ERP), fora dos agregados de margem.
+10. Migrations só `ADD COLUMN` / `CREATE IF NOT EXISTS` — nenhum `DROP`/`ALTER` destrutivo.
 
 ---
 
-## 11. Formatos de arquivo esperados
+## 11. Testes
 
-- **Relatório de vendas (PDF):** "Analítico de Vendas" do sistema da farmácia — cabeçalho
-  com razão social + CNPJ + `Periodo de: DD/MM/AAAA a DD/MM/AAAA`, linhas
-  `Data/Hora · Nº Lanc. · Usu.ID · Barras · Descrição · Pre.Un · Qtde · Vl.Líquido · Oper. · Emp.ID · Cli.ID · Nº Cx`,
-  e uma linha `Total:` no rodapé. Pode cobrir vários meses (vira um painel por mês).
-- **Concorrentes:** `Concorrentes_Coleta_AAAA-MM-DD.xlsx`, 36 colunas, cabeçalho na linha 1,
-  1ª aba = dados. Colunas usadas: 3 Concorrente, 7 Categoria, 9 Produto, 10 Marca,
-  16 Preço normal, 17 Preço promo, 29 Validade, 34 Nível confiança, 35 Status validação.
-- **Instagram (opcional):** `*instagram*.json` →
-  `{ "loja": "...", "periodo": "AAAA-MM", "metricas": { "visualizacoes": {"valor":"414,3 mil","delta":"112,0"}, ... } }`.
-- **Análise Comercial:** `*.json` no contrato da Parte 2 de `prompts/motor-analise-comercial.md`
-  (tem `meta` + `diagnostico_executivo`).
+`npm test` (`node --test`) — **53 testes**, arquivos em separado (`process.env.VA_DB_PATH`
+isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\Admin\Downloads\`.
 
----
-
-## 12. Testes
-
-```bash
-npm test        # node --test
-```
-
-`test/vendas.test.js` (soma == "Total:" nos PDFs reais de agosto/2026),
-`test/concorrentes.test.js` (filtro de marca, datas, preços),
-`test/ingest.test.js` (`resolveLoja` por CNPJ / razão social),
-`test/validate-analise.test.js` (contrato da Parte 2),
-`test/analytics-deep.test.js` (agregados batem com agosto). **16 testes.**
-
-Fixtures: os PDFs reais em `C:\Users\Admin\Downloads\vendas agosto {farma e farma,minas farma}.pdf`
-(ou aponte com `VENDAS_FIXTURE` / `VENDAS_FIXTURE_MINAS`, ou copie para `test/fixtures/`).
+| Arquivo | Cobre |
+|---|---|
+| `vendas.test.js` | soma == "Total:" impresso (agosto das 2 lojas), ARREDONDAMENTO negativo, aborta quando não bate |
+| `concorrentes.test.js` | filtro de marca, parse de validade/preço, resolução de loja por CNPJ |
+| `catalogo.test.js` | `normalizarEan`, `sincronizarProdutosDeVendas`, histórico de custo, planilha combinada estoque+custo+preço |
+| `marketing-product.test.js` | janelas monotônicas, clamp de tendência, 7 componentes do score somando ao score, confiança < 1 sem feed, classes, do-not-promote |
+| `basket.test.js` | support/confidence/lift dentro dos limites, materialização, sem pseudo-produto |
+| `campanhas.test.js` | DEMAND_LIFT, nunca DESTRUTIVA sem custo, Campaign Builder por categoria, Offer Simulator (3 cenários), import idempotente do calendário, CRUD |
+| `intelligence.test.js` | Priority Engine monotônico, dedupe (2ª rodada 0 novos), evidência em todo sinal, sinal que some é resolvido, War Room, investigação, decisão→resultado→padrão, ontologia idempotente, Ask formato analista, Editorial 7 dias |
+| `analytics-deep.test.js` | números de agosto (faturamento, cupons), baseline semanal, incrementalidade |
+| `ingest.test.js` | `resolveLoja` por CNPJ / razão social |
+| `validate-analise.test.js` | contrato do JSON do Motor (chaves, tipos, campos null) |
 
 ---
 
-## 13. Integrações possíveis
+## 12. Limitações conhecidas / próximos passos
 
-Levantamento em `docs/integracoes.md`. Ordem sugerida: (1) Tarefa Agendada exportando o
-relatório para `inbox/`; (2) nssm + Cloudflare Tunnel/Access; (3) Litestream (backup do
-banco); (4) WhatsApp via Evolution API (resumo + alertas); (5) leitura direta do PostgreSQL
-do ERP (`localhost:5432`, banco `sysemp`) quando houver a senha; (6) OCR/visão nos encartes
-e Instagram Graph API; (7) Metabase / Google Sheets.
+Ver [`docs/AUDITORIA.md`](docs/AUDITORIA.md) para o gap analysis completo vs. o brief de
+"Decision Intelligence" e o plano em 7 fases. Faltam, principalmente:
 
----
+- **Nova Home / Central de Decisão** (hoje o Painel é o dashboard antigo)
+- **Forecast Engine** (previsão 7/15/fechamento + probabilidade de meta)
+- **Meta Engine** (metas em `config/lojas.json` → realizado/gap/venda-diária-necessária)
+- Card único **R$ potencial identificado / R$ em risco** consolidado
+- **Curva ABC** (produtos / categorias / clientes)
+- **Data Quality** + score (produto sem categoria/custo, estoque negativo, campanha sem período…)
+- **Benchmark Minas × Farma** (com resultados agregados, nunca juntando `vendas_transacoes`)
+- **Rules Engine declarativo** (`config/rules.json`) no lugar das regras hardcoded em `detectores.js`
+- Tabela `recommendations` própria + ciclo NEW→VIEWED→ACCEPTED→EXECUTED→MEASURED
+- **Audit Log** unificado (uploads/config/ações com antes/depois)
+- Acabamento visual "corporativo" (paleta de status, componentes reutilizáveis, skeleton loaders)
 
-## 14. GitHub
-
-- Repositório: `github.com/thgustavo62-design/Analytics` (branch `main`).
-- Só código — `data/`, `node_modules`, `.env`, `inbox/` ficam de fora (`.gitignore`).
-- `iniciar.bat` tem a senha padrão (`1234`) — se o repositório ficar público, ela fica
-  visível. Recomendado deixar **privado**:
-  `gh repo edit thgustavo62-design/Analytics --visibility private --accept-visibility-change-consequences`.
+Pendências operacionais:
+- Trocar a senha do Postgres (`asdasdawdawdfawf` é fraca e passou por texto; repo público).
+- `publico/index.html` e `analytics/index.html` são regerados a cada ingestão → aparecem
+  sempre como *modified* no working tree (esperado; commitar quando quiser refrescar o fallback).
+- Instagram só entra por formulário/JSON manual (sem OCR).
+- Análise Comercial via IA precisa de `ANTHROPIC_API_KEY` no ambiente; sem ela, só por JSON.
