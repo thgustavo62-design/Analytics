@@ -93,9 +93,12 @@ O que entrega valor primeiro e não depende de feed novo.
 - ✅ Config: bloco `padroes` em `config/campaign-plan.json`. Testes: `test/padroes-mkt.test.js` (+4 → 87).
 - Sem o histórico "faixa de desconto × lift" (as campanhas recorrentes não registram o desconto aplicado por semana) — vem quando as campanhas viram entidade com preço promocional gravado.
 
-### Fase E — Concorrência ofensiva  ·  pontos 11, 12
-- `concorrencia-analise` ganha decisão de **contra-ataque com produto alternativo** quando o SKU atacado inviabiliza margem.
-- **Share of Promotions**: contabiliza nossas promoções (campanha_produtos / preço promocional) × ofertas de concorrente por categoria nos últimos 30d → "subcomunicando Bebê / esforço demais em Beleza".
+### Fase E — Concorrência ofensiva  ·  pontos 11, 12  ·  ✅ ENTREGUE (2026-09-02)
+- ✅ `concorrencia-analise` — **`contra_ataque`**: quando um item que a concorrência atacou não dá pra cobrir (margem insuficiente ou quase não vendemos), sugere o melhor produto **da mesma categoria** para promover no lugar (maior Opportunity, margem ≥ piso, cobertura ok, gira). Entra no "onde reagir" e nas ações.
+- ✅ **`share_promocoes`** — nossa ação promocional **deliberada** (produtos de campanhas cadastradas + categorias do calendário como "recorrente") × ofertas do concorrente por categoria → veredito: **subcomunicando** (≥2 ofertas deles abaixo do nosso preço e sem ação nossa), **esforço sem pressão que justifique** (temos campanha, concorrência parada), comunicando forte, equilibrado. Breakdown de ofertas por concorrente. Tabela na aba Concorrentes.
+- ✅ Decisão de projeto: **não** usar a coluna "preço promocional" do feed de estoque como sinal de promoção — vinha preenchida para o catálogo inteiro (24 mil "promoções" falsas). Só conta ação deliberada.
+- ✅ Testes: `test/concorrencia-analise.test.js` (+3 → 90).
+- Ressalva: o rótulo de categoria da coleta do concorrente ("Bebê") nem sempre bate com o do nosso classificador ("Fraldas") — o cruzamento pode subestimar a cobertura recorrente. Reconciliar rótulos é tarefa de data quality (fase posterior).
 
 ### Fase F — Creative Intelligence  ·  pontos 6, 13  ·  **precisa de feed novo**
 Bloqueada até existir um **log de publicações**. Duas opções de feed (a decidir):
@@ -122,8 +125,10 @@ Depois: cruzamento com métricas do Instagram + vendas → Creative Score real (
 
 ## Recomendação
 
-**Fases A, B, C e D entregues** (2026-09-02). Próximo passo: **Fase E** — concorrência
-ofensiva: `concorrencia-analise` decide **contra-ataque com produto alternativo** quando o SKU
-atacado inviabiliza a margem; **Share of Promotions** (nossas promoções × ofertas do
-concorrente por categoria nos últimos 30 d → "subcomunicando Bebê / esforço demais em Beleza").
-Em paralelo, definir o **log de publicações** (Fase F), o único gargalo de meses.
+**Fases A–E entregues** (2026-09-02). Sobram **F** (Creative Intelligence + Content Gap) e
+**G** (Marketing Calendar + ciclo fechado). A **Fase F está bloqueada** até existir o **log de
+publicações** (um registro por post: data, horário, formato, layout, cor, headline, oferta,
+CTA, canal) — é uma decisão de feed, não de código. A **Fase G** pode ser feita já: monta o
+calendário dos próximos 30 dias combinando Command Center (A) + Playbooks (D) + Medição (C) +
+Share of Promotions (E), com regra de suspensão por ruptura, e fecha o ciclo
+campanha → medição → padrão → próxima sugestão.

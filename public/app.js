@@ -1807,7 +1807,9 @@
             '<td class="num" data-l="Dif." style="color:var(--down)">' + (r.diff_pct == null ? "—" : "−" + r.diff_pct + "%") + "</td>" +
             '<td class="num" data-l="Giro 30d">' + (r.nossa_receita_30d == null ? "—" : "R$ " + brl(r.nossa_receita_30d)) + "</td>" +
             '<td data-l="Margem">' + (r.nossa_margem_pct == null ? '<span class="cs">s/ custo</span>' : pct(r.nossa_margem_pct * 100)) + "</td>" +
-            '<td data-l="Veredito">' + esc(r.veredito) + "</td></tr>";
+            '<td data-l="Veredito">' + esc(r.veredito) +
+              (r.contra_ataque ? '<div class="cs" style="margin-top:3px;color:var(--brand-2)">→ promover no lugar: <b>' + esc(r.contra_ataque.produto) + "</b> <span class=\"cs\">(" + esc(r.contra_ataque.motivo) + ")</span></div>" : "") +
+            "</td></tr>";
         }).join("") + "</tbody></table>" : '<div class="empty">Nada relevante para reagir — eles não baixaram nada que a gente venda em volume.</div>') + "</div>";
     // por concorrente
     out += '<div class="card"><div class="chead"><div class="ci conc">🏬</div><div><h3>Por concorrente</h3></div></div>' +
@@ -1820,6 +1822,25 @@
           (c.exemplos && c.exemplos.length ? '<ul class="cc-ex">' + c.exemplos.map(function (e) { return "<li>" + esc(e.produto) + " — <b>R$ " + brl(e.preco_deles) + "</b>" + (e.diff_pct != null ? ' <span style="color:var(--down)">(−' + e.diff_pct + "%)</span>" : "") + (e.nosso ? " vs nosso R$ " + brl(e.nosso) : "") + "</li>"; }).join("") + "</ul>" : "") +
           "</div>";
       }).join("") + "</div>";
+    // share of promotions
+    if (d.share_promocoes) {
+      var sp = d.share_promocoes;
+      var spVerCor = function (v) {
+        return /^subcomunicando/.test(v) ? "var(--down)" : /reavaliar prioridade/.test(v) ? "#c98a00" : /comunicando forte/.test(v) ? "var(--ink-2)" : "var(--muted)";
+      };
+      out += '<div class="card"><div class="chead"><div class="ci red">📣</div><div><h3>Share of Promotions</h3><div class="cs">nossa ação promocional × ofertas do concorrente, por categoria · fonte: ' + esc(sp.fonte_nossas) + '</div></div></div>' +
+        '<ul style="margin:0 0 10px 18px">' + sp.resumo.map(function (r) { return "<li>" + esc(r) + "</li>"; }).join("") + "</ul>" +
+        '<div class="cs" style="margin-bottom:8px">Ofertas na coleta — ' + sp.por_concorrente.map(function (c) { return esc(c.concorrente) + ": <b>" + int(c.ofertas) + "</b>"; }).join(" · ") + "</div>" +
+        '<table class="tbl mobile-cards"><thead><tr><th>Categoria</th><th class="num">Nossa ação</th><th class="num">Ofertas deles</th><th class="num">Abaixo do nosso</th><th>Pressão</th><th>Leitura</th></tr></thead><tbody>' +
+        sp.por_categoria.slice(0, 14).map(function (c) {
+          return "<tr><td data-l=\"Categoria\">" + esc(c.categoria) + "</td>" +
+            '<td class="num" data-l="Nossa ação">' + (c.nossas_promocoes ? int(c.nossas_promocoes) + " prod." : c.promo_recorrente ? "recorrente" : "—") + "</td>" +
+            '<td class="num" data-l="Ofertas deles">' + int(c.ofertas_concorrentes) + "</td>" +
+            '<td class="num" data-l="Abaixo">' + int(c.ofertas_abaixo_do_nosso) + "</td>" +
+            '<td data-l="Pressão">' + pressPill(c.pressao) + "</td>" +
+            '<td data-l="Leitura"><span style="color:' + spVerCor(c.veredito) + '">' + esc(c.veredito) + "</span></td></tr>";
+        }).join("") + "</tbody></table></div>";
+    }
     // por categoria
     out += '<div class="card"><div class="chead"><div class="ci cat">📊</div><div><h3>Pressão por categoria</h3></div></div>' +
       (d.categorias.length ? '<table class="tbl mobile-cards"><thead><tr><th>Categoria</th><th class="num">Ofertas</th><th class="num">Abaixo</th><th class="num">Desc. médio</th><th class="num">Nossa tendência</th><th>Pressão</th></tr></thead><tbody>' +

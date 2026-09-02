@@ -14,8 +14,37 @@ const { normalizarEan } = require("./catalogo");
 const { bestMatch } = require("./match");
 
 const LOJAS_CFG = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "lojas.json"), "utf8"));
+const CFG_STOCK = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "marketing-stock.json"), "utf8"));
+const PISO_MARGEM = CFG_STOCK.margem_pct_minima_para_anunciar != null ? CFG_STOCK.margem_pct_minima_para_anunciar : 0.1;
 const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
 const round = (n, d) => (n == null ? null : Math.round((n + Number.EPSILON) * Math.pow(10, d ?? 2)) / Math.pow(10, d ?? 2));
+
+// "nossas promoções" = ação promocional DELIBERADA por categoria: produtos de campanhas
+// cadastradas (campanha_produtos) ativas/recentes. NÃO usamos a coluna "preço promocional"
+// do feed de estoque — nesse feed ela costuma vir preenchida para o catálogo inteiro e não
+// significa promoção. Categorias do calendário entram como "recorrente" (sinal binário).
+function nossasPromocoesPorCategoria(loja, refDate) {
+  const lid = db.lojaId(loja);
+  const corte = new Date(new Date(refDate + "T12:00:00").getTime() - 45 * 86400000).toISOString().slice(0, 10);
+  let rows = [];
+  try {
+    rows = db.db
+      .prepare(
+        `SELECT COALESCE(pr.categoria_manual, pr.categoria) AS categoria, COUNT(DISTINCT cp.produto_id) AS n
+           FROM campanha_produtos cp
+           JOIN campanhas c ON c.id = cp.campanha_id
+           JOIN produtos pr ON pr.id = cp.produto_id
+          WHERE c.loja_id = ?
+            AND (c.status IN ('ativa', 'aprovada', 'em_andamento') OR c.data_fim IS NULL OR c.data_fim >= ?)
+          GROUP BY 1`
+      )
+      .all(lid, corte);
+  } catch (e) { rows = []; }
+  const m = new Map();
+  let total = 0;
+  for (const r of rows) { m.set(r.categoria, r.n); total += r.n; }
+  return { porCategoria: m, total };
+}
 
 // acha o período mais recente que tem coleta de concorrência
 function periodoComColeta(loja) {
@@ -60,6 +89,32 @@ function analisarConcorrencia(loja) {
     return p;
   };
   const catTendencia = new Map((ctx.categoriasTendencia || []).map((c) => [c.categoria, c]));
+  const refDate = ctx.analiseProdutos.refDate || db.getUltimaDataVenda(loja);
+
+  // melhor alternativa da MESMA categoria para promover no lugar de um item que não dá pra cobrir
+  function alternativaNaCategoria(categoria, exceto) {
+    const cand = nossosProdutos
+      .filter((p) =>
+        p.categoria === categoria &&
+        p.ean !== exceto &&
+        norm(p.descricao) !== norm(exceto || "") &&
+        !p.do_not_promote &&
+        (p.margem_pct == null || p.margem_pct >= PISO_MARGEM) &&
+        ["NORMAL", "OPORTUNIDADE", "ATENCAO", "SEM_ESTOQUE"].includes(p.cobertura_rotulo) &&
+        (p.venda_media_diaria && p.venda_media_diaria.d30) > 0
+      )
+      .sort((a, b) => b.opportunity.score - a.opportunity.score);
+    const s = cand[0];
+    if (!s) return null;
+    return {
+      produto: s.descricao, ean: s.ean, categoria: s.categoria,
+      preco: s.preco_atual != null ? s.preco_atual : s.preco_praticado,
+      margem_pct: s.margem_pct, opportunity: s.opportunity.score, cobertura: s.cobertura_rotulo,
+      motivo: s.margem_pct != null
+        ? `mesma categoria, margem de ${(s.margem_pct * 100).toFixed(0)}% sustenta a promoção`
+        : "mesma categoria, sem custo cadastrado mas gira bem",
+    };
+  }
 
   // ---- panorama ----
   const comparaveis = ofertas.filter((o) => o.abaixo_do_nosso != null);
@@ -133,6 +188,58 @@ function analisarConcorrencia(loja) {
     })
     .sort((a, b) => b.abaixo - a.abaixo || b.ofertas - a.ofertas);
 
+  // ---- SHARE OF PROMOTIONS: nossas promoções × ofertas de concorrente, por categoria ----
+  const nossasPromo = nossasPromocoesPorCategoria(loja, refDate);
+  const catsRecorrentes = new Set((cfg.campanhas || []).flatMap((c) => c.categorias || []));
+  const catInfo = new Map(categorias.map((c) => [c.categoria, c]));
+  const todasCats = new Set([...catInfo.keys(), ...nossasPromo.porCategoria.keys(), ...catsRecorrentes]);
+  const sharePorCat = [...todasCats].map((cat) => {
+    const ci = catInfo.get(cat) || {};
+    const nossas = nossasPromo.porCategoria.get(cat) || 0;
+    const deles = ci.abaixo != null ? ci.abaixo : 0; // ofertas do concorrente abaixo do nosso preço
+    const ofertasDeles = ci.ofertas != null ? ci.ofertas : 0;
+    const recorrente = catsRecorrentes.has(cat);
+    const pressao = ci.pressao || (ofertasDeles ? "MÉDIA" : "BAIXA");
+    const receita = ci.nossa_receita_30d || null;
+    const relevante = receita == null || receita >= 500;
+    const denom = nossas + Math.max(deles, ofertasDeles);
+    const share_pct = denom > 0 ? Math.round((nossas / denom) * 100) : null;
+    // "deles" = ofertas do concorrente ABAIXO do nosso preço (pressão real); ofertasDeles = volume de comunicação
+    const temAcaoNossa = nossas > 0 || recorrente;
+    let veredito;
+    if (ofertasDeles === 0 && !temAcaoNossa) veredito = "sem atividade promocional na categoria";
+    else if (deles >= 2 && !temAcaoNossa) veredito = relevante ? "subcomunicando — concorrência abaixo do nosso preço e sem ação nossa" : "concorrência abaixo do nosso preço, mas categoria de pouca receita nossa";
+    else if (deles === 0 && ofertasDeles >= 6 && !temAcaoNossa) veredito = "concorrência comunicando forte (mas não abaixo do nosso preço) — avaliar presença";
+    else if (temAcaoNossa && ofertasDeles === 0 && pressao === "BAIXA") veredito = "esforço promocional sem pressão que justifique — reavaliar prioridade";
+    else veredito = "equilibrado";
+    return {
+      categoria: cat,
+      nossas_promocoes: nossas,
+      promo_recorrente: recorrente,
+      ofertas_concorrentes: ofertasDeles,
+      ofertas_abaixo_do_nosso: deles,
+      pressao, nossa_receita_30d: receita, relevante,
+      share_pct, veredito,
+    };
+  }).sort((a, b) => {
+    const rank = (v) => (/^subcomunicando/.test(v.veredito) ? 0 : /reavaliar prioridade/.test(v.veredito) ? 1 : /comunicando forte/.test(v.veredito) ? 2 : 3);
+    return rank(a) - rank(b) || b.ofertas_abaixo_do_nosso - a.ofertas_abaixo_do_nosso || b.ofertas_concorrentes - a.ofertas_concorrentes;
+  });
+  const shareResumo = [];
+  const sub = sharePorCat.filter((c) => /^subcomunicando/.test(c.veredito));
+  const exc = sharePorCat.filter((c) => /reavaliar prioridade/.test(c.veredito));
+  if (sub.length) shareResumo.push(`Subcomunicando (concorrência abaixo do nosso preço, sem ação nossa): ${sub.slice(0, 3).map((c) => `${c.categoria} (${c.ofertas_abaixo_do_nosso} ofertas deles abaixo do nosso preço)`).join("; ")}.`);
+  if (exc.length) shareResumo.push(`Esforço sem pressão (temos campanha, concorrência parada): ${exc.slice(0, 3).map((c) => c.categoria).join("; ")}.`);
+  if (!sub.length && !exc.length) shareResumo.push("Presença promocional equilibrada frente à concorrência nas categorias com dado.");
+  const share_promocoes = {
+    fonte_nossas: nossasPromo.total > 0 ? "produtos de campanhas cadastradas + calendário de campanhas" : "campanhas cadastradas: nenhuma — só o calendário de campanhas (config/lojas.json)",
+    nossas_promocoes_total: nossasPromo.total,
+    ofertas_concorrentes_total: ofertas.length,
+    por_concorrente: [...porConc.values()].filter((c) => c.temColeta).map((c) => ({ concorrente: c.concorrente, ofertas: c.ofertas })).sort((a, b) => b.ofertas - a.ofertas).concat([{ concorrente: `${loja} (nós)`, ofertas: nossasPromo.total, nos: true }]),
+    por_categoria: sharePorCat,
+    resumo: shareResumo,
+  };
+
   // ---- onde reagir (priorizado): cruza cada oferta abaixo com o produto nosso ----
   const reagir = [];
   for (const o of abaixo) {
@@ -149,11 +256,14 @@ function analisarConcorrencia(loja) {
     const acionavel = margem == null ? 0.5 : margem >= 0.1 ? 1 : margem > 0 ? 0.5 : 0.1;
     const score = round(100 * (0.5 * volN + 0.3 * gapN + 0.2 * acionavel), 0);
     let veredito;
-    if (!vendemos) veredito = "a gente quase não vende — pode ignorar";
+    let cobrivel = true;
+    if (!vendemos) { veredito = "a gente quase não vende — pode ignorar"; cobrivel = false; }
     else if (margem == null) veredito = "avaliar (sem custo cadastrado)";
     else if (margem >= 0.08) veredito = "dá para cobrir com margem";
-    else if (margem > 0) veredito = "cobrir aperta a margem";
-    else veredito = "não cobrir — margem insuficiente";
+    else if (margem > 0) { veredito = "cobrir aperta a margem"; cobrivel = false; }
+    else { veredito = "não cobrir — margem insuficiente"; cobrivel = false; }
+    // contra-ataque: se não vale cobrir esse SKU mas vendemos na categoria, promover outro no lugar
+    const contra = vendemos && !cobrivel && o.categoria ? alternativaNaCategoria(o.categoria, p ? p.ean : o.produto) : null;
     reagir.push({
       produto: o.produto, produto_casado: o.produto_casado || null, categoria: o.categoria,
       concorrente: o.concorrente, confianca: o.nivel_confianca,
@@ -161,6 +271,7 @@ function analisarConcorrencia(loja) {
       vendemos, nossas_unid_30d: un30, nossa_receita_30d: round(rec30, 2),
       nossa_classe: p ? p.classe : null, nossa_margem_pct: margem, nossa_cobertura: p ? p.cobertura_rotulo : null,
       score, veredito,
+      contra_ataque: contra,
     });
   }
   reagir.sort((a, b) => b.score - a.score);
@@ -179,14 +290,18 @@ function analisarConcorrencia(loja) {
       : "Nenhum produto de peso com concorrente abaixo — prioridade baixa.",
   ];
   const acoes = [];
-  if (topReagir.length) acoes.push(`Cobrir preço / comunicar "melhor preço" em: ${topReagir.map((r) => r.produto).slice(0, 4).join("; ")}.`);
+  if (topReagir.length) acoes.push(`Cobrir preço / comunicar "melhor preço" em: ${topReagir.filter((r) => !r.contra_ataque).map((r) => r.produto).slice(0, 4).join("; ") || "—"}.`);
+  const comContra = reagir.filter((r) => r.contra_ataque).slice(0, 4);
+  if (comContra.length) acoes.push(`Onde não vale cobrir, promover no lugar (mesma categoria, margem sustenta): ${comContra.map((r) => `${r.contra_ataque.produto} (no lugar de ${r.produto})`).join("; ")}.`);
+  if (sub.length) acoes.push(`Aumentar presença promocional em: ${sub.slice(0, 3).map((c) => c.categoria).join(", ")} — concorrência ativa e a gente ausente.`);
+  if (exc.length) acoes.push(`Reduzir esforço promocional em: ${exc.slice(0, 3).map((c) => c.categoria).join(", ")} — sem pressão que justifique.`);
   if (catsPressao.length) acoes.push(`Montar campanha de defesa nas categorias ${catsPressao.slice(0, 3).join(", ")} (ver Intelligence → Recomendações).`);
   const baixaConf = ofertas.filter((o) => /baix/.test(norm(o.nivel_confianca))).length;
   if (baixaConf) acoes.push(`${baixaConf} oferta(s) de baixa confiança na coleta — confirmar antes de reagir.`);
   const semVenda = reagir.filter((r) => !r.vendemos).length;
   if (semVenda) acoes.push(`${semVenda} produto(s) que eles baixaram e a gente quase não vende — pode ignorar.`);
 
-  return { loja, periodo, panorama, concorrentes, categorias, onde_reagir: reagir.slice(0, 40), resumo, acoes, feeds: ctx.feeds };
+  return { loja, periodo, panorama, concorrentes, categorias, share_promocoes, onde_reagir: reagir.slice(0, 40), resumo, acoes, feeds: ctx.feeds };
 }
 
 module.exports = { analisarConcorrencia };

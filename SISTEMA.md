@@ -36,8 +36,10 @@ processa sozinho e entrega:
   **Playbooks** (Fase D): memória de marketing — o que cada campanha recorrente aprendeu
   (melhor dia, tendência do lift, produtos, ângulo dominante) + fadiga de produto
 - **Cesta** — market basket (support/confidence/lift), combos
-- **Concorrentes** — pressão competitiva, "onde reagir" priorizado, registro por formulário /
-  colar encarte / planilha
+- **Concorrentes** — pressão competitiva, "onde reagir" priorizado, **contra-ataque com produto
+  alternativo** quando não vale cobrir o SKU atacado (Fase E), **Share of Promotions** (nossa
+  ação promocional × ofertas do concorrente por categoria — "subcomunicando Bebê" / "esforço sem
+  pressão"), registro por formulário / colar encarte / planilha
 - **Intelligence** — detectores → sinais priorizados (com evidência), War Room, **decisões
   recomendadas cruzando sinais** ("modelo Palantir"), "Por quê?", Decision Journal, Pattern
   Engine (aprende de decisão→resultado), Ontologia persistida, Pauta editorial de 7 dias,
@@ -124,7 +126,7 @@ do Supabase (Vercel + GitHub Pages).
 | `insights.js` | 3 regras automáticas → cards (`config/insights.json`) |
 | `marketing-product-analytics.js` | **Fase 2** — por produto: unidades/receita/cupons 7/14/30/60/90d, venda média diária, tendência (14d×14d, clamp ±300%), `dias_cobertura` por categoria (`config/marketing-stock.json`), margem (só com custo), classes, **Opportunity Score** (7 componentes + peso + contribuição + fonte + confiança, `config/opportunity-score.json`), `do-not-promote` + substituto, estoque parado. Memo de 45s. |
 | `analise-cruzada.js` | vendas × estoque × custo × margem → `resultado_30d` (lucro estimado por produto), `capital_parado`, `giro_mensal`, **matriz** VACA_LEITEIRA/ISCA_CARA/PESO_MORTO/APOSTA/SUMINDO/RUPTURA/NORMAL, `custo_suspeito` (custo > 1,3× preço = erro de ERP, balde separado) |
-| `concorrencia-analise.js` | panorama, por concorrente (pressão + categorias atacadas + exemplos), por categoria (ALTA/MÉDIA/BAIXA), **"onde reagir"** priorizado por relevância × quão abaixo × dá pra cobrir (margem real), resumo + ações |
+| `concorrencia-analise.js` | panorama, por concorrente (pressão + categorias atacadas + exemplos), por categoria (ALTA/MÉDIA/BAIXA), **"onde reagir"** priorizado por relevância × quão abaixo × dá pra cobrir (margem real) — com **`contra_ataque`** (Fase E: melhor produto da mesma categoria para promover no lugar quando o SKU atacado não dá pra cobrir), **`share_promocoes`** (Fase E: nossa ação promocional [campanhas cadastradas + calendário recorrente] × ofertas do concorrente por categoria → subcomunicando / esforço-sem-pressão / equilibrado), resumo + ações |
 | `campanhas.js` | **Fase 3** — `eficienciaCalendario` (DEMAND_LIFT dias-de-campanha vs. demais, veredito EXCELENTE→DESTRUTIVA; nunca DESTRUTIVA sem custo), **Campaign Builder** (elenco por papel), **Offer Simulator** (cenários conservador/provável/agressivo, nunca promete venda) |
 | `basket.js` | **Fase 4** — cesta por cupom (`data+lancamento`): support/confidence/lift; corte de ruído (mínimo por produto isolado); `centralidade()`; `combos()` |
 | `marketing/roles.js` | **Fase A** — papel de marketing por produto: 1 primário + secundários (CHAMARIZ / TRÁFEGO / HERO / MARGEM / COMPLEMENTAR / DESOVA / RECORRÊNCIA / IMAGEM / GIRO), com força 0..1, racional e confiança. Regras em `config/marketing-roles.json`. RECORRÊNCIA/IMAGEM são proxies (confiança baixa). |
@@ -347,7 +349,7 @@ leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 
 ## 11. Testes
 
-`npm test` (`node --test`) — **87 testes**, arquivos em separado (`process.env.VA_DB_PATH`
+`npm test` (`node --test`) — **90 testes**, arquivos em separado (`process.env.VA_DB_PATH`
 isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\Admin\Downloads\`.
 
 | Arquivo | Cobre |
@@ -357,6 +359,7 @@ isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\A
 | `campaign-builder.test.js` | **Fase B** — ângulo segue o desconto planejado / o papel / a concorrência; preço sugerido respeita o piso de margem; `parseDias`; combos com flag `viavel` + filtro `apenasViaveis`; `montarCampanha` — janela contígua, elenco por papel, forecast em 3 cenários monotônicos, score 0–100, margem null sem custo |
 | `campaign-measure.test.js` | **Fase C** — erro claro fora do calendário; exige nome ou dias+categorias; incremento total ≈ (média − baseline) × dias; canibalização só com baseline do mesmo dia da semana; ROAS/retorno só com investimento; lucro null sem custo; `medirTodasDoCalendario`; medição ad-hoc por dias+categorias |
 | `padroes-mkt.test.js` | **Fase D** — uma entrada por campanha; `por_dia_semana` ordenado por lift; `tendencia` em conjunto válido; lift da ocorrência ≈ receita campanha / baseline; veredito coerente com a tendência; fadiga só de categoria de campanha, ainda vendendo (`lift_atual > 0`), com queda real e volume mínimo |
+| `concorrencia-analise.test.js` | **Fase E** — `share_promocoes`: estrutura, `nossas_promocoes_total` 0 sem campanhas cadastradas, linha "nós" em `por_concorrente`, categoria do calendário marcada recorrente, "subcomunicando" só com ≥2 ofertas abaixo do nosso preço e sem ação nossa; `contra_ataque` nunca aponta o próprio produto e só surge quando não vale cobrir |
 | `concorrentes.test.js` | filtro de marca, parse de validade/preço, resolução de loja por CNPJ |
 | `catalogo.test.js` | `normalizarEan`, `sincronizarProdutosDeVendas`, histórico de custo, planilha combinada estoque+custo+preço |
 | `marketing-product.test.js` | janelas monotônicas, clamp de tendência, 7 componentes do score somando ao score, confiança < 1 sem feed, classes, do-not-promote |
@@ -373,9 +376,8 @@ isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\A
 
 Ver [`docs/AUDITORIA.md`](docs/AUDITORIA.md) (Decision Intelligence, 7 fases) e
 [`docs/MARKETING-COMMAND-CENTER.md`](docs/MARKETING-COMMAND-CENTER.md) (brief de marketing,
-7 fases — **Fase A entregue**). Faltam, principalmente:
+7 fases — **A–E entregues**). Faltam, principalmente:
 
-- **Share of Promotions** + contra-ataque com produto alternativo (Fase E)
 - **Creative Intelligence** + Content Gap — travado no feed de log de publicações (Fase F)
 - **Marketing Calendar** dinâmico + ciclo fechado (Fase G)
 - **Forecast Engine** (previsão 7/15/fechamento + probabilidade de meta)
