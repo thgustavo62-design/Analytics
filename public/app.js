@@ -1442,11 +1442,98 @@
     state.view = "concorrentes";
     document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === "concorrentes"); });
     if (!state.loja) { view.innerHTML = '<div class="empty">Escolha uma loja.</div>'; return; }
-    view.innerHTML = '<div class="page-head"><div><h1>⚔️ Concorrentes</h1><div class="sub">' + esc(state.loja) + ' · comparação automática de preço + análise (dados da coleta na inbox)</div></div></div><div id="ccBody"><div class="empty">Carregando…</div></div>';
+    view.innerHTML = '<div class="page-head"><div><h1>⚔️ Concorrentes</h1><div class="sub">' + esc(state.loja) + ' · comparação automática de preço + análise</div></div>' +
+      (EXPORT || window.__HOSTED__ || window.__PUBLICO__ ? "" : '<button class="btn" id="ccAddBtn">➕ Registrar oferta</button>') + "</div>" +
+      '<div id="ccAdd" hidden></div><div id="ccBody"><div class="empty">Carregando…</div></div>';
+    var addBtn = view.querySelector("#ccAddBtn");
+    if (addBtn) addBtn.addEventListener("click", function () {
+      var box = view.querySelector("#ccAdd");
+      box.hidden = !box.hidden;
+      if (!box.hidden && !box.innerHTML) { box.innerHTML = concAddHtml(); wireConcAdd(); }
+    });
     getJSON("/api/concorrencia/" + encodeURIComponent(state.loja)).then(function (d) {
+      state.concData = d;
       view.querySelector("#ccBody").innerHTML = concorrentesHtml(d);
     }).catch(function (e) {
       view.querySelector("#ccBody").innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>";
+    });
+  }
+  function concConcorrentesOpts() {
+    var cfg = (state.lojas || []).length ? null : null;
+    var nomes = (state.concData && state.concData.concorrentes || []).map(function (c) { return c.concorrente; });
+    if (!nomes.length) nomes = ["Rede Inova / Farmácia Circulista", "Farmácias Lavagnoli", "Farmácia Indiana Baixo Guandu"];
+    return nomes.map(function (n) { return '<option>' + esc(n) + "</option>"; }).join("") + '<option>Outro</option>';
+  }
+  function concAddHtml() {
+    return '<div class="card form-card" style="margin-bottom:14px"><div class="tabs" id="ccMode">' +
+      '<button data-cm="form" class="active">Uma oferta</button><button data-cm="colar">Colar encarte / post</button></div>' +
+      '<div id="ccModeBody">' + concFormHtml() + "</div></div>";
+  }
+  function concFormHtml() {
+    return '<form id="ccForm"><div class="rowf">' +
+      '<div><label class="f">Concorrente</label><select class="inp" name="concorrente">' + concConcorrentesOpts() + "</select></div>" +
+      '<div><label class="f">Produto</label><input class="inp" name="produto" placeholder="ex.: Fralda Pampers XXG 60un" required></div>' +
+      '</div><div class="rowf">' +
+      '<div><label class="f">Preço deles (R$)</label><input class="inp" name="preco_promo" type="number" step="0.01" required></div>' +
+      '<div><label class="f">Preço normal (opcional)</label><input class="inp" name="preco_normal" type="number" step="0.01"></div>' +
+      '<div><label class="f">Categoria (opcional)</label><input class="inp" name="categoria" placeholder="Fraldas"></div>' +
+      '</div><div class="rowf">' +
+      '<div><label class="f">Validade (opcional)</label><input class="inp" name="validade" placeholder="até 10/09/2026"></div>' +
+      '<div><label class="f">Confiança</label><select class="inp" name="nivel_confianca"><option>Alta</option><option selected>Média</option><option>Baixa</option></select></div>' +
+      '</div><button class="btn" type="submit">Salvar (vale p/ as 2 lojas)</button><div id="ccFormOut" class="result" hidden></div></form>';
+  }
+  function concColarHtml() {
+    return '<form id="ccColar"><div class="rowf">' +
+      '<div><label class="f">Concorrente</label><select class="inp" name="concorrente">' + concConcorrentesOpts() + "</select></div>" +
+      '<div><label class="f">Categoria (opcional, p/ todas)</label><input class="inp" name="categoria" placeholder="Limpeza"></div></div>' +
+      '<label class="f">Cole o texto do post / encarte (uma oferta por linha, ex.: "OMO 500g R$ 9,90")</label>' +
+      '<textarea class="inp" name="texto" rows="7" placeholder="LAVA ROUPAS OMO 500G  9,90&#10;DETERGENTE YPÊ 500ML  2,49&#10;..."></textarea>' +
+      '<button class="btn secondary" type="submit" style="margin-top:10px">Interpretar</button>' +
+      '<div id="ccColarPrev"></div></form>';
+  }
+  function wireConcAdd() {
+    view.querySelectorAll("#ccMode [data-cm]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        view.querySelectorAll("#ccMode [data-cm]").forEach(function (x) { x.classList.toggle("active", x === b); });
+        view.querySelector("#ccModeBody").innerHTML = b.getAttribute("data-cm") === "colar" ? concColarHtml() : concFormHtml();
+        wireConcForms();
+      });
+    });
+    wireConcForms();
+  }
+  function wireConcForms() {
+    var L = encodeURIComponent(state.loja);
+    var f = view.querySelector("#ccForm");
+    if (f) f.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var o = {}; ["concorrente", "produto", "preco_promo", "preco_normal", "categoria", "validade", "nivel_confianca"].forEach(function (k) { var v = f[k].value.trim(); if (v) o[k] = k.indexOf("preco") === 0 ? Number(v) : v; });
+      var out = view.querySelector("#ccFormOut");
+      try {
+        var r = await fetch("/api/concorrencia/" + L + "/ofertas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(o) }).then(function (x) { return x.json(); });
+        if (r.erro) throw new Error(r.erro);
+        out.className = "result ok"; out.textContent = "Salvo em " + r.aplicadas.map(function (a) { return a.loja; }).join(" e ") + ". Recalculando…"; out.hidden = false;
+        setTimeout(function () { renderConcorrentes(); }, 900);
+      } catch (err) { out.className = "result err"; out.textContent = err.message; out.hidden = false; }
+    });
+    var c = view.querySelector("#ccColar");
+    if (c) c.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var prev = view.querySelector("#ccColarPrev");
+      prev.innerHTML = '<div class="empty">interpretando…</div>';
+      try {
+        var r = await fetch("/api/concorrencia/" + L + "/colar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto: c.texto.value, concorrente: c.concorrente.value, categoria: c.categoria.value.trim() || null }) }).then(function (x) { return x.json(); });
+        if (!r.ofertas.length) { prev.innerHTML = '<div class="empty">Não achei linhas com preço. Formato: nome + preço no fim da linha.</div>'; return; }
+        prev.innerHTML = '<table class="tbl mobile-cards" style="margin-top:10px"><thead><tr><th>Produto</th><th class="num">Deles</th><th class="num">Nós</th><th>Abaixo?</th></tr></thead><tbody>' +
+          r.ofertas.map(function (o) { return '<tr><td>' + esc(o.produto) + '</td><td class="num" data-l="Deles">R$ ' + brl(o.preco_promo) + '</td><td class="num" data-l="Nós">' + (o.nosso_preco_medio ? "R$ " + brl(o.nosso_preco_medio) : "—") + '</td><td data-l="Abaixo?">' + (o.abaixo_do_nosso == null ? "—" : o.abaixo_do_nosso ? "sim" : "não") + "</td></tr>"; }).join("") +
+          '</tbody></table><button class="btn" id="ccColarSave" style="margin-top:10px">Salvar ' + r.ofertas.length + " ofertas</button>";
+        view.querySelector("#ccColarSave").addEventListener("click", async function () {
+          this.disabled = true; this.textContent = "Salvando…";
+          try {
+            await fetch("/api/concorrencia/" + L + "/ofertas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ concorrente: c.concorrente.value, categoria: c.categoria.value.trim() || null, ofertas: r.ofertas }) });
+            renderConcorrentes();
+          } catch (er) { this.textContent = "Falhou: " + er.message; }
+        });
+      } catch (err) { prev.innerHTML = '<div class="result err">' + esc(err.message) + "</div>"; }
     });
   }
   function pressPill(p) {

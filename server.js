@@ -98,10 +98,26 @@ function regenerarPublicoEmBreve(ms = 4000) {
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// --- auth (senha única, ferramenta interna) ---------------------------------
+// --- auth (usuário + senha, ferramenta interna) ----------------------------
 
 let APP_PASSWORD = process.env.APP_PASSWORD || "1234";
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+const USUARIOS = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "config", "usuarios.json"), "utf8")).usuarios || {};
+  } catch {
+    return {};
+  }
+})();
+function autentica(usuario, senha) {
+  senha = String(senha || "");
+  if (senha && senha === APP_PASSWORD) return usuario || "admin";
+  const u = String(usuario || "").trim();
+  if (u && USUARIOS[u] != null && String(USUARIOS[u]) === senha) return u;
+  // também aceita "usuario" digitado no campo senha (compat com o login antigo só-senha)
+  for (const [nome, pw] of Object.entries(USUARIOS)) if (String(pw) === senha) return nome;
+  return null;
+}
 
 function sign(value) {
   return crypto.createHmac("sha256", SESSION_SECRET).update(value).digest("hex");
@@ -139,16 +155,18 @@ input{width:100%;padding:10px 12px;border:1px solid #e0e3e8;border-radius:8px;fo
 button{margin-top:14px;width:100%;padding:10px;border:0;border-radius:8px;background:#d81f2a;color:#fff;font-size:15px;font-weight:600;cursor:pointer}
 .err{color:#d81f2a;font-size:13px;margin-top:10px}</style>
 <form method="post" action="/login">
-<h1>📊 Analytics</h1><p class="sub">Minas Farma · Farma e Farma</p>
-<input type="password" name="senha" placeholder="Senha" autofocus autocomplete="current-password">
+<h1>Analytics</h1><p class="sub">Minas Farma · Farma e Farma</p>
+<input type="text" name="usuario" placeholder="Usuário" autofocus autocomplete="username" style="margin-bottom:10px">
+<input type="password" name="senha" placeholder="Senha" autocomplete="current-password">
 <button type="submit">Entrar</button>
-${erro ? '<div class="err">Senha incorreta.</div>' : ""}
+${erro ? '<div class="err">Usuário ou senha incorretos.</div>' : ""}
 </form>`;
 
 app.get("/healthz", (req, res) => res.json({ ok: true, lojas: LOJAS_VALIDAS }));
 app.get("/login", (req, res) => res.type("html").send(LOGIN_PAGE(req.query.erro)));
 app.post("/login", (req, res) => {
-  if ((req.body.senha || "") === APP_PASSWORD) {
+  const quem = autentica(req.body.usuario, req.body.senha);
+  if (quem) {
     res.setHeader("Set-Cookie", `va_session=${makeToken()}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 30}`);
     return res.redirect("/");
   }
@@ -401,6 +419,9 @@ app.get("/api/ingest-log", (req, res) => res.json({ inbox: INBOX_DIR, pollMin: P
 
 // aba Concorrentes — comparação automática + análise
 const concAnalise = require("./concorrencia-analise");
+const { bestMatch: _bmConc } = require("./match");
+const _db = require("./db");
+
 app.get("/api/concorrencia/:loja", (req, res) => {
   if (!LOJAS_VALIDAS.includes(req.params.loja)) return res.status(404).json({ erro: "loja desconhecida" });
   try {
@@ -409,6 +430,95 @@ app.get("/api/concorrencia/:loja", (req, res) => {
     console.error("[api/concorrencia]", e);
     res.status(500).json({ erro: e.message });
   }
+});
+
+// período mais recente da loja que tem vendas
+function periodoRecente(loja) {
+  const ps = listPeriodos(loja).filter((p) => p.temVendas);
+  if (!ps.length) return null;
+  const p = ps.find((x) => x.atual) || ps[0];
+  return findPeriodo(loja, p.ano, p.mes);
+}
+// cruza uma lista de ofertas {produto, preco_promo, marca?} com o nosso preço médio praticado
+function crossarOfertas(per, ofertas) {
+  const cands = aggregate(getVendas(per.id)).precoMedioPorProduto
+    .filter((p) => p.precoMedio != null)
+    .map((p) => ({ name: p.name, precoMedio: p.precoMedio }));
+  return ofertas.map((o) => {
+    const m = cands.length ? _bmConc(String(o.produto), cands, { minScore: 0.45, minOverlap: 2, brand: o.marca }) : null;
+    const nosso = m ? m.match.precoMedio : null;
+    return {
+      ...o,
+      status_validacao: "Confirmada",
+      nivel_confianca: o.nivel_confianca || "Média",
+      produto_casado: m ? m.match.name : null,
+      nosso_preco_medio: nosso,
+      abaixo_do_nosso: o.preco_promo != null && nosso != null ? o.preco_promo < nosso : null,
+    };
+  });
+}
+// "PRODUTO ... R$ 12,90" por linha -> [{produto, preco_promo}]
+function parseEncarteTexto(texto) {
+  const out = [];
+  for (const linhaRaw of String(texto || "").split(/\r?\n/)) {
+    const linha = linhaRaw.trim();
+    if (linha.length < 4) continue;
+    const m = linha.match(/^(.+?)[\s.:–-]*(?:r\$|por|apenas|só|:)?\s*(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}|\d+\.\d{2}|\d+)\s*$/i);
+    if (!m) continue;
+    let nome = m[1].replace(/[•\-–*·>]+/g, " ").replace(/\s{2,}/g, " ").trim();
+    nome = nome.replace(/\b(de|por|apenas|so|só|preço|preco|oferta|promo(cao|ção)?)\b\s*$/i, "").trim();
+    if (nome.length < 3) continue;
+    const preco = parseFloat(m[2].replace(/\.(?=\d{3})/g, "").replace(",", "."));
+    if (!Number.isFinite(preco) || preco <= 0 || preco > 100000) continue;
+    out.push({ produto: nome, preco_promo: Math.round(preco * 100) / 100 });
+  }
+  return out;
+}
+
+function _posDeteccaoConc(loja) {
+  try { require("./intelligence").rodarDeteccao(loja); } catch (e) { console.error("[conc] detecção:", e.message); }
+  regenerarPublicoEmBreve();
+}
+
+// adiciona ofertas de concorrente à mão (uma ou várias). Vale para as DUAS lojas.
+app.post("/api/concorrencia/:loja/ofertas", express.json({ limit: "512kb" }), (req, res) => {
+  if (!LOJAS_VALIDAS.includes(req.params.loja)) return res.status(404).json({ erro: "loja desconhecida" });
+  const b = req.body || {};
+  const base = Array.isArray(b.ofertas) ? b.ofertas : (b.produto ? [b] : []);
+  if (!base.length) return res.status(400).json({ erro: "envie 'ofertas' (array) ou uma oferta única com 'produto' e 'preco_promo'" });
+  const limpas = base
+    .map((o) => ({
+      concorrente: String(o.concorrente || b.concorrente || "").trim(),
+      categoria: (o.categoria || b.categoria || null),
+      produto: String(o.produto || "").trim(),
+      marca: o.marca || null,
+      preco_promo: o.preco_promo != null ? Number(o.preco_promo) : null,
+      preco_normal: o.preco_normal != null ? Number(o.preco_normal) : null,
+      validade: o.validade || b.validade || null,
+      nivel_confianca: o.nivel_confianca || b.nivel_confianca || "Média",
+    }))
+    .filter((o) => o.concorrente && o.produto && o.preco_promo > 0);
+  if (!limpas.length) return res.status(400).json({ erro: "nenhuma oferta válida (precisa de concorrente + produto + preço)" });
+
+  const aplicadas = [];
+  for (const loja of LOJAS_VALIDAS) {
+    const per = periodoRecente(loja);
+    if (!per) continue;
+    _db.adicionarOfertasConc(per.id, crossarOfertas(per, limpas));
+    aplicadas.push({ loja, ofertas: limpas.length });
+    _posDeteccaoConc(loja);
+  }
+  res.json({ ok: true, aplicadas, ofertas: limpas.length });
+});
+
+// só interpreta o texto colado de um encarte/post — NÃO salva (o usuário revê e confirma)
+app.post("/api/concorrencia/:loja/colar", express.json({ limit: "512kb" }), (req, res) => {
+  if (!LOJAS_VALIDAS.includes(req.params.loja)) return res.status(404).json({ erro: "loja desconhecida" });
+  const b = req.body || {};
+  const linhas = parseEncarteTexto(b.texto);
+  const per = periodoRecente(req.params.loja);
+  const draft = per ? crossarOfertas(per, linhas.map((l) => ({ ...l, concorrente: b.concorrente || "", categoria: b.categoria || null }))) : linhas;
+  res.json({ ok: true, encontradas: draft.length, ofertas: draft });
 });
 
 // força a regeneração da cópia estática + o envio pro Supabase agora

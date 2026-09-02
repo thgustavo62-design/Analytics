@@ -1,0 +1,6 @@
+{
+  "_nota": "Login do site. Usuário -> senha (texto). O APP_PASSWORD do ambiente continua valendo como acesso mestre. Para a cópia estática (Vercel/GitHub Pages), estas credenciais viram um portão no navegador (hash SHA-256 embutido no HTML) — segura link compartilhado casual, não é segurança forte (o site continua estático).",
+  "usuarios": {
+    "Gustavo": "100603"
+  }
+}

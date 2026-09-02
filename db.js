@@ -24,6 +24,8 @@ for (const stmt of [
   "ALTER TABLE periodos ADD COLUMN vendas_ultimo_dia_motivo TEXT",
   "ALTER TABLE vendas_transacoes ADD COLUMN emp_id TEXT",
   "ALTER TABLE vendas_transacoes ADD COLUMN cli_id TEXT",
+  "ALTER TABLE concorrencia_ofertas ADD COLUMN data_coleta TEXT",
+  "ALTER TABLE concorrencia_ofertas ADD COLUMN fonte TEXT",
 ]) {
   try {
     db.exec(stmt);
@@ -156,30 +158,48 @@ function getInstagram(periodoId) {
 
 // --- concorrência ----------------------------------------------------------
 
-function replaceConcorrencia(periodoId, ofertas) {
-  db.prepare("DELETE FROM concorrencia_ofertas WHERE periodo_id = ?").run(periodoId);
-  const ins = db.prepare(
-    `INSERT INTO concorrencia_ofertas
-      (periodo_id, concorrente, categoria, produto, preco_normal, preco_promo, validade,
-       nivel_confianca, status_validacao, nosso_preco_medio, abaixo_do_nosso)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+const _insOferta = () => db.prepare(
+  `INSERT INTO concorrencia_ofertas
+    (periodo_id, concorrente, categoria, produto, preco_normal, preco_promo, validade,
+     nivel_confianca, status_validacao, nosso_preco_medio, abaixo_do_nosso, data_coleta, fonte)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+);
+function _runOferta(ins, periodoId, o, fonte) {
+  ins.run(
+    periodoId, o.concorrente, o.categoria ?? null, o.produto,
+    o.preco_normal ?? null, o.preco_promo ?? null, o.validade ?? null,
+    o.nivel_confianca ?? null, o.status_validacao ?? null,
+    o.nosso_preco_medio ?? null, o.abaixo_do_nosso == null ? null : o.abaixo_do_nosso ? 1 : 0,
+    o.data_coleta ?? new Date().toISOString().slice(0, 10), fonte
   );
-  for (const o of ofertas) {
-    ins.run(
-      periodoId,
-      o.concorrente,
-      o.categoria ?? null,
-      o.produto,
-      o.preco_normal ?? null,
-      o.preco_promo ?? null,
-      o.validade ?? null,
-      o.nivel_confianca ?? null,
-      o.status_validacao ?? null,
-      o.nosso_preco_medio ?? null,
-      o.abaixo_do_nosso == null ? null : o.abaixo_do_nosso ? 1 : 0
-    );
+}
+
+// substitui o LOTE dessa fonte (default 'coleta') — o que foi adicionado à mão (fonte 'manual')
+// não é apagado ao re-importar a planilha.
+function replaceConcorrencia(periodoId, ofertas, fonte = "coleta") {
+  db.prepare("DELETE FROM concorrencia_ofertas WHERE periodo_id = ? AND (fonte = ? OR fonte IS NULL)").run(periodoId, fonte);
+  const ins = _insOferta();
+  for (const o of ofertas) _runOferta(ins, periodoId, o, fonte);
+  touchPeriodo(periodoId);
+}
+
+// adiciona ofertas manuais; substitui a manual anterior do mesmo (concorrente, produto).
+function adicionarOfertasConc(periodoId, ofertas) {
+  const del = db.prepare("DELETE FROM concorrencia_ofertas WHERE periodo_id = ? AND fonte = 'manual' AND lower(concorrente) = lower(?) AND lower(produto) = lower(?)");
+  const ins = _insOferta();
+  db.exec("BEGIN");
+  try {
+    for (const o of ofertas) {
+      del.run(periodoId, o.concorrente || "", o.produto || "");
+      _runOferta(ins, periodoId, o, "manual");
+    }
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
   }
   touchPeriodo(periodoId);
+  return ofertas.length;
 }
 
 function getConcorrencia(periodoId) {
@@ -866,6 +886,7 @@ module.exports = {
   replaceInstagram,
   getInstagram,
   replaceConcorrencia,
+  adicionarOfertasConc,
   getConcorrencia,
   saveAnaliseComercial,
   getAnaliseComercial,

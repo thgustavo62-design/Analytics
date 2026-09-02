@@ -7,9 +7,53 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { coletarTudo, MK_MARKETING, MK_INTEL } = require("./coletar-tudo");
 
 const FONTS_LINK = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">';
+
+// portão do site estático: hash SHA-256 de "usuario:senha" de cada credencial (config/usuarios.json).
+// Não é segurança forte (o HTML é estático) — segura link compartilhado casual.
+function credHashes() {
+  try {
+    const us = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "usuarios.json"), "utf8")).usuarios || {};
+    return Object.entries(us).map(([u, p]) => crypto.createHash("sha256").update(`${u}:${p}`).digest("hex"));
+  } catch {
+    return [];
+  }
+}
+function gateScript() {
+  const hashes = credHashes();
+  if (!hashes.length) return "";
+  return `
+  (function () {
+    var OK = ${JSON.stringify(hashes)};
+    var KEY = "analytics_gate_v1";
+    try { if (OK.indexOf(localStorage.getItem(KEY)) >= 0) return; } catch (e) {}
+    var d = document, ov = d.createElement("div");
+    ov.id = "gate";
+    ov.style.cssText = "position:fixed;inset:0;z-index:99999;background:#f4f5f7;display:flex;align-items:center;justify-content:center;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif";
+    ov.innerHTML = '<form id="gf" style="background:#fff;padding:32px;border-radius:14px;box-shadow:0 10px 40px -12px rgba(0,0,0,.2);width:min(320px,90vw)">' +
+      '<div style="font-weight:800;font-size:19px;margin-bottom:2px">Analytics</div>' +
+      '<div style="color:#8a909c;font-size:12.5px;margin-bottom:18px">Minas Farma · Farma e Farma</div>' +
+      '<input id="gu" placeholder="Usuário" autocomplete="username" style="width:100%;padding:10px 12px;border:1px solid #e0e3e8;border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:10px">' +
+      '<input id="gp" type="password" placeholder="Senha" autocomplete="current-password" style="width:100%;padding:10px 12px;border:1px solid #e0e3e8;border-radius:8px;font-size:15px;box-sizing:border-box">' +
+      '<button style="margin-top:14px;width:100%;padding:10px;border:0;border-radius:8px;background:#d81f2a;color:#fff;font-size:15px;font-weight:700;cursor:pointer">Entrar</button>' +
+      '<div id="ge" style="color:#d81f2a;font-size:12.5px;margin-top:10px;display:none">Usuário ou senha incorretos.</div></form>';
+    d.documentElement.style.overflow = "hidden";
+    (d.body || d.documentElement).appendChild(ov);
+    ov.querySelector("#gf").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var s = ov.querySelector("#gu").value.trim() + ":" + ov.querySelector("#gp").value;
+      var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+      var hex = Array.from(new Uint8Array(buf)).map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+      if (OK.indexOf(hex) >= 0) {
+        try { localStorage.setItem(KEY, hex); } catch (x) {}
+        d.documentElement.style.overflow = ""; ov.remove();
+      } else { ov.querySelector("#ge").style.display = "block"; }
+    });
+  })();`;
+}
 
 function stubScript(B) {
   const SB_URL = process.env.SUPABASE_URL || "";
@@ -98,6 +142,7 @@ function montarHtml(root, B) {
 <title>Analytics — Minas Farma &amp; Farma e Farma</title>
 ${FONTS_LINK}<style>${css}</style></head><body class="publico">
 ${body}
+<script>${gateScript()}</script>
 <script>${stubScript(B)}</script>
 <script>${appJs}</script>
 </body></html>`;
