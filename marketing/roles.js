@@ -36,21 +36,22 @@ function avaliar(p) {
   const margemOk = p.margem_pct == null || p.margem_pct >= PISO_MARGEM;
   const cupons30 = (p.cupons && p.cupons.d30) || 0;
   const un30 = (p.unidades && p.unidades[30]) || 0;
+  const receita30 = (p.receita && p.receita.d30) || 0;
   const tend = p.tendencia && p.tendencia.pct;
   const cat = String(p.categoria || "").toLowerCase();
   const out = {};
 
-  // HERO — produto principal: alto faturamento e estoque comporta anúncio.
+  // HERO — produto principal: alto faturamento (percentil + piso absoluto) e estoque comporta anúncio.
   // forca teto 0.97 para que um item genuinamente PARADO (DESOVA=1.0) assuma o papel primário.
-  if (pRec >= L.hero_percentil_receita && cob !== "RUPTURA") {
-    out.HERO = { forca: Math.min(0.97, pRec), confianca: 0.9, rationale: `receita no percentil ${Math.round(pRec * 100)} da loja; cobertura ${cob || "s/ feed"}` };
+  if (pRec >= L.hero_percentil_receita && receita30 >= (L.hero_receita_min_30d || 0) && cob !== "RUPTURA") {
+    out.HERO = { forca: Math.min(0.97, pRec), confianca: 0.9, rationale: `receita R$ ${receita30.toFixed(0)}/30d (percentil ${Math.round(pRec * 100)}); cobertura ${cob || "s/ feed"}` };
   }
-  // TRAFEGO — grande procura: muitos cupons distintos
-  if (pCup >= L.trafego_percentil_cupons && cob !== "RUPTURA") {
+  // TRAFEGO — grande procura: muitos cupons distintos (percentil + piso absoluto)
+  if (pCup >= L.trafego_percentil_cupons && cupons30 >= (L.trafego_cupons_min_30d || 0) && cob !== "RUPTURA") {
     out.TRAFEGO = { forca: pCup, confianca: 0.9, rationale: `presença em cupom no percentil ${Math.round(pCup * 100)} (${cupons30} cupons/30d)` };
   }
-  // CHAMARIZ — preço agressivo puxa fluxo: procura boa + preço baixo + dá pra cobrir e margem não é negativa
-  if (pCup >= L.chamariz_percentil_cupons && preco != null && preco <= L.chamariz_preco_max && cobPromovivel && margemOk) {
+  // CHAMARIZ — preço agressivo puxa fluxo: procura boa (percentil + piso) + preço baixo + dá pra cobrir e margem não é negativa
+  if (pCup >= L.chamariz_percentil_cupons && cupons30 >= (L.chamariz_cupons_min_30d || 0) && preco != null && preco <= L.chamariz_preco_max && cobPromovivel && margemOk) {
     const forca = clamp01(0.55 * pCup + 0.45 * (1 - preco / L.chamariz_preco_max));
     out.CHAMARIZ = { forca, confianca: precoProxy ? 0.7 : 0.9, rationale: `preço R$ ${preco.toFixed(2)}${precoProxy ? " (médio praticado)" : ""} + procura no percentil ${Math.round(pCup * 100)}; puxa fluxo` };
   }

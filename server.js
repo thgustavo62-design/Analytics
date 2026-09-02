@@ -722,6 +722,28 @@ app.get("/api/marketing/:loja/:periodo/campaign-builder", (req, res) => {
   res.status(r.erro ? 404 : 200).json(r);
 });
 
+// Fase B — Campaign Builder 2.0: campanha inteira (elenco por papel + preço + ângulo + forecast + score)
+const campaignBuilder2 = require("./marketing/campaign-builder");
+function planoDeCampanha(req, res) {
+  if (!lojaOk(req, res)) return;
+  try {
+    const src = req.method === "POST" ? (req.body || {}) : req.query;
+    const ctx = contextoMarketing(req.params.loja);
+    const categorias = src.categorias
+      ? (Array.isArray(src.categorias) ? src.categorias : String(src.categorias).split(",").map((s) => s.trim()).filter(Boolean))
+      : null;
+    const r = campaignBuilder2.montarCampanha(req.params.loja, {
+      ...ctx, dias: src.dias, tema: src.tema, objetivo: src.objetivo, categorias,
+    });
+    res.status(r.erro ? 404 : 200).json(r);
+  } catch (e) {
+    console.error("[api/marketing campaign-plan]", e);
+    res.status(500).json({ erro: e.message });
+  }
+}
+app.get("/api/marketing/:loja/campaign-plan", planoDeCampanha);
+app.post("/api/marketing/:loja/campaign-plan", express.json({ limit: "512kb" }), planoDeCampanha);
+
 app.post("/api/marketing/:loja/offer-simulator", express.json({ limit: "1mb" }), (req, res) => {
   if (!lojaOk(req, res)) return;
   try {

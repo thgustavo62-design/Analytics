@@ -14,8 +14,11 @@
   "limiares": {
     "chamariz_percentil_cupons": 0.7,
     "chamariz_preco_max": 25,
+    "chamariz_cupons_min_30d": 8,
     "trafego_percentil_cupons": 0.8,
+    "trafego_cupons_min_30d": 10,
     "hero_percentil_receita": 0.8,
+    "hero_receita_min_30d": 120,
     "margem_pct_forte": 0.32,
     "complementar_percentil_receita": 0.35,
     "complementar_cupons_min": 2,
@@ -24,6 +27,6 @@
     "recorrencia_cupons_min_30d": 6,
     "imagem_tendencia_pct": 20
   },
-  "categorias_recorrencia": ["Fraldas", "Leite Infantil", "Higiene", "Higiene e Beleza", "Suplementos", "Medicamentos/Outros", "Genéricos", "Continuo", "Contínuo"],
+  "categorias_recorrencia": ["Fraldas", "Leite Infantil", "Higiene", "Higiene e Beleza", "Suplementos", "Genéricos", "Continuo", "Contínuo"],
   "categorias_imagem": ["Perfumaria", "Beleza", "Higiene e Beleza", "Dermocosmético", "Dermocosmeticos", "Maquiagem", "Skincare", "Cabelos"]
 }

@@ -64,11 +64,14 @@ O que entrega valor primeiro e não depende de feed novo.
 - ✅ Testes: `test/command-center.test.js` (+10, total 63) — papel determinístico, sub-scores honestos (null sem feed), plano ranqueado com evidência, pseudo-produtos fora.
 - Pendente dentro da fase: visão **consolidada das 2 lojas** numa só tela (hoje é por loja via seletor).
 
-### Fase B — Da lista ao plano executável  ·  pontos 4, 5, 16, 18
-- `marketing/angulos.js` + `config/angulos.json` — biblioteca (preço/urgência/volume/conveniência/comparação/recorrência) e seleção por dado.
-- `combos()` ganha filtro de margem+estoque e descarte de combo óbvio/ruim.
-- Campaign Builder 2.0: `montarCampanha({loja, dias, tema?})` → objeto completo (elenco por papel com preço sugerido, combos, lista de evitar, estoque necessário, margem/potencial/risco previstos, score da campanha 0–100) + Forecast da campanha inteira (3 cenários + estoque final).
-- Tela: "Montar campanha" vira o builder 2.0; resultado exportável.
+### Fase B — Da lista ao plano executável  ·  pontos 4, 5, 16, 18  ·  ✅ ENTREGUE (2026-09-02)
+- ✅ `marketing/angulos.js` + `config/angulos.json` — pontua PREÇO / URGÊNCIA / VOLUME / CONVENIÊNCIA / COMPARAÇÃO / RECORRÊNCIA a partir de dado real (desconto planejado, folga de margem, papel, janela curta, pressão de concorrência) → ângulo primário + ranking + sugestão de copy.
+- ✅ `basket.combos()` ganhou `viavel` + `motivo_inviavel` + `qualidade` (piso de margem combinada, perna em ruptura, "dois heroes da mesma categoria" = óbvio) + filtro `apenasViaveis`; `ehLixo` agora pega "TAXA DE ENTREGA …" por prefixo.
+- ✅ `marketing/campaign-builder.js` + `config/campaign-plan.json` — `montarCampanha(loja, {dias, tema, categorias})`: janela contígua, elenco por papel (Fase A) com **preço sugerido** (desconto-alvo por papel, reduzido se furar o piso de margem), **ângulo** e **forecast por perna** (baseline vmd × dias × lift da categoria, 3 cenários, estoque necessário/depois), combos viáveis, lista de evitar, **forecast da campanha inteira** e **score 0–100** (cobertura de papéis + margem prevista + estoque + força da âncora, com confiança).
+- ✅ Rotas `GET|POST /api/marketing/:loja/campaign-plan`; publicado no site (`coletar-tudo`).
+- ✅ Tela: "Montar campanha" virou o builder 2.0 (dias da semana + tema → campanha com score, cards por papel, forecast, combos, briefing).
+- ✅ `roles.js` ganhou pisos absolutos de volume (HERO ≥ R$120/30d, TRÁFEGO ≥ 10 cupons, CHAMARIZ ≥ 8) — vale também para a Fase A.
+- ✅ Testes: `test/campaign-builder.test.js` (+11 → 74).
 
 ### Fase C — Medir o que a campanha realmente fez  ·  pontos 7, 8, 15
 - Baseline por produto por **mesmo dia da semana**; janela de campanha × baseline → incremento provável (+N).
@@ -109,7 +112,8 @@ Depois: cruzamento com métricas do Instagram + vendas → Creative Score real (
 
 ## Recomendação
 
-**Fase A entregue** (2026-09-02). Próximo passo natural: **Fase B** (Campaign Builder 2.0 +
-motor de ângulos + combos com margem + forecast de campanha inteira) — transforma a lista do
-Command Center num plano de campanha executável. Em paralelo, definir o **log de publicações**
-(Fase F) para o dado começar a acumular — é o único gargalo de meses, não de código.
+**Fases A e B entregues** (2026-09-02). Próximo passo: **Fase C** — medir o que a campanha
+realmente fez (baseline por mesmo dia da semana → incremento provável, ROAS, ROI-sobre-margem,
+canibalização). Precisa de uma UI para lançar o **investimento por campanha**
+(`campanhas.investimento`) — é o único dado que falta para o ROAS/ROI. Em paralelo, definir o
+**log de publicações** (Fase F), o único gargalo de meses.

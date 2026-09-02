@@ -14,11 +14,17 @@ const db = require("./db");
 const { normalizarEan } = require("./catalogo");
 
 const CFG = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "basket-analysis.json"), "utf8"));
-const NAO_MARKETAVEL = new Set(["diversos", "taxa de entrega", "taxa entrega", "desconto", "acrescimo", "arredondamento"]);
-const ehLixo = (d) => NAO_MARKETAVEL.has(String(d || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim());
+const CFG_STOCK = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "marketing-stock.json"), "utf8"));
+const PISO_MARGEM_COMBO = CFG_STOCK.margem_pct_minima_para_anunciar != null ? CFG_STOCK.margem_pct_minima_para_anunciar : 0.1;
+const NAO_MARKETAVEL = ["diversos", "taxa de entrega", "taxa entrega", "desconto", "acrescimo", "arredondamento"];
+const ehLixo = (d) => {
+  const s = String(d || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+  return NAO_MARKETAVEL.some((t) => s === t || s.startsWith(t + " ") || s.includes(" " + t + " "));
+};
 const DIA = 86400000;
 const addDias = (iso, n) => new Date(new Date(iso + "T12:00:00").getTime() + n * DIA).toISOString().slice(0, 10);
 const round = (n, d) => (n == null ? null : Math.round((n + Number.EPSILON) * Math.pow(10, d ?? 4)) / Math.pow(10, d ?? 4));
+const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 function calcularCesta(loja, opts = {}) {
   const refDate = opts.refDate || db.getUltimaDataVenda(loja);
@@ -181,7 +187,7 @@ function combos(loja, opts = {}) {
     if (!p) return null;
     return { classe: p.classe, cobertura: p.cobertura_rotulo, margem_pct: p.margem_pct, opportunity: p.opportunity.score, tendencia: p.tendencia.rotulo };
   };
-  const combos = pares.map((p) => {
+  let combos = pares.map((p) => {
     const ra = retrato(p.produto_a);
     const rb = retrato(p.produto_b);
     // papel sugerido: âncora = maior receita/opportunity; isca = menor margem ou GIRO_URGENTE
@@ -194,17 +200,37 @@ function combos(loja, opts = {}) {
     const alerta = [];
     if (ra && ra.cobertura === "RUPTURA") alerta.push(`${p.desc_a}: risco de ruptura`);
     if (rb && rb.cobertura === "RUPTURA") alerta.push(`${p.desc_b}: risco de ruptura`);
+    const margemComb = ra && rb && ra.margem_pct != null && rb.margem_pct != null ? round((ra.margem_pct + rb.margem_pct) / 2, 4) : null;
+
+    // --- viabilidade + qualidade (Fase B) ---
+    const mesmaCat = p.cat_a && p.cat_b && p.cat_a === p.cat_b;
+    let viavel = true;
+    let motivo_inviavel = null;
+    if ((ra && ra.cobertura === "RUPTURA") || (rb && rb.cobertura === "RUPTURA")) { viavel = false; motivo_inviavel = "perna em risco de ruptura"; }
+    else if (margemComb != null && margemComb < PISO_MARGEM_COMBO) { viavel = false; motivo_inviavel = `margem combinada ${(margemComb * 100).toFixed(1)}% abaixo do piso`; }
+    else if (mesmaCat && ra && rb && (ra.opportunity || 0) >= 68 && (rb.opportunity || 0) >= 68 && ra.classe === "HERO" && rb.classe === "HERO") { viavel = false; motivo_inviavel = "dois heroes da mesma categoria — combo óbvio, sem venda incremental"; }
+    // qualidade: lift + bônus se a isca tem receita baixa (cross-sell real) − penalidade se mesma categoria
+    const iscaRet = isca === "A" ? ra : rb;
+    const iscaComplementar = iscaRet && (iscaRet.classe === "COMPLEMENTAR" || (iscaRet.opportunity || 0) < 55);
+    let qualidade = clamp01((p.lift - 1) / 3) * 0.6 + (iscaComplementar ? 0.3 : 0.1) + (mesmaCat ? 0 : 0.1);
+    qualidade = round(clamp01(qualidade), 3);
+
     return {
       produto_a: { produto_id: p.produto_a, ean: p.ean_a, descricao: p.desc_a, ...(ra || {}) },
       produto_b: { produto_id: p.produto_b, ean: p.ean_b, descricao: p.desc_b, ...(rb || {}) },
       cupons_ab: p.cupons_ab, support: p.support, confidence: p.confidence, lift: p.lift,
       papel: { ancora, isca },
-      margem_combinada_pct: ra && rb && ra.margem_pct != null && rb.margem_pct != null ? round((ra.margem_pct + rb.margem_pct) / 2, 4) : null,
+      margem_combinada_pct: margemComb,
+      mesma_categoria: !!mesmaCat,
+      viavel, motivo_inviavel, qualidade,
       alertas: alerta,
       evidencia: { campo: "lift", valor: p.lift, fonte: `cesta_pares ${janela ? janela.inicio + ".." + janela.fim : ""}`, periodo: janela ? `${janela.inicio}..${janela.fim}` : null },
     };
   });
-  return { loja, janela, combos };
+  combos.sort((x, y) => (y.viavel - x.viavel) || (y.qualidade - x.qualidade) || (y.lift - x.lift));
+  const total = combos.length;
+  if (opts.apenasViaveis) combos = combos.filter((c) => c.viavel);
+  return { loja, janela, total, viaveis: combos.filter((c) => c.viavel).length, combos };
 }
 
 module.exports = { calcularCesta, centralidade, combos };

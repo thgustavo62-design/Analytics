@@ -1137,32 +1137,83 @@
       host.innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>";
     }
   }
+  // ---- Campaign Builder 2.0 (Fase B) ----
+  var DOW = [["1", "Seg"], ["2", "Ter"], ["3", "Qua"], ["4", "Qui"], ["5", "Sex"], ["6", "Sáb"], ["0", "Dom"]];
+  var ANG_ICO = { PRECO: "💰", URGENCIA: "⏰", VOLUME: "📦", CONVENIENCIA: "📱", COMPARACAO: "⚖️", RECORRENCIA: "🔁" };
   function renderBuilderForm() {
-    var cats = ["Fraldas", "Leite Infantil", "Limpeza"];
-    return '<div class="card form-card"><form id="cbForm"><fieldset><legend>Parâmetros</legend><div class="rowf">' +
-      '<div><label class="f">Objetivo</label><select class="inp" name="objetivo">' +
-      ["GIRAR_ESTOQUE", "AUMENTAR_TICKET", "DEFENDER_CONCORRENCIA", "CONVERSAO", "LANCAMENTO"].map(function (o) { return "<option>" + o + "</option>"; }).join("") + "</select></div>" +
-      '<div><label class="f">Categorias (vírgula, opcional)</label><input class="inp" name="categorias" placeholder="' + cats.join(", ") + '"></div>' +
-      '</div></fieldset><button class="btn" type="submit">Montar elenco</button></form><div id="cbOut" style="margin-top:14px"></div></div>';
+    return '<div class="card form-card"><form id="cbForm"><fieldset><legend>Parâmetros da campanha</legend>' +
+      '<div><label class="f">Dias da semana</label><div class="dow-pick">' +
+      DOW.map(function (d) { return '<label class="dow"><input type="checkbox" name="dias" value="' + d[0] + '"' + (["5", "6", "0"].indexOf(d[0]) >= 0 ? " checked" : "") + ">" + d[1] + "</label>"; }).join("") + "</div></div>" +
+      '<div class="rowf" style="margin-top:10px">' +
+      '<div><label class="f">Tema (opcional)</label><input class="inp" name="tema" placeholder="Fim de semana da limpeza"></div>' +
+      '<div><label class="f">Categorias (vírgula, opcional)</label><input class="inp" name="categorias" placeholder="Fraldas, Limpeza"></div>' +
+      '</div></fieldset><button class="btn" type="submit">Montar campanha</button></form><div id="cbOut" style="margin-top:14px"></div></div>';
+  }
+  function cbScoreBadge(s) {
+    var c = s >= 70 ? "var(--s1)" : s >= 50 ? "var(--s3)" : "var(--down)";
+    return '<span class="cb-score" style="background:' + c + '">' + s + "<small>/100</small></span>";
+  }
+  function cbLegRow(it) {
+    var f = it.forecast || {}, cen = (f.cenarios && f.cenarios.provavel) || {};
+    var estTag = f.estoque_ok == null ? '<span class="cs">s/ estoque</span>' :
+      f.estoque_ok ? '<span class="tag">estoque ok</span>' : '<span class="tag bad">falta estoque (' + int(f.estoque_necessario) + " vs " + int(f.estoque_atual) + ")</span>";
+    return '<div class="cb-leg"><div class="cb-leg-h"><b>' + esc(it.descricao) + "</b>" +
+      (it.preco_sugerido != null ? ' <span class="tag">R$ ' + brl(it.preco_ref) + " → <b>R$ " + brl(it.preco_sugerido) + "</b> (-" + it.desconto_pct + "%" + (it.desconto_proxy ? " proxy" : "") + ")</span>" : "") + "</div>" +
+      '<div class="cb-ang">' + (ANG_ICO[it.angulo.primario] || "") + " <b>" + esc(it.angulo.rotulo) + '</b> — <span class="cs">"' + esc(it.angulo.sugestao_copy) + '"</span></div>' +
+      '<div class="cs">' + esc(it.rationale || "") + "</div>" +
+      '<div class="cb-fc">prov.: <b>' + int(cen.unidades) + "</b> un · R$ " + brl(cen.receita) + (cen.margem_incremental != null ? " · margem incr. R$ " + brl(cen.margem_incremental) : "") + " · " + estTag + "</div></div>";
   }
   function wireBuilder(ym) {
     view.querySelector("#cbForm").addEventListener("submit", async function (ev) {
       ev.preventDefault();
       var f = ev.target, out = view.querySelector("#cbOut");
-      out.innerHTML = '<div class="empty">Montando…</div>';
-      var qs = "objetivo=" + encodeURIComponent(f.objetivo.value);
-      if (f.categorias.value.trim()) qs += "&categorias=" + encodeURIComponent(f.categorias.value.trim());
+      out.innerHTML = '<div class="empty">Montando campanha…</div>';
+      var dias = Array.prototype.slice.call(f.querySelectorAll('input[name="dias"]:checked')).map(function (x) { return x.value; });
+      var body = { dias: dias.join(",") };
+      if (f.tema.value.trim()) body.tema = f.tema.value.trim();
+      if (f.categorias.value.trim()) body.categorias = f.categorias.value.trim();
       try {
-        var d = await getJSON("/api/marketing/" + encodeURIComponent(state.loja) + "/" + ym + "/campaign-builder?" + qs);
-        out.innerHTML = feedsAviso(d) + ["CHAMARIZ", "HERO", "MARGEM", "GIRO", "COMPLEMENTAR", "DEFESA"].map(function (papel) {
+        var r = await fetch("/api/marketing/" + encodeURIComponent(state.loja) + "/campaign-plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        var d = await r.json();
+        if (!r.ok || d.erro) throw new Error(d.erro || ("HTTP " + r.status));
+        var rz = d.resumo, jn = d.janela, fc = d.forecast;
+        var html = feedsAviso(d);
+        html += '<div class="card"><div class="cb-top">' + cbScoreBadge(rz.score_da_campanha) +
+          '<div><h3 style="margin:0">' + (d.tema ? esc(d.tema) : "Campanha") + "</h3>" +
+          '<div class="cs">' + (jn.proximo_periodo ? esc(jn.proximo_periodo.inicio) + " a " + esc(jn.proximo_periodo.fim) : "") + " · " + jn.duracao_dias + " dia(s) · " + rz.itens_no_elenco + " itens · confiança " + rz.score_confianca + "</div></div></div>" +
+          '<div class="cb-comps">' + Object.keys(rz.score_componentes).map(function (k) {
+            return '<div><span>' + k.replace(/_/g, " ") + '</span><b>' + Math.round(rz.score_componentes[k] * 100) + "</b></div>";
+          }).join("") + "</div>" +
+          (rz.score_dados_ausentes && rz.score_dados_ausentes.length ? '<div class="cs" style="margin-top:6px">⚠ ' + rz.score_dados_ausentes.map(esc).join(" · ") + "</div>" : "") +
+          (rz.pernas_sem_estoque && rz.pernas_sem_estoque.length ? '<div class="cs" style="color:var(--down);margin-top:4px">Sem estoque p/ o forecast: ' + rz.pernas_sem_estoque.map(function (p) { return esc(p.descricao); }).join(", ") + "</div>" : "") +
+          "</div>";
+        html += Object.keys(d.elenco).map(function (papel) {
           var itens = d.elenco[papel] || [];
-          return '<div class="card" style="margin-bottom:10px"><div class="chead"><div class="ci red">' + papel[0] + '</div><div><h3>' + papel + " <span class=\"cs\">(" + itens.length + ")</span></h3></div></div>" +
-            (itens.length ? '<table class="tbl"><tbody>' + itens.map(function (it) {
-              return "<tr><td>" + esc(it.descricao) + (it.proxy ? ' <span class="tag">proxy</span>' : "") + '</td><td class="cs">' + esc(it.motivo) + '</td><td class="num">' + scoreBar(it.opportunity) + "</td></tr>";
-            }).join("") + "</tbody></table>" : '<div class="cs">— sem candidato (feed faltando ou categoria sem produto)</div>') + "</div>";
-        }).join("") +
-          (d.evitar.length ? '<div class="card"><div class="chead"><div class="ci gold">🚫</div><div><h3>NÃO anunciar (' + d.evitar.length + ")</h3></div></div><ul style=\"margin:0 0 0 18px\">" + d.evitar.slice(0, 15).map(function (e) { return "<li>" + esc(e.descricao) + ' <span class="cs">' + esc(e.motivos.join("; ")) + "</span></li>"; }).join("") + "</ul></div>" : "") +
-          '<div class="card" style="margin-top:10px"><div class="chead"><div class="ci">📋</div><div><h3>Briefing</h3></div></div><pre style="white-space:pre-wrap;font:13px/1.5 ui-monospace,monospace;margin:0">' + esc(d.briefing) + "</pre></div>";
+          if (!itens.length) return "";
+          return '<div class="card" style="margin-bottom:10px"><div class="chead"><div class="ci red">' + papel[0] + '</div><div><h3>' + papel + ' <span class="cs">(' + itens.length + ")</span></h3></div></div>" +
+            itens.map(cbLegRow).join("") + "</div>";
+        }).join("");
+        if (d.combos && d.combos.length) {
+          html += '<div class="card"><div class="chead"><div class="ci gold">🔗</div><div><h3>Combos</h3><div class="cs">' + esc(d.combos_origem || "") + "</div></div></div>" +
+            d.combos.map(function (c) {
+              return '<div style="padding:6px 0;border-bottom:1px solid var(--line)"><b>' + esc(c.a) + "</b> + <b>" + esc(c.b) + '</b> <span class="tag">lift ' + c.lift + "×</span>" +
+                (c.margem_combinada_pct != null ? ' <span class="cs">margem comb. ' + pct(c.margem_combinada_pct * 100) + "</span>" : "") +
+                (c.alertas && c.alertas.length ? ' <span class="cs" style="color:var(--down)">' + c.alertas.map(esc).join(" · ") + "</span>" : "") + "</div>";
+            }).join("") + "</div>";
+        }
+        html += '<div class="card"><div class="chead"><div class="ci">📈</div><div><h3>Forecast da campanha</h3><div class="cs">' + esc(fc.base) + (fc.margem_cobertura ? " · " + esc(fc.margem_cobertura) : "") + '</div></div></div>' +
+          '<table class="tbl"><thead><tr><th>Cenário</th><th class="num">Unidades</th><th class="num">Receita</th><th class="num">Margem incremental</th></tr></thead><tbody>' +
+          ["conservador", "provavel", "agressivo"].map(function (k) {
+            var c = fc.cenarios[k];
+            return "<tr><td>" + k + '</td><td class="num">' + int(c.unidades) + '</td><td class="num">R$ ' + brl(c.receita) + '</td><td class="num">' + (c.margem_incremental == null ? "—" : "R$ " + brl(c.margem_incremental)) + "</td></tr>";
+          }).join("") + "</tbody></table>" +
+          '<div class="cs" style="margin-top:6px">Estoque necessário total: ' + int(fc.estoque_necessario_total) + " un · " + esc(fc.aviso) + "</div></div>";
+        if (d.evitar && d.evitar.length) {
+          html += '<div class="card"><div class="chead"><div class="ci gold">🚫</div><div><h3>NÃO anunciar (' + d.evitar.length + ")</h3></div></div><ul style=\"margin:0 0 0 18px\">" +
+            d.evitar.slice(0, 12).map(function (e) { return "<li>" + esc(e.descricao) + ' <span class="cs">' + esc(e.motivos.join("; ")) + (e.substituto ? " → no lugar: " + esc(e.substituto) : "") + "</span></li>"; }).join("") + "</ul></div>";
+        }
+        html += '<div class="card"><div class="chead"><div class="ci">📋</div><div><h3>Briefing</h3></div></div><pre style="white-space:pre-wrap;font:12.5px/1.5 ui-monospace,monospace;margin:0;overflow-x:auto">' + esc(d.briefing) + "</pre></div>";
+        out.innerHTML = html;
       } catch (e) { out.innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>"; }
     });
   }

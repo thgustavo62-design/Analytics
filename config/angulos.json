@@ -1,0 +1,27 @@
+{
+  "_nota": "Fase B — Motor de Ângulos. Para cada produto, marketing/angulos.js pontua cada ângulo de venda a partir de dado real (margem, cobertura, papel, janela da campanha, pressão de concorrência) e devolve o melhor + uma sugestão de copy. A IA não escolhe ângulo nem escreve copy final — o template é ponto de partida. Ajuste rótulos, templates e pesos aqui.",
+  "angulos": {
+    "PRECO":        { "rotulo": "Preço / economia",  "icone": "💰", "copy": "{produto} por R$ {preco_promo} — economia de {desconto}% para quem leva agora." },
+    "URGENCIA":     { "rotulo": "Urgência / escassez", "icone": "⏰", "copy": "Só {dias_texto}: {produto} com preço especial. Enquanto durar o estoque." },
+    "VOLUME":       { "rotulo": "Volume / leve mais", "icone": "📦", "copy": "Leve mais {produto} pagando menos — quanto mais leva, mais economiza." },
+    "CONVENIENCIA": { "rotulo": "Conveniência",       "icone": "📱", "copy": "Peça {produto} pelo WhatsApp e receba em casa, sem fila." },
+    "COMPARACAO":   { "rotulo": "Comparação de preço","icone": "⚖️", "copy": "{produto}: confira e compare — nosso preço está abaixo da média da região." },
+    "RECORRENCIA":  { "rotulo": "Recorrência",        "icone": "🔁", "copy": "{produto} é item de todo mês lá em casa — já deixa separado o seu." }
+  },
+  "pesos": {
+    "preco_desconto_alto": 0.92,
+    "preco_desconto_medio": 0.84,
+    "preco_desconto_baixo": 0.68,
+    "preco_margem_folga": 0.80,
+    "preco_ticket_alto": 0.55,
+    "urgencia_janela_curta": 0.78,
+    "urgencia_desova": 0.80,
+    "volume_estoque_alto": 0.80,
+    "volume_recorrencia": 0.65,
+    "conveniencia_base": 0.40,
+    "comparacao_concorrencia": 0.95,
+    "recorrencia_papel": 0.85
+  },
+  "margem_folga_acima_do_piso": 0.10,
+  "ticket_alto_multiplo_mediana": 1.4
+}

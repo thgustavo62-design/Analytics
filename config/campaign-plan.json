@@ -1,0 +1,29 @@
+{
+  "_nota": "Fase B — Campaign Builder 2.0 / Forecast. Orienta o desconto sugerido por papel, os limites do forecast de campanha inteira e os pesos do score da campanha (0–100). Determinístico. O desconto por papel é um ALVO: o motor reduz se ele levar a margem abaixo do piso (config/marketing-stock.json).",
+  "desconto_alvo_pct": {
+    "CHAMARIZ": 0.18,
+    "TRAFEGO": 0.12,
+    "HERO": 0.10,
+    "MARGEM": 0.04,
+    "COMPLEMENTAR": 0.08,
+    "DESOVA": 0.22,
+    "RECORRENCIA": 0.10,
+    "IMAGEM": 0.06,
+    "GIRO": 0.08
+  },
+  "desconto_teto_pct": 0.35,
+  "duracao_dias_padrao": 3,
+  "por_papel_max": 4,
+  "forecast": {
+    "fator_conservador": 0.5,
+    "fator_agressivo": 1.8,
+    "lift_fallback": 1.15,
+    "estoque_margem_seguranca_dias": 3
+  },
+  "score_campanha_pesos": {
+    "cobertura_papeis": 0.25,
+    "margem_prevista_positiva": 0.30,
+    "estoque_suficiente": 0.25,
+    "forca_ancora": 0.20
+  }
+}
