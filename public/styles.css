@@ -375,6 +375,16 @@ input[type=text], input[type=number], input[type=file], select.inp { width: 100%
 .pb-prods { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 @media (max-width: 900px) { .pb-grid { grid-template-columns: 1fr 1fr; } }
 
+/* ===== Marketing Calendar (Fase G) ===== */
+.cal-week { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.cal-week:last-child { border-bottom: 0; }
+.cal-week ul { margin: 4px 0 0 18px; font-size: 13px; }
+.cal-week li { margin: 2px 0; }
+.cal-occ { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.cal-occ:last-child { border-bottom: 0; }
+.cal-occ-h { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 14px; }
+.cal-motivo { margin: 5px 0; font-size: 13px; color: var(--ink); }
+
 /* ===== Análise Comercial (Fase 2) ===== */
 .scroll-x { overflow-x: auto; }
 .ac-diag h2 { font-family: inherit; }

@@ -42,5 +42,12 @@
     "fadiga_lift_inicial_min": 1.25,
     "fadiga_queda": 0.6,
     "produtos_por_categoria": 6
+  },
+  "calendario": {
+    "dias_padrao": 30,
+    "ruptura_min_produtos": 2,
+    "ruptura_receita_min_30d": 300,
+    "fluxo_alto_dias_semana": [5, 6],
+    "slots_sugeridos_max": 4
   }
 }

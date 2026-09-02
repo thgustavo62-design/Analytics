@@ -965,7 +965,7 @@
   var MKT_TABS = [
     ["resultado", "Resultado"], ["produtos", "Produtos"], ["recomendados", "Recomendados"], ["nao-anunciar", "Não anunciar"],
     ["estoque-parado", "Estoque parado"], ["cestas", "Cestas & Combos"], ["eficiencia", "Eficiência"], ["medicao", "Medição"],
-    ["playbooks", "Playbooks"], ["builder", "Montar campanha"], ["simulador", "Simulador de oferta"],
+    ["playbooks", "Playbooks"], ["calendario", "Calendário"], ["builder", "Montar campanha"], ["simulador", "Simulador de oferta"],
   ];
   function mktPeriodo() { return state.periodo || (state.periodos[0] && state.periodos[0].periodo) || null; }
   function scoreBar(s) {
@@ -1133,6 +1133,9 @@
       } else if (mkt.tab === "playbooks") {
         var pb = await mktFetch("/api/marketing/" + L + "/playbooks");
         host.innerHTML = playbooksHtml(pb);
+      } else if (mkt.tab === "calendario") {
+        var cal = await mktFetch("/api/marketing/" + L + "/calendar");
+        host.innerHTML = calendarioHtml(cal);
       } else if (mkt.tab === "builder") {
         host.innerHTML = renderBuilderForm();
         wireBuilder(ym);
@@ -1326,6 +1329,54 @@
         fad.produtos.map(function (f) {
           return "<tr><td>" + esc(f.descricao) + '</td><td data-l="Categoria">' + esc(f.categoria || "") + '</td><td class="num" data-l="Lift">' + f.lift_inicial + "× → " + f.lift_atual + '×</td><td class="num" data-l="Queda"><b style="color:var(--down)">-' + f.queda_pct + '%</b></td><td data-l="Ação"><span class="cs">' + esc(f.veredito) + "</span></td></tr>";
         }).join("") + "</tbody></table>" : '<div class="empty">Nada em fadiga.</div>') + "</div>";
+    return out;
+  }
+  // ---- Marketing Calendar (Fase G) ----
+  function calStatusChip(st) {
+    var m = { OK: ["OK", "var(--s1)"], SUSPENDER: ["SUSPENDER", "var(--down)"], RENOVAR: ["RENOVAR", "#c98a00"], REVISAR: ["REVISAR", "var(--ink-2)"] };
+    var x = m[st] || m.OK;
+    return '<span class="tag" style="background:' + x[1] + ';color:#fff">' + x[0] + "</span>";
+  }
+  function calOccCard(o) {
+    return '<div class="cal-occ"><div class="cal-occ-h"><b>' + esc(o.campanha) + "</b> " + calStatusChip(o.status) +
+      ' <span class="cs">' + esc(o.datas[0]) + (o.datas.length > 1 ? " → " + esc(o.datas[o.datas.length - 1]) : "") + "</span></div>" +
+      (o.status !== "OK" ? '<div class="cal-motivo">' + esc(o.motivo) + (o.acao ? ' <b>→ ' + esc(o.acao) + "</b>" : "") + "</div>" : "") +
+      '<div class="cs">' + esc(o.papel_do_dia) + "</div></div>";
+  }
+  function calendarioHtml(c) {
+    if (!c || c.erro) return '<div class="empty">' + esc((c && c.erro) || "erro") + "</div>";
+    var out = '<div class="cs" style="margin-bottom:6px">Próximos ' + c.janela.dias + " dias (" + esc(c.janela.inicio) + " a " + esc(c.janela.fim) + ")</div>" +
+      '<ul style="margin:0 0 12px 18px">' + c.resumo.map(function (r) { return "<li>" + esc(r) + "</li>"; }).join("") + "</ul>";
+    // semanas
+    if (c.semanas && c.semanas.length) {
+      out += '<div class="card"><div class="chead"><div class="ci gold">🗓️</div><div><h3>Semana a semana</h3></div></div>' +
+        c.semanas.map(function (w) {
+          return '<div class="cal-week"><b>' + esc(w.semana) + " → " + esc(w.fim) + "</b><ul>" +
+            w.campanhas.map(function (l) { return "<li>" + esc(l) + "</li>"; }).join("") +
+            (w.slots && w.slots.length ? '<li class="cs">+ ' + w.slots.map(esc).join(", ") + "</li>" : "") + "</ul></div>";
+        }).join("") + "</div>";
+    }
+    // ocorrências
+    out += '<div class="card"><div class="chead"><div class="ci red">📌</div><div><h3>Ocorrências e ajustes</h3></div></div>' +
+      (c.ocorrencias && c.ocorrencias.length ? c.ocorrencias.map(calOccCard).join("") : '<div class="empty">Sem campanha recorrente no calendário.</div>') + "</div>";
+    // slots
+    if (c.slots_sugeridos && c.slots_sugeridos.length) {
+      out += '<div class="card"><div class="chead"><div class="ci conc">➕</div><div><h3>Slots sugeridos</h3></div></div>' +
+        c.slots_sugeridos.map(function (s) {
+          return '<div class="cal-occ"><div class="cal-occ-h"><b>' + esc(s.tipo) + " · " + esc(s.categoria) + "</b></div>" +
+            '<div class="cal-motivo">' + esc(s.motivo) + " <b>→ " + esc(s.acao) + "</b></div></div>";
+        }).join("") + "</div>";
+    }
+    // ciclo fechado
+    out += '<div class="card"><div class="chead"><div class="ci">🔁</div><div><h3>Ciclo fechado</h3><div class="cs">medição → padrão → recomendação para a próxima rodada</div></div></div>' +
+      c.ciclo_fechado.map(function (cf) {
+        var m = cf.ultima_medicao, p = cf.padrao;
+        return '<div class="cal-occ"><div class="cal-occ-h"><b>' + esc(cf.campanha) + "</b></div>" +
+          '<div class="cs">Última medição: ' + (m ? "R$ " + brl(m.incremento_receita) + " incremental" + (m.pct_sobre_baseline != null ? " (" + pct(m.pct_sobre_baseline) + ")" : "") + (m.ROAS != null ? " · ROAS " + m.ROAS + "×" : "") + " · " + esc(m.canibalizacao) + " · confiança " + esc(m.confianca) : "—") + "</div>" +
+          '<div class="cs">Padrão: ' + (p ? "melhor dia " + esc(p.melhor_dia) + " · " + esc(p.tendencia) + " · " + p.n_ocorrencias + " ocorrências" : "sem base") + (cf.produtos_em_fadiga.length ? " · " + cf.produtos_em_fadiga.length + " em fadiga" : "") + "</div>" +
+          '<div class="cal-motivo">→ ' + esc(cf.recomendacao_proxima) + "</div></div>";
+      }).join("") + "</div>" +
+      '<div class="cs" style="margin-top:6px">' + esc(c.aviso) + "</div>";
     return out;
   }
   function renderSimForm() {

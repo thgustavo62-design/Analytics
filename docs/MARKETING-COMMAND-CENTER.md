@@ -106,9 +106,12 @@ Bloqueada até existir um **log de publicações**. Duas opções de feed (a dec
 - ou formulário na tela de Upload.
 Depois: cruzamento com métricas do Instagram + vendas → Creative Score real (Fase A) + Content Gap (nº de posts por categoria × receita/margem).
 
-### Fase G — Calendário e ciclo fechado  ·  pontos 17, 20
-- **Marketing Calendar**: próximos 30 dias sugeridos, ajustando por estoque/concorrência/venda/campanhas anteriores/sazonalidade; regra de suspender (categoria em ruptura).
-- **Closed loop de marketing**: campanha → resultado medido (Fase C) → padrão (Fase D) → entra como recomendação da próxima campanha e do calendário.
+### Fase G — Calendário e ciclo fechado  ·  pontos 17, 20  ·  ✅ ENTREGUE (2026-09-02)
+- ✅ `marketing/calendar.js` + `GET /api/marketing/:loja/calendar?dias=30`:
+  - **ocorrências** das campanhas recorrentes nos próximos N dias, cada uma **ajustada**: ruptura na categoria (≥2 produtos ≥ R$300/30d) → `SUSPENDER`; fadiga (≥2 produtos ou Playbooks "piorando") → `RENOVAR` com a lista de SKUs a trocar; esforço sem pressão (Share of Promotions) → `REVISAR`. `papel_do_dia` (CHAMARIZ no melhor dia, HERO/MARGEM o período todo).
+  - **slots sugeridos**: `DEFESA` (categoria onde a concorrência está abaixo do nosso preço e não temos campanha) e `OPORTUNIDADE` (categoria forte no Command Center sem campanha).
+  - **digest semana a semana** + **ciclo fechado** por campanha: última Medição (C) + padrão (D) + fadiga → `recomendacao_proxima` (manter / concentrar no melhor dia / renovar / adiar) + link `campaign-plan` para montar.
+- ✅ Tela: nova aba **Calendário** em Marketing. Config: bloco `calendario` em `config/campaign-plan.json`. Testes: `test/calendar.test.js` (+4 → 94).
 
 ---
 
@@ -125,10 +128,9 @@ Depois: cruzamento com métricas do Instagram + vendas → Creative Score real (
 
 ## Recomendação
 
-**Fases A–E entregues** (2026-09-02). Sobram **F** (Creative Intelligence + Content Gap) e
-**G** (Marketing Calendar + ciclo fechado). A **Fase F está bloqueada** até existir o **log de
-publicações** (um registro por post: data, horário, formato, layout, cor, headline, oferta,
-CTA, canal) — é uma decisão de feed, não de código. A **Fase G** pode ser feita já: monta o
-calendário dos próximos 30 dias combinando Command Center (A) + Playbooks (D) + Medição (C) +
-Share of Promotions (E), com regra de suspensão por ruptura, e fecha o ciclo
-campanha → medição → padrão → próxima sugestão.
+**Fases A–E e G entregues** (2026-09-02) — 6 das 7. Falta só a **F** (Creative Intelligence +
+Content Gap), **bloqueada** até existir o **log de publicações**: um registro por post com
+`data, horário, categoria, produto(s), formato (foto/carrossel/vídeo/stories), layout, cor
+dominante, headline, oferta, CTA, canal`. Duas formas de alimentar (a decidir): uma
+planilha/JSON por post na pasta `inbox/`, ou um formulário na tela de Upload. Com esse feed:
+Creative Score real no Command Center + Content Gap (nº de posts por categoria × receita/margem).

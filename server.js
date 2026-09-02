@@ -766,6 +766,20 @@ app.get("/api/marketing/:loja/campaign-measure", (req, res) => {
   }
 });
 
+// Fase G — Marketing Calendar + ciclo fechado
+const calendarEng = require("./marketing/calendar");
+app.get("/api/marketing/:loja/calendar", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const ctx = contextoMarketing(req.params.loja);
+    const r = calendarEng.calendarioMarketing(req.params.loja, { ...ctx, dias: +req.query.dias || undefined });
+    res.status(r.erro ? 404 : 200).json(r);
+  } catch (e) {
+    console.error("[api/marketing calendar]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 // Fase D — Memória de marketing: playbooks por categoria, padrões e fadiga de produto
 const padroesMkt = require("./marketing/padroes-mkt");
 app.get("/api/marketing/:loja/playbooks", (req, res) => {
