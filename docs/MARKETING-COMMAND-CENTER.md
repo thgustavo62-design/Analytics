@@ -84,10 +84,14 @@ O que entrega valor primeiro e não depende de feed novo.
 - ✅ Testes: `test/campaign-measure.test.js` (+9 → 83).
 - Nota: para as campanhas recorrentes atuais (ocupam todo o Fri/Sat/Sun ou Seg/Ter) o baseline "mesmo dia da semana" não existe → resultado sai com confiança baixa. Medição de alta confiança precisa de campanhas pontuais (rodadas em algumas semanas só).
 
-### Fase D — Memória de marketing  ·  pontos 9, 10, 14
-- `marketing/padroes-mkt.js` — agrega campanhas repetidas (produto/categoria) → dia-da-semana × faixa de desconto × lift, com significância mínima.
-- Tela **Playbooks** por categoria (melhor dia/duração/tipo/canal/lift médio).
-- Product Fatigue: nº de campanhas em 30d + lift decrescente → recomendação de troca.
+### Fase D — Memória de marketing  ·  pontos 9, 10, 14  ·  ✅ ENTREGUE (2026-09-02)
+- ✅ `marketing/padroes-mkt.js` + `GET /api/marketing/:loja/playbooks`:
+  - `padroesMarketing(loja)` — cada campanha recorrente do calendário, semana a semana: **melhor dia** (Mon vs Ter, comparação relativa → o viés do dia-da-semana se cancela), **tendência do lift** ao longo das ocorrências (melhorando / estável / **piorando = fadiga**, por slope de mínimos quadrados), lift médio (rotulado "indicativo — inclui sazonalidade do dia").
+  - `playbooks(loja)` — manual por categoria: melhor dia, dias configurados, tendência, **produtos recomendados** (top por Opportunity, com papel), **ângulo dominante** (Motor de Ângulos), veredito **pela tendência** (não pelo lift absoluto enviesado). Inclui `padroes` e `fadiga`.
+  - `fadigaProdutos(loja)` — só produtos **das categorias de campanha**, que **ainda vendem** (`lift_atual > 0` — queda a zero = ruptura/saída de linha, não fadiga), com volume mínimo (≥ 20 un nos dias de campanha) e lift caindo de ≥ 1,25× para < 60 % ao longo de blocos de 30 d → "trocar produto / ângulo / criativo / oferta".
+- ✅ Tela: nova aba **Playbooks** em Marketing (cartão por campanha com badge de tendência, barras de lift por dia, veredito, chips de produtos + ângulo; tabela de fadiga).
+- ✅ Config: bloco `padroes` em `config/campaign-plan.json`. Testes: `test/padroes-mkt.test.js` (+4 → 87).
+- Sem o histórico "faixa de desconto × lift" (as campanhas recorrentes não registram o desconto aplicado por semana) — vem quando as campanhas viram entidade com preço promocional gravado.
 
 ### Fase E — Concorrência ofensiva  ·  pontos 11, 12
 - `concorrencia-analise` ganha decisão de **contra-ataque com produto alternativo** quando o SKU atacado inviabiliza margem.
@@ -118,8 +122,8 @@ Depois: cruzamento com métricas do Instagram + vendas → Creative Score real (
 
 ## Recomendação
 
-**Fases A, B e C entregues** (2026-09-02). Próximo passo: **Fase D** — memória de marketing:
-`marketing/padroes-mkt.js` agrega campanhas repetidas (produto/categoria) → dia-da-semana ×
-faixa de desconto × lift; tela **Playbooks** por categoria; **Product Fatigue** (nº de
-campanhas em 30 d + lift decrescente → trocar produto/ângulo). Em paralelo, definir o **log de
-publicações** (Fase F), o único gargalo de meses.
+**Fases A, B, C e D entregues** (2026-09-02). Próximo passo: **Fase E** — concorrência
+ofensiva: `concorrencia-analise` decide **contra-ataque com produto alternativo** quando o SKU
+atacado inviabiliza a margem; **Share of Promotions** (nossas promoções × ofertas do
+concorrente por categoria nos últimos 30 d → "subcomunicando Bebê / esforço demais em Beleza").
+Em paralelo, definir o **log de publicações** (Fase F), o único gargalo de meses.

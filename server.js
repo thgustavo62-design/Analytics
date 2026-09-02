@@ -766,6 +766,20 @@ app.get("/api/marketing/:loja/campaign-measure", (req, res) => {
   }
 });
 
+// Fase D — Memória de marketing: playbooks por categoria, padrões e fadiga de produto
+const padroesMkt = require("./marketing/padroes-mkt");
+app.get("/api/marketing/:loja/playbooks", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const ctx = contextoMarketing(req.params.loja);
+    const pb = padroesMkt.playbooks(req.params.loja, ctx);
+    res.status(pb.erro ? 404 : 200).json(pb);
+  } catch (e) {
+    console.error("[api/marketing playbooks]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 app.post("/api/marketing/:loja/offer-simulator", express.json({ limit: "1mb" }), (req, res) => {
   if (!lojaOk(req, res)) return;
   try {

@@ -965,7 +965,7 @@
   var MKT_TABS = [
     ["resultado", "Resultado"], ["produtos", "Produtos"], ["recomendados", "Recomendados"], ["nao-anunciar", "Não anunciar"],
     ["estoque-parado", "Estoque parado"], ["cestas", "Cestas & Combos"], ["eficiencia", "Eficiência"], ["medicao", "Medição"],
-    ["builder", "Montar campanha"], ["simulador", "Simulador de oferta"],
+    ["playbooks", "Playbooks"], ["builder", "Montar campanha"], ["simulador", "Simulador de oferta"],
   ];
   function mktPeriodo() { return state.periodo || (state.periodos[0] && state.periodos[0].periodo) || null; }
   function scoreBar(s) {
@@ -1130,6 +1130,9 @@
         var md = await mktFetch("/api/marketing/" + L + "/campaign-measure");
         host.innerHTML = medicaoHtml(md);
         wireMedicao();
+      } else if (mkt.tab === "playbooks") {
+        var pb = await mktFetch("/api/marketing/" + L + "/playbooks");
+        host.innerHTML = playbooksHtml(pb);
       } else if (mkt.tab === "builder") {
         host.innerHTML = renderBuilderForm();
         wireBuilder(ym);
@@ -1281,6 +1284,50 @@
     });
   }
   function wireMedicao() { view.querySelectorAll(".med-card").forEach(wireMedCard); }
+  // ---- Playbooks por categoria (Fase D) ----
+  function pbTendChip(t) {
+    var m = { "melhorando": ["▲ melhorando", "var(--s1)"], "estável": ["= estável", "var(--ink-2)"], "piorando (possível fadiga)": ["▼ perdendo força", "var(--down)"], "sem base": ["· sem base", "var(--muted)"] };
+    var x = m[t] || m["sem base"];
+    return '<span class="tag" style="background:' + x[1] + ';color:#fff">' + x[0] + "</span>";
+  }
+  function pbDowBar(arr) {
+    if (!arr || !arr.length) return "";
+    var max = Math.max.apply(null, arr.map(function (d) { return d.lift_medio || 0; })) || 1;
+    return '<div class="pb-dows">' + arr.map(function (d) {
+      return '<div class="pb-dow"><span>' + esc(d.dia_nome) + '</span><span class="pb-bar"><i style="width:' + Math.round((d.lift_medio / max) * 100) + '%"></i></span><b>' + d.lift_medio + "×</b></div>";
+    }).join("") + "</div>";
+  }
+  function pbCard(p) {
+    return '<div class="card pb-card">' +
+      '<div class="chead"><div class="ci red">📓</div><div><h3>' + esc(p.campanha) + " " + pbTendChip(p.tendencia) + '</h3>' +
+      '<div class="cs">' + esc((p.categorias || []).join(", ")) + " · " + p.n_ocorrencias + " ocorrências na janela</div></div></div>" +
+      '<div class="pb-grid">' +
+        '<div><div class="cs">Melhor dia</div><b class="pb-big">' + esc(p.melhor_dia || "—") + "</b></div>" +
+        '<div><div class="cs">Dias configurados</div><b class="pb-big">' + esc((p.dias_configurados || []).join(", ")) + "</b></div>" +
+        '<div><div class="cs">Lift médio (indicativo)</div><b class="pb-big">' + (p.lift_medio == null ? "—" : p.lift_medio + "×") + "</b></div>" +
+        '<div><div class="cs">Ângulo dominante</div><b class="pb-big">' + esc(p.angulo_dominante || "—") + "</b></div>" +
+      "</div>" +
+      pbDowBar(p.por_dia_semana) +
+      '<div class="pb-vered">→ ' + esc(p.veredito) + "</div>" +
+      (p.produtos_recomendados && p.produtos_recomendados.length ?
+        '<div class="cs" style="margin-top:8px">Produtos para a campanha:</div><div class="pb-prods">' +
+        p.produtos_recomendados.map(function (x) { return '<span class="chip">' + (PAP_ICO[x.papel] || "") + " " + esc(x.descricao) + '</span>'; }).join("") + "</div>" : "") +
+      '<div class="cs" style="margin-top:6px">' + esc(p.lift_medio_nota || "") + "</div></div>";
+  }
+  function playbooksHtml(pb) {
+    if (!pb || pb.erro) return '<div class="empty">' + esc((pb && pb.erro) || "erro") + "</div>";
+    if (!pb.playbooks || !pb.playbooks.length) return '<div class="empty">Nenhuma campanha no calendário desta loja.</div>';
+    var out = '<div class="cs" style="margin-bottom:10px">Manual aprendido dos próprios dados: como cada campanha recorrente vem se comportando semana a semana.</div>';
+    out += pb.playbooks.map(pbCard).join("");
+    var fad = pb.fadiga || {};
+    out += '<div class="card"><div class="chead"><div class="ci gold">🥵</div><div><h3>Fadiga de produto</h3><div class="cs">' + esc(fad.aviso || "") + "</div></div></div>" +
+      ((fad.produtos && fad.produtos.length) ?
+        '<table class="tbl mobile-cards"><thead><tr><th>Produto</th><th>Categoria</th><th class="num">Lift ini → atual</th><th class="num">Queda</th><th>Ação</th></tr></thead><tbody>' +
+        fad.produtos.map(function (f) {
+          return "<tr><td>" + esc(f.descricao) + '</td><td data-l="Categoria">' + esc(f.categoria || "") + '</td><td class="num" data-l="Lift">' + f.lift_inicial + "× → " + f.lift_atual + '×</td><td class="num" data-l="Queda"><b style="color:var(--down)">-' + f.queda_pct + '%</b></td><td data-l="Ação"><span class="cs">' + esc(f.veredito) + "</span></td></tr>";
+        }).join("") + "</tbody></table>" : '<div class="empty">Nada em fadiga.</div>') + "</div>";
+    return out;
+  }
   function renderSimForm() {
     return '<div class="card form-card"><form id="simForm"><fieldset><legend>Produto e oferta</legend><div class="rowf">' +
       '<div><label class="f">EAN</label><input class="inp" name="ean" placeholder="7891..." required></div>' +

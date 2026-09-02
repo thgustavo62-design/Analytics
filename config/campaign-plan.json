@@ -32,5 +32,15 @@
     "amostra_min_dias_baseline": 6,
     "canibalizacao_parcial": 0.15,
     "canibalizacao_alta": 0.5
+  },
+  "padroes": {
+    "janela_dias": 120,
+    "min_ocorrencias": 3,
+    "tendencia_slope_relevante": 0.06,
+    "bloco_dias": 30,
+    "min_blocos": 3,
+    "fadiga_lift_inicial_min": 1.25,
+    "fadiga_queda": 0.6,
+    "produtos_por_categoria": 6
   }
 }

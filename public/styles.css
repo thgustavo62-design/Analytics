@@ -361,6 +361,20 @@ input[type=text], input[type=number], input[type=file], select.inp { width: 100%
 .med-form .btn { padding: 8px 14px; }
 .med-ret { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
 
+/* ===== Playbooks (Fase D) ===== */
+.pb-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0; }
+.pb-grid .cs { font-size: 10.5px; }
+.pb-big { font-size: 15px; font-weight: 800; letter-spacing: -.01em; }
+.pb-dows { display: flex; flex-direction: column; gap: 5px; margin: 8px 0; }
+.pb-dow { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.pb-dow span:first-child { flex: 0 0 68px; color: var(--ink-2); }
+.pb-bar { flex: 1; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.pb-bar i { display: block; height: 100%; background: var(--brand); }
+.pb-dow b { flex: 0 0 44px; text-align: right; }
+.pb-vered { margin: 8px 0; font-weight: 600; color: var(--brand-2); font-size: 13px; }
+.pb-prods { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+@media (max-width: 900px) { .pb-grid { grid-template-columns: 1fr 1fr; } }
+
 /* ===== Análise Comercial (Fase 2) ===== */
 .scroll-x { overflow-x: auto; }
 .ac-diag h2 { font-family: inherit; }
