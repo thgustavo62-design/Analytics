@@ -1,0 +1,29 @@
+{
+  "_nota": "Fase A — papel de marketing por produto. Regras determinísticas aplicadas em marketing/roles.js sobre o retorno de marketing-product-analytics.analisarProdutos(). Cada produto recebe 1 papel primário + papéis secundários, com evidência. A IA não escolhe papel. Ajuste os limiares aqui sem tocar no código.",
+  "papeis": {
+    "CHAMARIZ":    { "rotulo": "Chamariz",    "acao": "campanha de categoria com preço agressivo — puxa fluxo para a loja", "icone": "🎯" },
+    "TRAFEGO":     { "rotulo": "Tráfego",     "acao": "topo do post / stories — produto de grande procura, gera visita", "icone": "🧲" },
+    "HERO":        { "rotulo": "Hero",        "acao": "produto principal da campanha — foco de conversão", "icone": "🥇" },
+    "MARGEM":      { "rotulo": "Margem",      "acao": "anunciar sem desconto pesado — sustenta a rentabilidade da campanha", "icone": "💰" },
+    "COMPLEMENTAR":{ "rotulo": "Complementar","acao": "combo ao lado de um Hero da mesma cesta — eleva o ticket", "icone": "➕" },
+    "DESOVA":      { "rotulo": "Desova",      "acao": "liquidação / combo para girar estoque em excesso", "icone": "📦" },
+    "RECORRENCIA": { "rotulo": "Recorrência", "acao": "comunicação de recompra ('leve todo mês') — favorece frequência", "icone": "🔁" },
+    "IMAGEM":      { "rotulo": "Imagem",      "acao": "conteúdo visual / posicionamento — interessante para comunicação de marca", "icone": "✨" },
+    "GIRO":        { "rotulo": "Giro",        "acao": "sem papel de campanha destacado — vende no fluxo normal da loja", "icone": "•" }
+  },
+  "limiares": {
+    "chamariz_percentil_cupons": 0.7,
+    "chamariz_preco_max": 25,
+    "trafego_percentil_cupons": 0.8,
+    "hero_percentil_receita": 0.8,
+    "margem_pct_forte": 0.32,
+    "complementar_percentil_receita": 0.35,
+    "complementar_cupons_min": 2,
+    "desova_cobertura_dias": 90,
+    "recorrencia_cupons_por_unidade_min": 0.75,
+    "recorrencia_cupons_min_30d": 6,
+    "imagem_tendencia_pct": 20
+  },
+  "categorias_recorrencia": ["Fraldas", "Leite Infantil", "Higiene", "Higiene e Beleza", "Suplementos", "Medicamentos/Outros", "Genéricos", "Continuo", "Contínuo"],
+  "categorias_imagem": ["Perfumaria", "Beleza", "Higiene e Beleza", "Dermocosmético", "Dermocosmeticos", "Maquiagem", "Skincare", "Cabelos"]
+}

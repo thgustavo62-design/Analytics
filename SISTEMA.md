@@ -18,6 +18,11 @@ Recebe documentos brutos das farmácias (relatório de vendas em PDF, planilha d
 estoque+custo+preço, coleta de concorrentes, métricas de Instagram) jogados numa pasta,
 processa sozinho e entrega:
 
+- **Command Center** (Fase A) — tela de abertura: "o que anunciar hoje" (ranqueado, com papel
+  de marketing + ação + motivos e evidência) × "o que NÃO anunciar" (ruptura / margem / sem
+  giro + substituto) + alertas. Papel automático por produto (CHAMARIZ / TRÁFEGO / HERO /
+  MARGEM / COMPLEMENTAR / DESOVA / RECORRÊNCIA / IMAGEM) e sub-scores Tráfego / Lucro / Desova /
+  Campanha derivados do Opportunity Score (Criativo pendente da Fase F)
 - **Painel** de resultados (faturamento, ticket, categorias, top produtos, Instagram, concorrência)
 - **Marketing Product Intelligence** — por produto: giro 7–90d, tendência, dias de cobertura,
   margem, classe (HERO/TRÁFEGO/…), **Opportunity Score 0–100** com breakdown, do-not-promote
@@ -79,7 +84,7 @@ do Supabase (Vercel + GitHub Pages).
    ┌─ frontend local ─────────┐   ┌─ publicação (a cada ingestão) ─────────┐
    │ public/ (vanilla JS,     │   │ coletar-tudo.js -> publicar.js         │
    │ SVG à mão, sem framework) │   │   -> publico/index.html (autocontido,  │
-   │ 9 telas                   │   │      lê Supabase ao vivo + fallback)   │
+   │ 10 telas                  │   │      lê Supabase ao vivo + fallback)   │
    └──────────────────────────┘   │ supabase-sync.js -> analytics_snapshots │
                                   └───────────┬───────────────────────────┘
                                               v
@@ -116,6 +121,9 @@ do Supabase (Vercel + GitHub Pages).
 | `concorrencia-analise.js` | panorama, por concorrente (pressão + categorias atacadas + exemplos), por categoria (ALTA/MÉDIA/BAIXA), **"onde reagir"** priorizado por relevância × quão abaixo × dá pra cobrir (margem real), resumo + ações |
 | `campanhas.js` | **Fase 3** — `eficienciaCalendario` (DEMAND_LIFT dias-de-campanha vs. demais, veredito EXCELENTE→DESTRUTIVA; nunca DESTRUTIVA sem custo), **Campaign Builder** (elenco por papel), **Offer Simulator** (cenários conservador/provável/agressivo, nunca promete venda) |
 | `basket.js` | **Fase 4** — cesta por cupom (`data+lancamento`): support/confidence/lift; corte de ruído (mínimo por produto isolado); `centralidade()`; `combos()` |
+| `marketing/roles.js` | **Fase A** — papel de marketing por produto: 1 primário + secundários (CHAMARIZ / TRÁFEGO / HERO / MARGEM / COMPLEMENTAR / DESOVA / RECORRÊNCIA / IMAGEM / GIRO), com força 0..1, racional e confiança. Regras em `config/marketing-roles.json`. RECORRÊNCIA/IMAGEM são proxies (confiança baixa). |
+| `marketing/scores.js` | **Fase A** — sub-scores: `traffic_score`, `profit_score` (null sem custo), `clearance_score` (null sem estoque), `campaign_score` (Opportunity, penalizado se do-not-promote), `creative_score` (**sempre null** até a Fase F) + interpretação (ex.: "bom para atração, fraco em rentabilidade") |
+| `marketing/command-center.js` | **Fase A** — `commandCenter(loja)`: plano do dia de uma loja — `anunciar[]` (ranqueado, com papel + ação + 3 motivos com evidência + sub-scores), `nao_anunciar[]` (motivo curto + motivos + substituto), `alertas[]` (ruptura com venda relevante, categoria sob ataque, capital parado, feed faltando) |
 
 ### Camada de inteligência (`intelligence/`)
 | Arquivo | Papel |
@@ -194,7 +202,8 @@ POST `/analise-comercial/upload` (token próprio). `VA_NO_AUTH=1` desliga (só l
 **Leitura base** — `GET /api/lojas`, `/api/periodos/:loja`, `/api/analise/:loja/:periodo` (Painel),
 `/api/catalogo/:loja[/produtos]`, `/api/ingest-log`.
 
-**Marketing** — `GET /api/marketing/:loja/:periodo/`{`resultado`, `produtos`, `recommended-products`,
+**Marketing** — `GET /api/marketing/:loja/command-center` (Fase A — plano do dia) ·
+`GET /api/marketing/:loja/:periodo/`{`resultado`, `produtos`, `recommended-products`,
 `do-not-promote`, `stagnant-stock`, `baskets`, `combos`, `campaign-builder`, `products/:ean`} ·
 `GET /api/marketing/:loja/campaign-efficiency` · `POST /api/marketing/:loja/offer-simulator` ·
 CRUD `GET/POST/PATCH/DELETE /api/marketing/:loja/campaigns[/:id]`.
@@ -224,6 +233,7 @@ CRUD `GET/POST/PATCH/DELETE /api/marketing/:loja/campaigns[/:id]`.
 
 | Tela (sidebar) | Conteúdo |
 |---|---|
+| **Command Center** (Fase A · tela de abertura) | Alertas (ruptura com venda relevante / concorrência atacando / capital parado / feed faltando) · linha de resumo (analisados · anunciáveis · bloqueados · mix de papéis) · **🔥 O que anunciar hoje** — cards ranqueados por Opportunity: papel + ação sugerida, mini-barras dos sub-scores (Opport./Tráfego/Lucro/Desova/Campanha/Criativo), interpretação, 3 motivos com evidência, chips de tendência/cobertura/margem · **⛔ O que NÃO anunciar** — motivo curto + motivos com evidência + substituto |
 | **Painel** | 4 cartões de resumo + abas: Visão Geral · Vendas · Redes Sociais · Concorrência · Categorias · Top Produtos · Tendência. Gráficos SVG (combo barras+linha, donut, dia-da-semana, tendência). |
 | **Marketing** (9 abas) | **Resultado** (KPIs de lucro/capital parado/risco + matriz visual + tabelas top-lucro / vende-e-não-lucra / custo-a-conferir / peso-morto / ruptura / sumindo) · Produtos · Recomendados · Não anunciar · Estoque parado · Cestas & Combos · Eficiência · Montar campanha · Simulador de oferta |
 | **Concorrentes** | Botão **➕ Registrar oferta** (formulário rápido **ou** "colar encarte/post" → preview → salvar em lote) · KPIs (ofertas, abaixo do nosso, desconto médio) · Leitura automática + ações · **Onde reagir** (priorizado, com veredito) · Por concorrente (pressão + categorias atacadas) · Pressão por categoria |
@@ -233,6 +243,8 @@ CRUD `GET/POST/PATCH/DELETE /api/marketing/:loja/campaigns[/:id]`.
 | **Upload de dados** | envio manual (loja, mês, PDF, form do Instagram, xlsx) |
 | **Histórico** | todos os meses processados por loja |
 | **Configurações** | pasta `inbox/` + log dos últimos arquivos + card "Catálogo (EAN)" com freshness de estoque/custo/preço |
+
+A tela de abertura passou a ser o **Command Center** (`#command`); Painel segue no menu.
 
 **Mobile** — barra de navegação **fixa embaixo** (ícone + label), topbar compacta (marca +
 seletores lado a lado), tabelas viram cartões (rótulo por linha) ou rolam dentro do card,
@@ -251,6 +263,7 @@ KPIs/matriz em 2 colunas.
 | `concorrentes.json` | pistas de nome de arquivo + sinônimos de coluna da coleta de concorrente |
 | `marketing-stock.json` | limiares de dias de cobertura (ruptura/atenção/normal/oportunidade/parado) por categoria; `margem_pct_minima_para_anunciar`, `margem_pct_lucrativo` |
 | `opportunity-score.json` | **pesos dos 7 componentes** do Opportunity Score + limiares de rótulo e de classe |
+| `marketing-roles.json` | **Fase A** — limiares das regras de papel por produto + categorias de recorrência/imagem + rótulo/ação/ícone de cada papel |
 | `basket-analysis.json` | mínimos de amostra/support/confidence/lift da cesta |
 | `intelligence.json` | pesos do Priority Engine + limiares dos 11 detectores + prefixos de código |
 | `usuarios.json` | `{ "Gustavo": "100603" }` — login do site (local + portão do site estático) |
@@ -318,12 +331,13 @@ leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 
 ## 11. Testes
 
-`npm test` (`node --test`) — **53 testes**, arquivos em separado (`process.env.VA_DB_PATH`
+`npm test` (`node --test`) — **63 testes**, arquivos em separado (`process.env.VA_DB_PATH`
 isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\Admin\Downloads\`.
 
 | Arquivo | Cobre |
 |---|---|
 | `vendas.test.js` | soma == "Total:" impresso (agosto das 2 lojas), ARREDONDAMENTO negativo, aborta quando não bate |
+| `command-center.test.js` | **Fase A** — papel por produto (HERO / DESOVA / GIRO fallback / supressão por do-not-promote), sub-scores (profit null sem custo, clearance null sem estoque, creative sempre null, campaign cortado se bloqueado), plano do dia ranqueado com evidência e papel válido |
 | `concorrentes.test.js` | filtro de marca, parse de validade/preço, resolução de loja por CNPJ |
 | `catalogo.test.js` | `normalizarEan`, `sincronizarProdutosDeVendas`, histórico de custo, planilha combinada estoque+custo+preço |
 | `marketing-product.test.js` | janelas monotônicas, clamp de tendência, 7 componentes do score somando ao score, confiança < 1 sem feed, classes, do-not-promote |
@@ -338,10 +352,15 @@ isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\A
 
 ## 12. Limitações conhecidas / próximos passos
 
-Ver [`docs/AUDITORIA.md`](docs/AUDITORIA.md) para o gap analysis completo vs. o brief de
-"Decision Intelligence" e o plano em 7 fases. Faltam, principalmente:
+Ver [`docs/AUDITORIA.md`](docs/AUDITORIA.md) (Decision Intelligence, 7 fases) e
+[`docs/MARKETING-COMMAND-CENTER.md`](docs/MARKETING-COMMAND-CENTER.md) (brief de marketing,
+7 fases — **Fase A entregue**). Faltam, principalmente:
 
-- **Nova Home / Central de Decisão** (hoje o Painel é o dashboard antigo)
+- **Campaign Builder 2.0** + motor de ângulos + forecast de campanha inteira (Fase B do plano de marketing)
+- **Medição de campanha** — incremental real, ROAS, ROI-sobre-margem, canibalização (Fase C)
+- **Playbooks por categoria** + product fatigue (Fase D) · **Share of Promotions** (Fase E)
+- **Creative Intelligence** + Content Gap — travado no feed de log de publicações (Fase F)
+- **Marketing Calendar** dinâmico + ciclo fechado (Fase G)
 - **Forecast Engine** (previsão 7/15/fechamento + probabilidade de meta)
 - **Meta Engine** (metas em `config/lojas.json` → realizado/gap/venda-diária-necessária)
 - Card único **R$ potencial identificado / R$ em risco** consolidado

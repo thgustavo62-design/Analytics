@@ -7,6 +7,7 @@ const MK_MARKETING = {
   "produtos": "produtos", "recommended-products": "recommended", "do-not-promote": "dnp",
   "stagnant-stock": "parado", "baskets": "baskets", "combos": "combos",
   "campaign-efficiency": "eficiencia", "campaign-builder": "builder", "resultado": "resultado",
+  "command-center": "commandCenter",
 };
 const MK_INTEL = {
   "war-room": "warRoom", "signals": "signals", "investigations": "investigations",
@@ -49,6 +50,7 @@ async function coletarLoja(get, nome) {
   let intelligence = null;
   if (ultimo) {
     marketing = {
+      commandCenter: await get(`/api/marketing/${L}/command-center`),
       produtos: await get(`/api/marketing/${L}/${ultimo}/produtos?limite=90`),
       recommended: await get(`/api/marketing/${L}/${ultimo}/recommended-products`),
       dnp: await get(`/api/marketing/${L}/${ultimo}/do-not-promote`),

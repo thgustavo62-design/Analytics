@@ -55,13 +55,14 @@ Esforço: **S** ≈ 1 sessão · **M** ≈ 2–3 · **L** ≈ 4+.
 
 ## Ordem proposta (7 fases)
 
-### Fase A — A tela e a base de decisão  ·  pontos 1, 2, 3, 19
+### Fase A — A tela e a base de decisão  ·  pontos 1, 2, 3, 19  ·  ✅ ENTREGUE (2026-09-02)
 O que entrega valor primeiro e não depende de feed novo.
-- `marketing/roles.js` — papel primário + secundários por produto (regra explícita, config em `config/marketing-roles.json`).
-- `marketing/scores.js` — Traffic / Profit / Clearance / Campaign Score a partir dos 7 componentes que já existem (Creative Score fica `null` + flag até a Fase F).
-- Rota `GET /api/marketing/:loja/command-center` — plano do dia: N recomendados (ranqueados, com motivos + score + papel + ação sugerida) + M "não anunciar" (com motivo: ruptura/margem/cobertura) + alertas.
-- Tela **Command Center** como primeira aba de Marketing (ou nova entrada na sidebar acima de Painel), consolidando as 2 lojas.
-- Testes: papel é determinístico; score sub-componentes somam coerente; "não anunciar" nunca lista item em ruptura como recomendado.
+- ✅ `marketing/roles.js` — papel primário + secundários por produto (regra explícita, config `config/marketing-roles.json`): CHAMARIZ / TRÁFEGO / HERO / MARGEM / COMPLEMENTAR / DESOVA / RECORRÊNCIA / IMAGEM / GIRO, com força 0..1, racional e confiança (RECORRÊNCIA e IMAGEM são proxies, confiança 0.45).
+- ✅ `marketing/scores.js` — `traffic_score`, `profit_score` (null sem custo), `clearance_score` (null sem estoque), `campaign_score` (Opportunity, cortado se do-not-promote), `creative_score` (**null** até a Fase F) + interpretação em texto.
+- ✅ `GET /api/marketing/:loja/command-center` — plano do dia: `anunciar[]` (ranqueado por Opportunity, com papel + ação + 3 motivos com evidência + sub-scores) + `nao_anunciar[]` (motivo curto + motivos + substituto) + `alertas[]` (ruptura com venda relevante ≥ R$ 80/30d, categoria sob ataque, capital parado, feed faltando). Publicado no site (`coletar-tudo` + `supabase-sync`).
+- ✅ Tela **Command Center** — nova entrada na sidebar, **virou a tela de abertura** (`#command`); Painel segue no menu. Mobile: cards com mini-barras de sub-score.
+- ✅ Testes: `test/command-center.test.js` (+10, total 63) — papel determinístico, sub-scores honestos (null sem feed), plano ranqueado com evidência, pseudo-produtos fora.
+- Pendente dentro da fase: visão **consolidada das 2 lojas** numa só tela (hoje é por loja via seletor).
 
 ### Fase B — Da lista ao plano executável  ·  pontos 4, 5, 16, 18
 - `marketing/angulos.js` + `config/angulos.json` — biblioteca (preço/urgência/volume/conveniência/comparação/recorrência) e seleção por dado.
@@ -108,7 +109,7 @@ Depois: cruzamento com métricas do Instagram + vendas → Creative Score real (
 
 ## Recomendação
 
-Começar pela **Fase A**. Ela entrega a tela que o brief pede como nº 1, usa só dado que já
-temos, e vira a moldura onde as fases B–G encaixam. Em paralelo, definir o **log de
-publicações** (Fase F) para o dado começar a acumular — é o único gargalo de meses, não de
-código.
+**Fase A entregue** (2026-09-02). Próximo passo natural: **Fase B** (Campaign Builder 2.0 +
+motor de ângulos + combos com margem + forecast de campanha inteira) — transforma a lista do
+Command Center num plano de campanha executável. Em paralelo, definir o **log de publicações**
+(Fase F) para o dado começar a acumular — é o único gargalo de meses, não de código.

@@ -1201,6 +1201,79 @@
     });
   }
 
+  // ---------- Command Center (Fase A) ----------
+  var PAP_ICO = { CHAMARIZ: "🎯", TRAFEGO: "🧲", HERO: "🥇", MARGEM: "💰", COMPLEMENTAR: "➕", DESOVA: "📦", RECORRENCIA: "🔁", IMAGEM: "✨", GIRO: "•" };
+  var ALERTA_COR = { ALTO: ["#c0392b", "#fdecec"], ATENCAO: ["#8a5a00", "#fff6e6"], INFORMATIVO: ["var(--ink-2)", "#f3f4f6"] };
+  function ssPill(label, val) {
+    var v = val == null ? null : Math.max(0, Math.min(100, val));
+    var c = v == null ? "var(--muted)" : v >= 65 ? "var(--s1)" : v >= 40 ? "var(--s3)" : "var(--muted)";
+    return '<div class="ss"><span>' + esc(label) + '</span><span class="ssb"><i style="width:' + (v == null ? 0 : v) + "%;background:" + c + '"></i></span><b>' + (v == null ? "—" : Math.round(v)) + "</b></div>";
+  }
+  function ccWhy(motivos) {
+    return '<ul class="cc-why">' + (motivos || []).map(function (m) {
+      return "<li>" + esc(m.texto) + ' <span class="cs">(' + esc(m.evidencia.campo) + " · " + esc(m.evidencia.periodo) + ")</span></li>";
+    }).join("") + "</ul>";
+  }
+  function ccCard(p, i) {
+    var s = p.sub_scores || {};
+    var cob = p.cobertura_rotulo === "SEM_ESTOQUE" ? "s/ estoque" :
+      (p.cobertura_infinita ? "∞" : (p.dias_cobertura == null ? "—" : p.dias_cobertura + "d")) + " · " + p.cobertura_rotulo;
+    return '<div class="cc-card"><div class="cc-rank">' + (i + 1) + "</div><div class=\"cc-main\">" +
+      '<div class="cc-h"><b>' + esc(p.descricao) + '</b> <span class="chip">' + (PAP_ICO[p.papel_primario] || "") + " " + esc(p.papel_primario) + "</span>" +
+      (p.papeis && p.papeis.length > 1 ? ' <span class="cs">+ ' + p.papeis.slice(1).map(esc).join(", ") + "</span>" : "") + "</div>" +
+      '<div class="cs">' + esc(p.categoria || "") + (p.ean ? " · EAN " + p.ean : "") + "</div>" +
+      '<div class="cc-act">→ ' + esc(p.acao_sugerida) + "</div>" +
+      '<div class="cc-scores">' +
+        ssPill("Opport.", p.opportunity_score) +
+        ssPill("Tráfego", s.traffic_score && s.traffic_score.valor) +
+        ssPill("Lucro", s.profit_score && s.profit_score.valor) +
+        ssPill("Desova", s.clearance_score && s.clearance_score.valor) +
+        ssPill("Campanha", s.campaign_score && s.campaign_score.valor) +
+        ssPill("Criativo", null) +
+      "</div>" +
+      '<div class="cc-interp">' + esc(p.interpretacao || "") + "</div>" +
+      ccWhy(p.motivos) +
+      '<div class="cc-tags">' + tendChip(p.tendencia || { rotulo: "SEM_BASE" }) +
+      ' <span class="tag">' + esc(cob) + "</span> " +
+      (p.margem_pct == null ? '<span class="cs">s/ custo</span>' : '<span class="tag">margem ' + pct(p.margem_pct * 100) + "</span>") +
+      (s.profit_score && s.profit_score.ausente ? ' <span class="cs">lucro: ' + esc(s.profit_score.ausente) + "</span>" : "") +
+      "</div></div></div>";
+  }
+  function ccNo(p) {
+    return '<div class="cc-no"><div><b>' + esc(p.descricao) + '</b> <span class="tag bad">' + esc(p.motivo_curto) + '</span> <span class="cs">' + esc(p.categoria || "") + "</span></div>" +
+      ccWhy(p.motivos) +
+      (p.substituto ? '<div class="cs" style="margin-top:4px">↳ usar no lugar: <b>' + esc(p.substituto.descricao) + "</b> (opportunity " + p.substituto.opportunity_score + ")</div>" : "") +
+      "</div>";
+  }
+  async function renderCommand() {
+    state.view = "command";
+    document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === "command"); });
+    if (!state.loja) { view.innerHTML = '<div class="page-head"><div><h1>🔥 Command Center</h1></div></div><div class="empty">Suba um relatório de vendas primeiro.</div>'; return; }
+    view.innerHTML = '<div class="page-head"><div><h1>🔥 Command Center</h1><div class="sub">' + esc(state.loja) + " · o que o marketing deve fazer hoje · camada determinística (a IA não inventa número)</div></div></div>" +
+      '<div id="ccBody"><div class="empty">Carregando…</div></div>';
+    var host = view.querySelector("#ccBody");
+    try {
+      var d = await getJSON("/api/marketing/" + encodeURIComponent(state.loja) + "/command-center");
+      if (d.erro) { host.innerHTML = '<div class="empty">' + esc(d.erro) + "</div>"; return; }
+      var pd = d.plano_do_dia || {};
+      var rz = d.resumo || {};
+      var mix = Object.keys(rz.mix_papeis || {}).map(function (k) { return (rz.mix_papeis[k]) + " " + k; }).join(" · ");
+      var out = feedsAviso(d);
+      out += (pd.alertas || []).map(function (a) {
+        var c = ALERTA_COR[a.nivel] || ALERTA_COR.INFORMATIVO;
+        return '<div class="cc-alert" style="color:' + c[0] + ";background:" + c[1] + '"><b>' + esc(a.nivel) + "</b><span>" + esc(a.texto) + "</span></div>";
+      }).join("");
+      out += '<div class="cs" style="margin:10px 0 4px">' + int(rz.total_analisado) + " produtos analisados · " + int(rz.anunciaveis) + " anunciáveis · " + int(rz.bloqueados) + " bloqueados" + (mix ? " · mix: " + esc(mix) : "") + "</div>";
+      out += '<div class="cc-sec-h">🔥 O que anunciar hoje</div>';
+      out += (pd.anunciar && pd.anunciar.length) ? pd.anunciar.map(ccCard).join("") : '<div class="empty">Nada acima do piso de oportunidade neste período.</div>';
+      out += '<div class="cc-sec-h">⛔ O que NÃO anunciar</div>';
+      out += (pd.nao_anunciar && pd.nao_anunciar.length) ? pd.nao_anunciar.map(ccNo).join("") : '<div class="empty">Nenhum produto bloqueado com os feeds atuais.</div>';
+      host.innerHTML = out;
+    } catch (e) {
+      host.innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>";
+    }
+  }
+
   // ---------- Intelligence (Fases 5–12) ----------
   var itl = { tab: "warroom", cache: {} };
   var ITL_TABS = [
@@ -1601,11 +1674,12 @@
   }
 
   // ---------- nav ----------
-  var VIEWS = ["painel", "marketing", "concorrentes", "intelligence", "conexoes", "analise", "upload", "historico", "config"];
+  var VIEWS = ["command", "painel", "marketing", "concorrentes", "intelligence", "conexoes", "analise", "upload", "historico", "config"];
   function go(v) {
     state.view = v;
     document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === v); });
-    if (v === "painel") { if (state.data) renderPainel(); else loadAnalise(); }
+    if (v === "command") renderCommand();
+    else if (v === "painel") { if (state.data) renderPainel(); else loadAnalise(); }
     else if (v === "marketing") { mkt.cache = {}; renderMarketing(); }
     else if (v === "concorrentes") renderConcorrentes();
     else if (v === "intelligence") { itl.cache = {}; renderIntelligence(); }
@@ -1633,7 +1707,8 @@
     selLoja.addEventListener("change", function () {
       state.loja = selLoja.value;
       LS.setItem("va_loja", state.loja);
-      if (state.view === "analise") { renderAnalise(); loadPeriodos(); }
+      if (state.view === "command") { renderCommand(); loadPeriodos(); }
+      else if (state.view === "analise") { renderAnalise(); loadPeriodos(); }
       else if (state.view === "conexoes") { renderConexoes(); loadPeriodos(); }
       else if (state.view === "marketing") { mkt.cache = {}; loadPeriodos().then(function () { renderMarketing(); }); }
       else if (state.view === "intelligence") { itl.cache = {}; loadPeriodos().then(function () { renderIntelligence(); }); }
@@ -1654,12 +1729,12 @@
       a.addEventListener("click", function (e) { e.preventDefault(); location.hash = a.getAttribute("data-view"); });
     });
     window.addEventListener("hashchange", function () {
-      var v = (location.hash || "#painel").slice(1);
+      var v = (location.hash || "#command").slice(1);
       if (VIEWS.indexOf(v) >= 0) go(v);
     });
     loadLojas().then(function () {
-      var v = (location.hash || "#painel").slice(1);
-      go(VIEWS.indexOf(v) >= 0 ? v : "painel");
+      var v = (location.hash || "#command").slice(1);
+      go(VIEWS.indexOf(v) >= 0 ? v : "command");
     }).catch(function (e) {
       if (e.status === 401) { location.href = "/login"; return; }
       view.innerHTML = '<div class="empty">Erro ao iniciar: ' + esc(e.message) + "</div>";

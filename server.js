@@ -691,6 +691,21 @@ app.get("/api/marketing/:loja/:periodo/combos", (req, res) => {
   }
 });
 
+// Fase A — Marketing Command Center: "o que anunciar hoje / o que não" + plano do dia
+const commandCenterEng = require("./marketing/command-center");
+app.get("/api/marketing/:loja/command-center", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const ctx = contextoMarketing(req.params.loja);
+    if (req.query.n) ctx.limiteAnunciar = Math.max(1, Math.min(60, +req.query.n));
+    const r = commandCenterEng.commandCenter(req.params.loja, ctx);
+    res.status(r.erro ? 404 : 200).json(r);
+  } catch (e) {
+    console.error("[api/marketing command-center]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 // Fase 3 — campanhas: eficiência, builder, simulador
 app.get("/api/marketing/:loja/campaign-efficiency", (req, res) => {
   if (!lojaOk(req, res)) return;
