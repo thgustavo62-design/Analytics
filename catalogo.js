@@ -11,7 +11,11 @@ const path = require("path");
 const XLSX = require("xlsx");
 const { normalize } = require("./match");
 const { classificar } = require("./classify");
+const { categoriaCanonica, mapGrupoErp } = require("./categorias");
 const db = require("./db");
+
+// categoria por palavra-chave, já resolvida para o vocabulário canônico
+const classificarCanonico = (desc) => categoriaCanonica(classificar(desc));
 
 const CFG = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "catalogo.json"), "utf8"));
 const LOJAS = require("./db").LOJAS_VALIDAS;
@@ -68,7 +72,8 @@ function sincronizarProdutosDeVendas(periodoId) {
         ean: p.ean,
         descricao: p.descricao,
         descricao_normalizada: p.ean ? normalize(p.descricao) : p.norm,
-        categoria: classificar(p.descricao),
+        categoria: classificarCanonico(p.descricao),
+        categoria_fonte: "vendas",
         fonte: "vendas",
         primeira_venda: p.primeira,
         ultima_venda: p.ultima,
@@ -181,6 +186,8 @@ function ingestPlanilhaProduto(filePath) {
   let aplicadas = 0;
   let semProduto = 0;
   let baixaConfianca = 0;
+  let catErp = 0;
+  const grupoNaoMapeado = new Set();
   const extra = { estoque: 0, preco: 0, preco_promocional: 0, custo: 0 }; // sub-tipos vindos do MESMO arquivo
   const lojasIds = {};
   for (const l of LOJAS) lojasIds[l] = db.lojaId(l);
@@ -245,6 +252,21 @@ function ingestPlanilhaProduto(filePath) {
       if (!resolvido) { semProduto++; continue; }
       if (resolvido.confianca < 1) baixaConfianca++;
 
+      // categoria REAL do ERP (grupo da planilha) + princípio ativo + registro MS
+      if (tipo === "estoque" && (idx.grupo != null || idx.principio_ativo != null || idx.registro_ms != null)) {
+        const grupoRaw = idx.grupo != null ? String(row[idx.grupo] ?? "").trim() : null;
+        const mapa = mapGrupoErp(grupoRaw) || {};
+        const erp = db.setProdutoErp(resolvido.produtoId, {
+          categoria: mapa.categoria || null,
+          subcategoria: mapa.subcategoria || null,
+          classe_comercial: mapa.classe_comercial || null,
+          principio_ativo_cod: idx.principio_ativo != null ? (String(row[idx.principio_ativo] ?? "").trim() || null) : null,
+          registro_ms: idx.registro_ms != null ? (String(row[idx.registro_ms] ?? "").trim() || null) : null,
+        });
+        if (erp && erp.categoria_aplicada) catErp++;
+        else if (grupoRaw && !mapa.categoria) grupoNaoMapeado.add(grupoRaw);
+      }
+
       const alvos = idx.loja != null
         ? [lojasIds[String(row[idx.loja] ?? "").trim()] || lojasIds[lojaDoNome(String(row[idx.loja] ?? "").toLowerCase()) || ""]]
         : lojasAplicar.map((l) => lojasIds[l]);
@@ -266,8 +288,10 @@ function ingestPlanilhaProduto(filePath) {
     linhas_aplicadas: aplicadas,
     sem_produto: semProduto,
     casados_por_nome: baixaConfianca,
+    categoria_erp_aplicada: catErp,
+    grupos_erp_nao_mapeados: [...grupoNaoMapeado].slice(0, 20),
     feeds_do_arquivo: tipo === "estoque" ? extra : undefined,
   };
 }
 
-module.exports = { sincronizarProdutosDeVendas, ingestPlanilhaProduto, detectarTipoPlanilha, normalizarEan };
+module.exports = { sincronizarProdutosDeVendas, ingestPlanilhaProduto, detectarTipoPlanilha, normalizarEan, classificarCanonico };

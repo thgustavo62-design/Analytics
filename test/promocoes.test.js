@@ -84,7 +84,7 @@ test("integração: Share of Promotions usa a tabela de planejamento", { skip: P
   const conc = require("../concorrencia-analise").analisarConcorrencia(rv.loja);
   assert.ok(conc.share_promocoes, "sem share_promocoes");
   assert.match(conc.share_promocoes.fonte_nossas, /tabela de planejamento/i);
-  // DIPIRONA (Medicamentos/Outros, sem prazo) deve contar como ação nossa
-  const med = conc.share_promocoes.por_categoria.find((c) => /Medicamentos\/Outros/.test(c.categoria));
-  assert.ok(med && med.nossas_promocoes >= 1 && med.nossas_exemplos.length >= 1);
+  // DIPIRONA (Medicamentos/Outros -> canônico "Medicamento", sem prazo) deve contar como ação nossa
+  const med = conc.share_promocoes.por_categoria.find((c) => /^Medicamento/.test(c.categoria));
+  assert.ok(med && med.nossas_promocoes >= 1 && med.nossas_exemplos.length >= 1, JSON.stringify(med));
 });

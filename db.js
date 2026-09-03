@@ -26,6 +26,10 @@ for (const stmt of [
   "ALTER TABLE vendas_transacoes ADD COLUMN cli_id TEXT",
   "ALTER TABLE concorrencia_ofertas ADD COLUMN data_coleta TEXT",
   "ALTER TABLE concorrencia_ofertas ADD COLUMN fonte TEXT",
+  "ALTER TABLE produtos ADD COLUMN categoria_fonte TEXT",       // vendas | erp | manual (rank de sobrescrita)
+  "ALTER TABLE produtos ADD COLUMN classe_comercial TEXT",      // Genérico | Similar | Ético | OTC (medicamentos)
+  "ALTER TABLE produtos ADD COLUMN principio_ativo_cod TEXT",   // código do princípio ativo (planilha Minas)
+  "ALTER TABLE produtos ADD COLUMN registro_ms TEXT",           // registro ANVISA (presente = medicamento)
 ]) {
   try {
     db.exec(stmt);
@@ -341,10 +345,10 @@ function upsertProduto(p) {
   if (!existente) {
     const info = db
       .prepare(
-        `INSERT INTO produtos (ean, descricao, descricao_normalizada, marca, categoria, subcategoria, fonte, primeira_venda, ultima_venda, criado_em, atualizado_em)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO produtos (ean, descricao, descricao_normalizada, marca, categoria, categoria_fonte, subcategoria, fonte, primeira_venda, ultima_venda, criado_em, atualizado_em)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(p.ean || null, p.descricao, norm, p.marca || null, p.categoria || null, p.subcategoria || null, p.fonte || "vendas", p.primeira_venda || null, p.ultima_venda || null, ts, ts);
+      .run(p.ean || null, p.descricao, norm, p.marca || null, p.categoria || null, p.categoria_fonte || "vendas", p.subcategoria || null, p.fonte || "vendas", p.primeira_venda || null, p.ultima_venda || null, ts, ts);
     return { id: Number(info.lastInsertRowid), criado: true };
   }
   const rank = { vendas: 0, catalogo: 1, manual: 2 };
@@ -352,13 +356,38 @@ function upsertProduto(p) {
   const descricao = p.descricao && p.descricao.length > (existente.descricao || "").length ? p.descricao : existente.descricao;
   const primeira = !existente.primeira_venda || (p.primeira_venda && p.primeira_venda < existente.primeira_venda) ? p.primeira_venda || existente.primeira_venda : existente.primeira_venda;
   const ultima = !existente.ultima_venda || (p.ultima_venda && p.ultima_venda > existente.ultima_venda) ? p.ultima_venda || existente.ultima_venda : existente.ultima_venda;
+  // categoria: só sobrescreve se a fonte que chega tem rank >= da fonte que já classificou
+  // (vendas=palavra-chave < erp < manual). Sem categoria_fonte gravada = "vendas".
+  const catRank = { vendas: 0, erp: 1, manual: 2 };
+  const catFonteAtual = existente.categoria_fonte || "vendas";
+  const catFonteNova = p.categoria_fonte || "vendas";
+  const podeSobrescreverCat = (catRank[catFonteNova] ?? 0) >= (catRank[catFonteAtual] ?? 0);
+  const novaCat = podeSobrescreverCat ? (p.categoria || null) : null;
+  const novaCatFonte = novaCat ? catFonteNova : catFonteAtual;
   db.prepare(
     `UPDATE produtos SET descricao = ?, descricao_normalizada = ?, marca = COALESCE(?, marca),
-       categoria = COALESCE(?, categoria), subcategoria = COALESCE(?, subcategoria),
+       categoria = COALESCE(?, categoria), categoria_fonte = ?, subcategoria = COALESCE(?, subcategoria),
        ean = COALESCE(ean, ?), fonte = ?, primeira_venda = ?, ultima_venda = ?, atualizado_em = ?
      WHERE id = ?`
-  ).run(descricao, norm, p.marca || null, p.categoria || null, p.subcategoria || null, p.ean || null, fonte, primeira, ultima, ts, existente.id);
+  ).run(descricao, norm, p.marca || null, novaCat, novaCatFonte, p.subcategoria || null, p.ean || null, fonte, primeira, ultima, ts, existente.id);
   return { id: existente.id, criado: false };
+}
+
+// categoria/subcategoria/classe vindas do ERP (grupo da planilha de estoque). Vence a
+// classificação por palavra-chave, mas nunca a correção manual (categoria_fonte='manual').
+function setProdutoErp(id, e) {
+  const p = getProdutoPorId(id);
+  if (!p) return null;
+  const manual = (p.categoria_fonte || "") === "manual" || p.categoria_manual;
+  const sets = ["principio_ativo_cod = COALESCE(?, principio_ativo_cod)", "registro_ms = COALESCE(?, registro_ms)", "classe_comercial = COALESCE(?, classe_comercial)"];
+  const vals = [e.principio_ativo_cod || null, e.registro_ms || null, e.classe_comercial || null];
+  if (e.categoria && !manual) {
+    sets.push("categoria = ?", "categoria_fonte = 'erp'");
+    vals.push(e.categoria);
+    if (e.subcategoria) { sets.push("subcategoria = ?"); vals.push(e.subcategoria); }
+  }
+  db.prepare(`UPDATE produtos SET ${sets.join(", ")}, atualizado_em = ? WHERE id = ?`).run(...vals, nowIso(), id);
+  return { id, categoria_aplicada: !!(e.categoria && !manual) };
 }
 
 // correção manual — prevalece sobre a classificação automática
@@ -981,6 +1010,7 @@ module.exports = {
   getProdutoPorNorm,
   getProdutoPorId,
   upsertProduto,
+  setProdutoErp,
   setProdutoOverride,
   produtoEfetivo,
   listProdutos,

@@ -12,6 +12,7 @@ const mpa = require("./marketing-product-analytics");
 const { montarContexto } = require("./intelligence/contexto");
 const { normalizarEan } = require("./catalogo");
 const { bestMatch } = require("./match");
+const { categoriaCanonica, expandirSuperGrupo } = require("./categorias");
 
 const LOJAS_CFG = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "lojas.json"), "utf8"));
 const CFG_STOCK = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "marketing-stock.json"), "utf8"));
@@ -28,10 +29,16 @@ function nossasPromocoesPorCategoria(loja, refDate) {
   const porCategoria = new Map();
   const exemplos = new Map();
   let total = 0, fonte = null;
+  const add = (catRaw, n, exs) => {
+    const cat = categoriaCanonica(catRaw) || "(sem categoria)";
+    porCategoria.set(cat, (porCategoria.get(cat) || 0) + n);
+    if (exs) exemplos.set(cat, [...(exemplos.get(cat) || []), ...exs].slice(0, 6));
+    total += n;
+  };
   const plan = db.promocoesPorCategoria(loja, refDate);
   if (plan.size) {
     fonte = "tabela de planejamento de promoções";
-    for (const [cat, e] of plan) { porCategoria.set(cat, e.n); exemplos.set(cat, e.exemplos); total += e.n; }
+    for (const [cat, e] of plan) add(cat, e.n, e.exemplos);
     return { porCategoria, exemplos, total, fonte };
   }
   // fallback: campanhas cadastradas
@@ -46,7 +53,7 @@ function nossasPromocoesPorCategoria(loja, refDate) {
           GROUP BY 1`
       )
       .all(lid, corte);
-    for (const r of rows) { porCategoria.set(r.categoria, r.n); total += r.n; }
+    for (const r of rows) add(r.categoria, r.n);
     if (total) fonte = "campanhas cadastradas";
   } catch (e) { /* sem campanhas */ }
   return { porCategoria, exemplos, total, fonte };
@@ -73,6 +80,8 @@ function analisarConcorrencia(loja) {
   }
   const { per, periodo } = alvo;
   const ofertas = db.getConcorrencia(per.id);
+  // rótulo da coleta do concorrente -> vocabulário canônico (junta com o nosso catálogo)
+  for (const o of ofertas) o.categoria = o.categoria ? categoriaCanonica(o.categoria) : o.categoria;
   const cfg = LOJAS_CFG[loja] || {};
   const ctx = montarContexto(loja);
   const nossosProdutos = ctx.analiseProdutos.produtos || [];
@@ -94,14 +103,25 @@ function analisarConcorrencia(loja) {
     }
     return p;
   };
-  const catTendencia = new Map((ctx.categoriasTendencia || []).map((c) => [c.categoria, c]));
+  // agrega o momentum de categoria já no vocabulário canônico
+  const _catTend = new Map();
+  for (const c of ctx.categoriasTendencia || []) {
+    const k = categoriaCanonica(c.categoria);
+    const e = _catTend.get(k) || { categoria: k, receita_30d: 0, var_pct: null, _n: 0, _somaVar: 0 };
+    e.receita_30d += c.receita_30d || 0;
+    if (c.var_pct != null) { e._somaVar += c.var_pct; e._n++; }
+    _catTend.set(k, e);
+  }
+  for (const e of _catTend.values()) e.var_pct = e._n ? Math.round(e._somaVar / e._n) : null;
+  const catTendencia = _catTend;
   const refDate = ctx.analiseProdutos.refDate || db.getUltimaDataVenda(loja);
 
   // melhor alternativa da MESMA categoria para promover no lugar de um item que não dá pra cobrir
   function alternativaNaCategoria(categoria, exceto) {
+    const alvo = expandirSuperGrupo(categoria); // "Bebê" cobre Fraldas + Leite Infantil
     const cand = nossosProdutos
       .filter((p) =>
-        p.categoria === categoria &&
+        alvo.includes(categoriaCanonica(p.categoria)) &&
         p.ean !== exceto &&
         norm(p.descricao) !== norm(exceto || "") &&
         !p.do_not_promote &&
@@ -198,15 +218,19 @@ function analisarConcorrencia(loja) {
   // promoções são forward-looking: usa hoje (ou o último dia de dados, o que for maior)
   const hojeIso = new Date().toISOString().slice(0, 10);
   const nossasPromo = nossasPromocoesPorCategoria(loja, hojeIso > refDate ? hojeIso : refDate);
-  const catsRecorrentes = new Set((cfg.campanhas || []).flatMap((c) => c.categorias || []));
+  const catsRecorrentes = new Set((cfg.campanhas || []).flatMap((c) => c.categorias || []).map((c) => categoriaCanonica(c)));
   const catInfo = new Map(categorias.map((c) => [c.categoria, c]));
   const todasCats = new Set([...catInfo.keys(), ...nossasPromo.porCategoria.keys(), ...catsRecorrentes]);
+  // conta as nossas promoções somando os membros do super-grupo (ex.: concorrente diz "Bebê"
+  // -> soma Bebê + Fraldas + Leite Infantil das nossas)
+  const nossasNaCat = (cat) => expandirSuperGrupo(cat).reduce((s, m) => s + (nossasPromo.porCategoria.get(m) || 0), 0);
+  const recorrenteNaCat = (cat) => expandirSuperGrupo(cat).some((m) => catsRecorrentes.has(m));
   const sharePorCat = [...todasCats].map((cat) => {
     const ci = catInfo.get(cat) || {};
-    const nossas = nossasPromo.porCategoria.get(cat) || 0;
+    const nossas = nossasNaCat(cat);
     const deles = ci.abaixo != null ? ci.abaixo : 0; // ofertas do concorrente abaixo do nosso preço
     const ofertasDeles = ci.ofertas != null ? ci.ofertas : 0;
-    const recorrente = catsRecorrentes.has(cat);
+    const recorrente = recorrenteNaCat(cat);
     const pressao = ci.pressao || (ofertasDeles ? "MÉDIA" : "BAIXA");
     const receita = ci.nossa_receita_30d || null;
     const relevante = receita == null || receita >= 500;
@@ -223,7 +247,7 @@ function analisarConcorrencia(loja) {
     return {
       categoria: cat,
       nossas_promocoes: nossas,
-      nossas_exemplos: (nossasPromo.exemplos && nossasPromo.exemplos.get(cat)) || [],
+      nossas_exemplos: expandirSuperGrupo(cat).flatMap((m) => (nossasPromo.exemplos && nossasPromo.exemplos.get(m)) || []).slice(0, 4),
       promo_recorrente: recorrente,
       ofertas_concorrentes: ofertasDeles,
       ofertas_abaixo_do_nosso: deles,

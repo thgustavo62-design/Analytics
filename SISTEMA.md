@@ -118,8 +118,10 @@ do Supabase (Vercel + GitHub Pages).
 | `parsers/concorrentes.js` | xlsx de concorrente — formato de 36 colunas **ou** planilha simples (Concorrente+Produto+Preço); colunas mapeadas por `config/concorrentes.json`; sem status = tudo confirmado |
 | `parsers/promocoes.js` | **tabela de planejamento de promoções** (o "tabelão"/encarte) — xlsx **ou csv**; acha o cabeçalho, mapeia colunas por `config/promocoes.json` (produto/EAN, preço de/por ou desconto, início, fim, campanha, loja), lê datas `DD/MM` sem "adivinhação US" (`raw:true`), deriva preço↔desconto quando falta um. `data/promocoes_planejadas` (via `db.substituirPromocoesPlanejadas`, dedupe por `chave` no re-upload). Alimenta o **Share of Promotions** e o Calendário. |
 | `parsers/instagram.js` | normaliza o formulário / JSON de métricas do Instagram |
-| `catalogo.js` | `sincronizarProdutosDeVendas()` popula `produtos` pelos EAN das vendas; `ingestPlanilhaProduto()` lê planilha de estoque — **um arquivo alimenta estoque + preço de venda + preço de promoção + custo** ("Últ. Prc. Entrada"); nome com `geral`/`rede` aplica nas 2 lojas |
-| `classify.js` | categoria por palavra-chave (`config/categorias.json`) |
+| `catalogo.js` | `sincronizarProdutosDeVendas()` popula `produtos` pelos EAN das vendas; `ingestPlanilhaProduto()` lê planilha de estoque — **um arquivo alimenta estoque + preço de venda + preço de promoção + custo + a categoria REAL do ERP** ("Nome Grupo" → `mapGrupoErp`) + `Princípio Ativo` + `Registro MS`; nome com `geral`/`rede` aplica nas 2 lojas |
+| `classify.js` | categoria por palavra-chave (`config/categorias.json`) — **fallback**, só quando o ERP não deu grupo |
+| `categorias.js` | **vocabulário canônico** de categoria. `categoriaCanonica(rotulo)` resolve qualquer rótulo de fora (grupo de ERP, coleta de concorrente, classificador) para o mesmo conjunto (`config/categorias-sinonimos.json`); `mapGrupoErp(grupo)` → `{categoria, subcategoria, classe_comercial}` (`config/grupos-erp.json`, regras `prefixo` separam Genérico/Similar/Ético/OTC); `expandirSuperGrupo("Bebê")` → `[Bebê, Fraldas, Leite Infantil]` |
+| `scripts/recategorizar.js` | one-shot: canoniza toda categoria não-manual + reaplica o grupo do ERP das planilhas de estoque da inbox. Idempotente. Antes: 8 categorias (79% "Medicamentos/Outros"); depois: 11 canônicas + subcategorias |
 | `match.js` | casamento de nome de produto (Jaccard de tokens + marca como filtro duro) |
 
 ### Camada determinística (nenhuma IA — só soma e conta)
@@ -188,7 +190,7 @@ destrutivo.
 | | `instagram_metricas` | `periodo_id`, `metrica`, `valor_exibicao`, `delta_pct` |
 | | `concorrencia_ofertas` | `periodo_id`, `concorrente`, `produto`, `preco_normal/promo`, `validade`, `nivel_confianca`, `status_validacao`, `nosso_preco_medio`, `abaixo_do_nosso`, **`data_coleta`**, **`fonte`** (`coleta`/`manual`) |
 | | `promocoes_planejadas` | tabela do "tabelão"/encarte: `loja_id` (NULL = todas), `produto_id` (resolvido, pode ser NULL), `ean`, `descricao`, `categoria`, `preco_normal/promo`, `desconto_pct`, `data_inicio/fim`, `campanha`, `fonte_arquivo`, `chave` UNIQUE |
-| **Catálogo (Fase 1)** | `produtos` | `ean` UNIQUE (nullable), `descricao[_normalizada]`, `categoria`, `*_manual` (override vence), `fonte` (`vendas`/`catalogo`/`manual`) |
+| **Catálogo (Fase 1)** | `produtos` | `ean` UNIQUE (nullable), `descricao[_normalizada]`, `categoria` + **`categoria_fonte`** (`vendas`=palavra-chave < `erp` < `manual` — rank de sobrescrita), `subcategoria`, **`classe_comercial`** (Genérico/Similar/Ético/OTC), **`principio_ativo_cod`**, **`registro_ms`**, `*_manual` (override vence), `fonte` |
 | | `produto_estoque` | snapshot por `(loja_id, produto_id, data_referencia)` |
 | | `produto_custo` | historizado — `data_inicio`/`data_fim` (vigência; nunca sobrescreve) |
 | | `produto_preco` | idem + `tipo_preco` (normal/promocional/planejado) |
@@ -280,11 +282,13 @@ KPIs/matriz em 2 colunas.
 | Arquivo | O que controla |
 |---|---|
 | `lojas.json` | por loja: `cnpj` (roteia o PDF), `razaoSocial`, `horaFechamento`, `concorrentes[]`, **`campanhas[{nome, dias, categorias}]`** (calendário recorrente) |
-| `categorias.json` | dicionário do classificador de categoria (regras `contem`/`igual`/`exceto`, ordenadas) |
+| `categorias.json` | dicionário do classificador de categoria por palavra-chave (regras `contem`/`igual`/`exceto`, ordenadas) — usado só quando o ERP não classificou |
+| `grupos-erp.json` | "Nome Grupo" do ERP → `{categoria, subcategoria, classe_comercial}`; regras `prefixo:true` casam com o grupo (antes do " - ") para separar Genérico/Similar/Ético/OTC |
+| `categorias-sinonimos.json` | vocabulário **canônico** (~11 categorias) + `aliases` (rótulo → canônico) + `super_grupos` (`Bebê` ⊇ Fraldas + Leite Infantil, para comparar com a concorrência) |
 | `insights.json` | limiares das 3 regras de insight do Painel |
 | `catalogo.json` | como reconhecer/ler as planilhas de estoque/custo/preço (nome do arquivo + sinônimos de coluna); `nome_todas_as_lojas` |
 | `concorrentes.json` | pistas de nome de arquivo + sinônimos de coluna da coleta de concorrente |
-| `promocoes.json` | pistas de nome de arquivo + sinônimos de coluna da **tabela de planejamento de promoções** (produto/EAN, preço de/por, desconto, início, fim, campanha, loja) |
+| `promocoes.json` | pistas de nome de arquivo + sinônimos de coluna da **tabela de planejamento de promoções** — produto/EAN, preço de, **preço promo (inclui "Valor Aproximado")**, desconto, início, fim, campanha, loja |
 | `marketing-stock.json` | limiares de dias de cobertura (ruptura/atenção/normal/oportunidade/parado) por categoria; `margem_pct_minima_para_anunciar`, `margem_pct_lucrativo` |
 | `opportunity-score.json` | **pesos dos 7 componentes** do Opportunity Score + limiares de rótulo e de classe |
 | `marketing-roles.json` | **Fase A** — limiares das regras de papel por produto (percentil + piso absoluto de volume) + categorias de recorrência/imagem + rótulo/ação/ícone de cada papel |
@@ -349,7 +353,7 @@ leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 4. **A IA nunca faz aritmética** sobre a base — a camada determinística agrega, o LLM interpreta.
 5. Toda conclusão de sinal/recomendação carrega **evidência** (campo, valor, fonte, período) e **confiança**.
 6. Feed ausente (sem custo/estoque/concorrência) → campo `null` + flag em `dados_ausentes` — **nunca estimado**.
-7. Categoria de produto é **estimada por palavra-chave** — a UI avisa; não é o cadastro oficial.
+7. Categoria de produto: **"Nome Grupo" do ERP** (planilha de estoque) quando existe, senão **palavra-chave** (fallback). Correção manual vence tudo. Todo rótulo — nosso, do ERP, da coleta de concorrente — passa pelo **vocabulário canônico** (`categorias.js`) antes de ser comparado/agregado.
 8. Dia parcial (relatório do meio do dia) é marcado e **excluído dos gráficos de tendência**.
 9. Custo cadastrado > 1,3× preço → `custo_suspeito` (erro provável de ERP), fora dos agregados de margem.
 10. Migrations só `ADD COLUMN` / `CREATE IF NOT EXISTS` — nenhum `DROP`/`ALTER` destrutivo.
@@ -358,7 +362,7 @@ leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 
 ## 11. Testes
 
-`npm test` (`node --test`) — **97 testes**, arquivos em separado (`process.env.VA_DB_PATH`
+`npm test` (`node --test`) — **102 testes**, arquivos em separado (`process.env.VA_DB_PATH`
 isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\Admin\Downloads\`.
 
 | Arquivo | Cobre |
@@ -371,6 +375,7 @@ isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\A
 | `concorrencia-analise.test.js` | **Fase E** — `share_promocoes`: estrutura, `nossas_promocoes_total` 0 sem campanhas cadastradas, linha "nós" em `por_concorrente`, categoria do calendário marcada recorrente, "subcomunicando" só com ≥2 ofertas abaixo do nosso preço e sem ação nossa; `contra_ataque` nunca aponta o próprio produto e só surge quando não vale cobrir |
 | `calendar.test.js` | **Fase G** — janela começa depois do último dia de dados; ocorrências caem no dia-da-semana da campanha e dentro da janela; `status` em conjunto válido, ajuste com motivo + evidência; slots só de categoria sem campanha; ciclo fechado com uma entrada por campanha, recomendação e link de montagem |
 | `promocoes.test.js` | **tabela de promoções** — parser (colunas, datas `DD/MM` lidas certo, desconto↔preço derivado, resolução de loja); `promocoesVigentes` filtra por data (vigente/futura/expirada/sem-prazo); re-upload não duplica (`chave`); Share of Promotions passa a citar a fonte "tabela de planejamento" |
+| `categorias.test.js` | **vocabulário canônico** — `categoriaCanonica` (aliases antigos e da coleta, desconhecido em title-case); `mapGrupoErp` (prefixo separa OTC de Ético; subgrupo vira subcategoria; grupo sem regra → null); `expandirSuperGrupo`; `upsertProduto` não deixa a categoria de vendas sobrescrever a do ERP |
 | `concorrentes.test.js` | filtro de marca, parse de validade/preço, resolução de loja por CNPJ |
 | `catalogo.test.js` | `normalizarEan`, `sincronizarProdutosDeVendas`, histórico de custo, planilha combinada estoque+custo+preço |
 | `marketing-product.test.js` | janelas monotônicas, clamp de tendência, 7 componentes do score somando ao score, confiança < 1 sem feed, classes, do-not-promote |
@@ -390,6 +395,10 @@ Ver [`docs/AUDITORIA.md`](docs/AUDITORIA.md) (Decision Intelligence, 7 fases) e
 7 fases — **A–E e G entregues; só a F falta**). Faltam, principalmente:
 
 - **Creative Intelligence** + Content Gap — travado no feed de log de publicações (Fase F)
+- **Refinamento de dados** (em curso): ✅ categoria real do ERP + vocabulário canônico +
+  reconciliação com a concorrência. Falta: **curva ABC** (cortar a cauda de ~6 mil SKUs das
+  listas), **momentum por subcategoria**, **elasticidade de preço** (com a tabela de promoções),
+  **tela Data Quality** com score e R$ de impacto.
 - **Forecast Engine** (previsão 7/15/fechamento + probabilidade de meta)
 - **Meta Engine** (metas em `config/lojas.json` → realizado/gap/venda-diária-necessária)
 - Card único **R$ potencial identificado / R$ em risco** consolidado

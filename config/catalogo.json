@@ -1,43 +1,234 @@
 {
   "_nota": "Fase 1 — como reconhecer e ler as planilhas de estoque/custo/preço jogadas na pasta inbox/. 'arquivo_contem' = palavra no nome do arquivo que dispara cada tipo. 'colunas' mapeia campo interno -> possíveis nomes de coluna no cabeçalho da planilha (case/acentos ignorados; casa por 'contém'). A 1ª aba com um cabeçalho reconhecível é usada. A loja vem do nome do arquivo (ex.: 'minas', 'farma e farma') ou de uma coluna 'loja'/'cnpj'. O export de estoque da rede já traz estoque + preço de venda + preço de promoção + último preço de entrada (custo) — o leitor aproveita as três coisas do MESMO arquivo.",
-  "ean_tamanhos": [8, 12, 13, 14],
+  "ean_tamanhos": [
+    8,
+    12,
+    13,
+    14
+  ],
   "loja_no_nome": {
-    "Minas Farma": ["minas", "31689601000349"],
-    "Farma e Farma": ["farma e farma", "farmaefarma", "melhor preco", "36007525000104"]
+    "Minas Farma": [
+      "minas",
+      "31689601000349"
+    ],
+    "Farma e Farma": [
+      "farma e farma",
+      "farmaefarma",
+      "melhor preco",
+      "36007525000104"
+    ]
   },
-  "nome_todas_as_lojas": ["geral", "rede", "consolidado", "consolidada", "todas", "ambas", "central"],
+  "nome_todas_as_lojas": [
+    "geral",
+    "rede",
+    "consolidado",
+    "consolidada",
+    "todas",
+    "ambas",
+    "central"
+  ],
   "estoque": {
-    "arquivo_contem": ["estoque", "estoqeu", "posicao_estoque", "posicao de estoque", "posicao_de_estoque", "saldo"],
+    "arquivo_contem": [
+      "estoque",
+      "estoqeu",
+      "posicao_estoque",
+      "posicao de estoque",
+      "posicao_de_estoque",
+      "saldo"
+    ],
     "colunas": {
-      "ean": ["ean", "gtin", "codigo de barras", "cod barras", "cod. barras", "barras", "codbarra"],
-      "descricao": ["descricao", "descricao do produto", "produto", "nome", "item"],
-      "quantidade": ["estoque", "quantidade", "qtd", "qtde", "saldo", "saldo atual", "estoque atual", "qtd estoque"],
-      "reservado": ["reservado", "reserva", "empenhado"],
-      "disponivel": ["disponivel", "disp", "saldo disponivel"],
-      "preco": ["preco de venda", "preco venda", "valor venda", "pvp", "preco normal", "preco tabela"],
-      "preco_promocional": ["preco de promocao", "preco promocao", "preco de promocional", "preco promocional", "preco promo", "preco oferta"],
-      "custo": ["ult prc entrada", "ult prc de entrada", "ultimo preco de entrada", "ultimo preco entrada", "preco de entrada", "custo medio", "custo"],
-      "data_referencia": ["data", "data referencia", "data ref", "referencia", "data posicao", "data do estoque", "ult entrada"]
+      "ean": [
+        "ean",
+        "gtin",
+        "codigo de barras",
+        "cod barras",
+        "cod. barras",
+        "barras",
+        "codbarra"
+      ],
+      "descricao": [
+        "descricao",
+        "descricao do produto",
+        "produto",
+        "nome",
+        "item"
+      ],
+      "quantidade": [
+        "estoque",
+        "quantidade",
+        "qtd",
+        "qtde",
+        "saldo",
+        "saldo atual",
+        "estoque atual",
+        "qtd estoque"
+      ],
+      "reservado": [
+        "reservado",
+        "reserva",
+        "empenhado"
+      ],
+      "disponivel": [
+        "disponivel",
+        "disp",
+        "saldo disponivel"
+      ],
+      "preco": [
+        "preco de venda",
+        "preco venda",
+        "valor venda",
+        "pvp",
+        "preco normal",
+        "preco tabela"
+      ],
+      "preco_promocional": [
+        "preco de promocao",
+        "preco promocao",
+        "preco de promocional",
+        "preco promocional",
+        "preco promo",
+        "preco oferta"
+      ],
+      "custo": [
+        "ult prc entrada",
+        "ult prc de entrada",
+        "ultimo preco de entrada",
+        "ultimo preco entrada",
+        "preco de entrada",
+        "custo medio",
+        "custo"
+      ],
+      "data_referencia": [
+        "data",
+        "data referencia",
+        "data ref",
+        "referencia",
+        "data posicao",
+        "data do estoque",
+        "ult entrada"
+      ],
+      "grupo": [
+        "nome grupo",
+        "nome do grupo",
+        "grupo produto",
+        "grupo do produto"
+      ],
+      "principio_ativo": [
+        "principio ativo",
+        "princ ativo",
+        "p ativo",
+        "principio"
+      ],
+      "registro_ms": [
+        "registro ms",
+        "reg ms",
+        "registro anvisa",
+        "registro m.s"
+      ]
     }
   },
   "custo": {
-    "arquivo_contem": ["custo", "custos"],
+    "arquivo_contem": [
+      "custo",
+      "custos"
+    ],
     "colunas": {
-      "ean": ["ean", "gtin", "codigo de barras", "cod barras", "barras", "codbarra"],
-      "descricao": ["descricao", "produto", "nome", "item"],
-      "custo": ["custo", "custo medio", "custo unitario", "custo unit", "preco custo", "custo liquido", "custo reposicao", "cmv", "ult prc entrada", "ultimo preco de entrada", "preco de entrada"],
-      "data_inicio": ["data", "data inicio", "vigencia", "vigencia inicio", "data custo", "atualizado em", "ult entrada"]
+      "ean": [
+        "ean",
+        "gtin",
+        "codigo de barras",
+        "cod barras",
+        "barras",
+        "codbarra"
+      ],
+      "descricao": [
+        "descricao",
+        "produto",
+        "nome",
+        "item"
+      ],
+      "custo": [
+        "custo",
+        "custo medio",
+        "custo unitario",
+        "custo unit",
+        "preco custo",
+        "custo liquido",
+        "custo reposicao",
+        "cmv",
+        "ult prc entrada",
+        "ultimo preco de entrada",
+        "preco de entrada"
+      ],
+      "data_inicio": [
+        "data",
+        "data inicio",
+        "vigencia",
+        "vigencia inicio",
+        "data custo",
+        "atualizado em",
+        "ult entrada"
+      ]
     }
   },
   "preco": {
-    "arquivo_contem": ["preco_", "precos_", "preco-", "precos-", "tabela_preco", "tabela-preco", "preco de venda", "precos de venda"],
+    "arquivo_contem": [
+      "preco_",
+      "precos_",
+      "preco-",
+      "precos-",
+      "tabela_preco",
+      "tabela-preco",
+      "preco de venda",
+      "precos de venda"
+    ],
     "colunas": {
-      "ean": ["ean", "gtin", "codigo de barras", "cod barras", "barras", "codbarra"],
-      "descricao": ["descricao", "produto", "nome", "item"],
-      "preco": ["preco de venda", "preco venda", "preco normal", "preco tabela", "pvp", "preco praticado", "valor venda", "preco"],
-      "preco_promocional": ["preco de promocao", "preco promocao", "preco de promocional", "preco promocional", "preco promo", "promo", "preco oferta"],
-      "tipo_preco": ["tipo", "tipo preco", "tipo de preco"],
-      "data_inicio": ["data", "data inicio", "vigencia", "vigencia inicio", "data preco", "atualizado em"]
+      "ean": [
+        "ean",
+        "gtin",
+        "codigo de barras",
+        "cod barras",
+        "barras",
+        "codbarra"
+      ],
+      "descricao": [
+        "descricao",
+        "produto",
+        "nome",
+        "item"
+      ],
+      "preco": [
+        "preco de venda",
+        "preco venda",
+        "preco normal",
+        "preco tabela",
+        "pvp",
+        "preco praticado",
+        "valor venda",
+        "preco"
+      ],
+      "preco_promocional": [
+        "preco de promocao",
+        "preco promocao",
+        "preco de promocional",
+        "preco promocional",
+        "preco promo",
+        "promo",
+        "preco oferta"
+      ],
+      "tipo_preco": [
+        "tipo",
+        "tipo preco",
+        "tipo de preco"
+      ],
+      "data_inicio": [
+        "data",
+        "data inicio",
+        "vigencia",
+        "vigencia inicio",
+        "data preco",
+        "atualizado em"
+      ]
     }
   }
 }

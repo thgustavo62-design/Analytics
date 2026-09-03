@@ -8,7 +8,7 @@
     "categoria":     ["categoria", "grupo", "secao", "seção", "departamento", "linha", "familia", "família"],
     "marca":         ["marca", "fabricante"],
     "preco_normal":  ["preco normal", "preço normal", "preco de", "preço de", "preco de r$", "preço de r$", "de r$", "de:", "de", "preco cheio", "preço cheio", "preco tabela", "preço tabela", "preco venda", "preço venda", "preco atual", "preço atual", "valor normal", "vlr normal", "preco 1", "preço 1"],
-    "preco_promo":   ["preco promo", "preço promo", "preco promocional", "preço promocional", "preco por", "preço por", "por r$", "por:", "por", "preco oferta", "preço oferta", "preco de oferta", "preço de oferta", "valor promocional", "vlr promo", "preco final", "preço final", "oferta r$", "preco 2", "preço 2", "novo preco", "novo preço"],
+    "preco_promo":   ["valor aproximado", "vlr aproximado", "preco aproximado", "preço aproximado", "preco promo", "preço promo", "preco promocional", "preço promocional", "preco por", "preço por", "por r$", "por:", "por", "preco oferta", "preço oferta", "preco de oferta", "preço de oferta", "valor promocional", "vlr promo", "preco final", "preço final", "oferta r$", "preco 2", "preço 2", "novo preco", "novo preço"],
     "desconto_pct":  ["desconto", "desc", "% desc", "desconto %", "% desconto", "% off", "off", "abatimento"],
     "inicio":        ["inicio", "início", "data inicio", "data início", "data de inicio", "vigencia inicio", "vigência início", "valido de", "válido de", "de (data)", "inicio vigencia", "inicio promo"],
     "fim":           ["fim", "data fim", "termino", "término", "data termino", "data término", "ate", "até", "vigencia fim", "vigência fim", "validade", "valido ate", "válido até", "vencimento", "fim vigencia", "fim promo"],

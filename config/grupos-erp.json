@@ -1,0 +1,30 @@
+{
+  "_nota": "Mapeia o 'Nome Grupo' do ERP (coluna da planilha de estoque) para categoria/subcategoria canônica. O grupo vem como 'GRUPO - SUBGRUPO'. Regras com 'prefixo:true' casam com o GRUPO (parte antes do ' - ') — necessário p/ GENERICO/SIMILAR/ETICO/OTC, porque o nome do grupo OTC contém 'eticos'. As demais casam por substring (a mais longa vence), pegando o subgrupo. Sem regra -> classificador por palavra-chave (config/categorias.json). 'classe_comercial' é só rótulo, não muda a categoria.",
+  "por_prefixo": [
+    { "match": "fraldas", "prefixo": true, "categoria": "Fraldas" },
+    { "match": "leites", "prefixo": true, "categoria": "Leite Infantil" },
+    { "match": "leite/formula", "prefixo": true, "categoria": "Leite Infantil" },
+    { "match": "limpeza", "prefixo": true, "categoria": "Limpeza" },
+    { "match": "naturais", "prefixo": true, "categoria": "Naturais" },
+    { "match": "suplementos", "prefixo": true, "categoria": "Suplementos" },
+    { "match": "suplemento", "prefixo": true, "categoria": "Suplementos" },
+    { "match": "almoxarifado", "prefixo": true, "categoria": "Diversos" },
+    { "match": "desodorante", "prefixo": true, "categoria": "Higiene e Beleza", "subcategoria": "Desodorante" },
+    { "match": "tinturas", "prefixo": true, "categoria": "Higiene e Beleza", "subcategoria": "Coloração" },
+    { "match": "dermo", "prefixo": true, "categoria": "Dermocosmético" },
+    { "match": "correlatos", "prefixo": true, "categoria": "Saúde e Bem-estar", "subcategoria": "Correlatos" },
+    { "match": "genericos", "prefixo": true, "categoria": "Medicamento", "classe_comercial": "Genérico" },
+    { "match": "similares", "prefixo": true, "categoria": "Medicamento", "classe_comercial": "Similar" },
+    { "match": "otc", "prefixo": true, "categoria": "Medicamento", "classe_comercial": "OTC" },
+    { "match": "etico", "prefixo": true, "categoria": "Medicamento", "classe_comercial": "Ético" },
+    { "match": "taxa de entrega", "categoria": "Diversos" },
+    { "match": "perfumaria - perfumaria pericultura", "categoria": "Bebê", "subcategoria": "Puericultura" },
+    { "match": "perfumaria - perfumaria perf. infantil", "categoria": "Bebê", "subcategoria": "Infantil" },
+    { "match": "perfumaria - perfumaria suplemento alimentar", "categoria": "Suplementos" },
+    { "match": "perfumaria - perfumaria hig. pessoal", "categoria": "Higiene e Beleza", "subcategoria": "Higiene Pessoal" },
+    { "match": "perfumaria - perfumaria nivea", "categoria": "Higiene e Beleza", "subcategoria": "Corporal" },
+    { "match": "perfumaria - perfumaria johnson", "categoria": "Higiene e Beleza", "subcategoria": "Higiene Pessoal" },
+    { "match": "perfumaria - perfumaria infantil", "categoria": "Bebê", "subcategoria": "Infantil" },
+    { "match": "perfumaria", "categoria": "Higiene e Beleza", "subcategoria": "Perfumaria" }
+  ]
+}
