@@ -1472,33 +1472,67 @@
     return out;
   }
   // ---- Precificação de promoção (Promo Pricing Engine) ----
+  function ppLabelHorizonte(d) { return "Lucro incr. (" + ((d && d.horizonte_dias) || 7) + "d)"; }
   function ppRow(p) {
-    return '<tr><td data-l="Produto">' + esc(p.produto) + (p.ean ? '<div class="cs">EAN ' + esc(p.ean) + "</div>" : "") +
-      '</td><td data-l="Categoria">' + esc(p.categoria) + " " + abcClasseChip(p.abc) + (p.defensivo ? ' <span class="tag" style="background:var(--down);color:#fff">defesa</span>' : "") +
+    return '<tr class="pp-clic" data-pp-id="' + esc(String(p.produto_id || "")) + '" data-pp-ean="' + esc(String(p.ean || "")) + '">' +
+      '<td data-l="Produto">' + esc(p.produto) + (p.ean ? '<div class="cs">EAN ' + esc(p.ean) + "</div>" : "") +
+      '</td><td data-l="Categoria">' + esc(p.categoria) + " " + abcClasseChip(p.abc) + (p.defensivo ? ' <span class="tag" style="background:var(--down);color:#fff">defesa</span>' : "") + (p.tem_promo_planejada ? ' <span class="tag">na tabela</span>' : "") +
       '</td><td class="num" data-l="Preço">R$ ' + brl(p.preco_normal) + ' → <b>R$ ' + brl(p.preco_recomendado) + "</b>" +
       '<div class="cs">-' + p.desconto_pct + "% · margem " + (p.margem_pct_na_promo == null ? "—" : Math.round(p.margem_pct_na_promo * 100) + "%") + (p.custo_proxy ? " · custo proxy" : "") + "</div>" +
-      '</td><td class="num" data-l="Lucro incr. (30d)"><b>R$ ' + brl(p.lucro_incremental_previsto) + "</b>" +
+      '</td><td class="num" data-l="Lucro incr."><b>' + (p.lucro_incremental_previsto == null ? "—" : "R$ " + brl(p.lucro_incremental_previsto)) + "</b>" +
       (p.efeito_cesta_estimado ? '<div class="cs">+R$ ' + brl(p.efeito_cesta_estimado) + " cesta</div>" : "") +
       '</td><td class="num" data-l="Unid. incr.">+' + int(p.unidades_incrementais) + "</td>" +
-      '<td data-l="Por quê"><span class="cs">' + esc(p.motivo) + "</span></td></tr>";
+      '<td data-l="Por quê"><span class="cs">' + esc(p.motivo || "") + "</span></td></tr>";
+  }
+  function ppGrupoOpts(d) {
+    return (d.por_grupo || []).map(function (g) {
+      return '<option value="' + esc(g.categoria) + '">' + esc(g.categoria) + " — " + g.n_interessantes + " produto(s), R$ " + brl(g.lucro_incremental_total) + " lucro incr." + (g.margem_media_na_promo != null ? ", margem méd. " + Math.round(g.margem_media_na_promo * 100) + "%" : "") + "</option>";
+    }).join("");
+  }
+  function promoGrupoTable(d, cat) {
+    var g = (d.por_grupo || []).find(function (x) { return x.categoria === cat; });
+    if (!g) return '<div class="empty">Grupo sem produtos interessantes para promoção.</div>';
+    var out = '<div class="card"><div class="chead"><div class="ci gold">🏷️</div><div><h3>' + esc(g.categoria) + '</h3>' +
+      '<div class="cs">' + g.n_interessantes + " produto(s) que valem promoção · lucro incremental total <b>R$ " + brl(g.lucro_incremental_total) + "</b>" +
+      (g.margem_media_na_promo != null ? " · margem média na promo <b>" + Math.round(g.margem_media_na_promo * 100) + "%</b>" : "") +
+      " · desconto médio -" + g.desconto_medio_pct + "%" + (g.mostrando < g.n_interessantes ? " · mostrando os " + g.mostrando + " maiores" : "") + "</div></div></div>" +
+      '<table class="tbl mobile-cards"><thead><tr><th>Produto</th><th class="num">Preço → colocar</th><th class="num">Desc.</th><th class="num">Margem na promo</th><th class="num">' + ppLabelHorizonte(d) + '</th><th class="num">Unid. incr.</th></tr></thead><tbody>' +
+      g.produtos.map(function (p) {
+        return '<tr class="pp-clic" data-pp-id="' + esc(String(p.produto_id || "")) + '" data-pp-ean="' + esc(String(p.ean || "")) + '">' +
+          '<td data-l="Produto">' + esc(p.produto) + " " + abcClasseChip(p.abc) + (p.custo_proxy ? ' <span class="cs">(custo proxy)</span>' : "") + (p.tem_promo_planejada ? ' <span class="tag">na tabela</span>' : "") + (p.ean ? '<div class="cs">EAN ' + esc(p.ean) + "</div>" : "") +
+          '</td><td class="num" data-l="Preço">R$ ' + brl(p.preco_normal) + " → <b>R$ " + brl(p.preco_recomendado) + "</b>" +
+          '</td><td class="num" data-l="Desc.">-' + p.desconto_pct + "%</td>" +
+          '<td class="num" data-l="Margem">' + (p.margem_pct_na_promo == null ? "—" : Math.round(p.margem_pct_na_promo * 100) + "%") + "</td>" +
+          '<td class="num" data-l="Lucro incr."><b>' + (p.lucro_incremental_previsto == null ? "—" : "R$ " + brl(p.lucro_incremental_previsto)) + "</b></td>" +
+          '<td class="num" data-l="Unid. incr.">+' + int(p.unidades_incrementais) + "</td></tr>";
+      }).join("") + "</tbody></table>" +
+      '<div class="cs" style="margin-top:6px">Clique num produto para ver a curva lucro×desconto, os 3 preços para testar e o break-even.</div></div>';
+    return out;
   }
   function promoPricingHtml(d) {
     if (!d || d.erro) return '<div class="empty">' + esc((d && d.erro) || "erro") + "</div>";
+    mkt._pp = d;
+    var hz = d.horizonte_dias || 7;
     var out =
       '<div class="card form-card"><form id="ppForm"><fieldset><legend>Ver um produto específico</legend><div class="rowf">' +
       '<div style="flex:2"><label class="f">EAN ou descrição</label><input class="inp" name="q" placeholder="7891... ou TOALHA BEBE"></div>' +
-      '<div><label class="f">Duração da promo (dias)</label><input class="inp" name="dias" type="number" value="3" min="1"></div>' +
+      '<div><label class="f">Duração da promo (dias)</label><input class="inp" name="dias" type="number" value="' + hz + '" min="1"></div>' +
       '</div></fieldset><button class="btn" type="submit">Analisar preço</button></form><div id="ppOut" style="margin-top:14px"></div></div>';
-    out += '<div class="cs" style="margin:12px 0 8px">O que colocar em promoção — ranqueado pelo <b>lucro incremental do próprio item</b> na melhor promoção de cada um, projetado em ' + d.horizonte_dias + ' dias. ' +
+    // seletor de grupo — "escolho o grupo e vejo todos os produtos que valem promoção"
+    out += '<div class="card"><div class="chead"><div class="ci red">📂</div><div><h3>Por grupo</h3><div class="cs">Escolha um grupo → todos os produtos que valem promoção nele, com preço a colocar e margem</div></div></div>' +
+      (d.por_grupo && d.por_grupo.length ?
+        '<select class="inp" id="ppGrupo" style="max-width:520px"><option value="">— escolha um grupo —</option>' + ppGrupoOpts(d) + "</select><div id=\"ppGrupoOut\" style=\"margin-top:12px\"></div>" :
+        '<div class="empty">Nenhum grupo com produtos interessantes para promoção com os dados atuais.</div>') + "</div>";
+    out += '<div class="cs" style="margin:12px 0 8px">Ranking geral — melhor promoção de cada produto A/B, projetada para ' + hz + ' dias. ' +
       "Potencial do top " + d.produtos.length + ": <b>R$ " + brl(d.potencial_lucro_incremental_top) + "</b> de lucro incremental" + (d.efeito_cesta_estimado_top ? " + R$ " + brl(d.efeito_cesta_estimado_top) + " de efeito-cesta estimado" : "") + ".</div>";
-    out += '<div class="card"><div class="chead"><div class="ci gold">🏷️</div><div><h3>Candidatos a promoção</h3><div class="cs">' + int(d.candidatos) + " produtos A/B avaliados</div></div></div>" +
-      (d.produtos.length ? '<table class="tbl mobile-cards"><thead><tr><th>Produto</th><th>Categoria</th><th class="num">Preço → recomendado</th><th class="num">Lucro incr. (' + d.horizonte_dias + "d)</th><th class=\"num\">Unid. incr.</th><th>Por quê</th></tr></thead><tbody>" +
+    out += '<div class="card"><div class="chead"><div class="ci gold">🥇</div><div><h3>Candidatos a promoção</h3><div class="cs">' + int(d.candidatos) + " produtos A/B avaliados · clique para o detalhe</div></div></div>" +
+      (d.produtos.length ? '<table class="tbl mobile-cards"><thead><tr><th>Produto</th><th>Categoria</th><th class="num">Preço → recomendado</th><th class="num">' + ppLabelHorizonte(d) + "</th><th class=\"num\">Unid. incr.</th><th>Por quê</th></tr></thead><tbody>" +
         d.produtos.map(ppRow).join("") + "</tbody></table>" : '<div class="empty">Nenhum produto com promoção que aumente o lucro do próprio item com os dados atuais.</div>') + "</div>";
     if (d.sem_custo && d.sem_custo.n) {
       out += '<div class="card"><div class="chead"><div class="ci conc">❔</div><div><h3>Sem custo — ' + int(d.sem_custo.n) + " produtos</h3><div class=\"cs\">" + esc(d.sem_custo.nota) + "</div></div></div>" +
         '<table class="tbl mobile-cards"><thead><tr><th>Produto</th><th>Categoria</th><th class="num">Preço → recomendado</th><th class="num">Unid. incr.</th></tr></thead><tbody>' +
         d.sem_custo.produtos.map(function (p) {
-          return '<tr><td data-l="Produto">' + esc(p.produto) + '</td><td data-l="Categoria">' + esc(p.categoria) + " " + abcClasseChip(p.abc) +
+          return '<tr class="pp-clic" data-pp-id="' + esc(String(p.produto_id || "")) + '" data-pp-ean="' + esc(String(p.ean || "")) + '"><td data-l="Produto">' + esc(p.produto) + '</td><td data-l="Categoria">' + esc(p.categoria) + " " + abcClasseChip(p.abc) +
             '</td><td class="num" data-l="Preço">R$ ' + brl(p.preco_normal) + " → <b>R$ " + brl(p.preco_recomendado) + "</b> <span class=\"cs\">-" + p.desconto_pct + "%</span></td>" +
             '<td class="num" data-l="Unid. incr.">+' + int(p.unidades_incrementais) + "</td></tr>";
         }).join("") + "</tbody></table></div>";
@@ -1529,13 +1563,24 @@
     return g;
   }
   function ppTestRow(t) {
-    return "<tr><td><b>" + esc(t.rotulo) + '</b></td><td class="num">-' + t.desconto_pct + '%</td><td class="num">R$ ' + brl(t.preco) + '</td><td class="num">' + int(t.unidades) + '</td><td class="num">+' + int(t.unidades_incrementais) + '</td><td class="num">R$ ' + brl(t.receita) + '</td><td class="num"><b>R$ ' + brl(t.lucro_incremental) + '</b></td><td class="num">' + (t.margem_pct == null ? "—" : Math.round(t.margem_pct * 100) + "%") + "</td></tr>";
+    return "<tr><td><b>" + esc(t.rotulo) + '</b></td><td class="num">-' + t.desconto_pct + '%</td><td class="num">R$ ' + brl(t.preco) + '</td><td class="num">' + int(t.unidades) + '</td><td class="num">+' + int(t.unidades_incrementais) + '</td><td class="num">R$ ' + brl(t.receita) + '</td><td class="num"><b>' + (t.lucro_incremental == null ? "—" : "R$ " + brl(t.lucro_incremental)) + '</b></td><td class="num">' + (t.margem_pct == null ? "—" : Math.round(t.margem_pct * 100) + "%") + "</td></tr>";
+  }
+  // fallback quando não há curva embutida (recorte por_grupo): barras a partir dos 3 cenários
+  function ppBarsFromTestar(testar) {
+    var arr = (testar || []).filter(function (t) { return t.lucro_incremental != null; });
+    if (!arr.length) return "";
+    var max = Math.max.apply(null, arr.map(function (t) { return Math.abs(t.lucro_incremental); })) || 1;
+    return '<div class="pp-bars">' + arr.map(function (t) {
+      var w = Math.round((Math.abs(t.lucro_incremental) / max) * 100);
+      return '<div class="pp-bar"><span>' + esc(t.rotulo) + " (-" + t.desconto_pct + '%)</span><i style="width:' + w + "%;background:" + (t.lucro_incremental < 0 ? "var(--down)" : "var(--s1)") + '"></i><b>R$ ' + brl(t.lucro_incremental) + "</b></div>";
+    }).join("") + "</div>";
   }
   function promoDeepDiveHtml(d) {
-    if (!d || d.erro) return '<div class="result err">' + esc((d && d.erro) || "erro") + "</div>";
+    if (!d || d.erro) return '<div class="result err">' + esc((d && d.erro) || "produto não encontrado") + "</div>";
+    if (!d.recomendado) return '<div class="result err">Sem dados de precificação para este produto (custo/preço/giro insuficiente).</div>';
     var r = d.recomendado || {}, lim = d.limites || {}, el = d.elasticidade || {};
     var out = '<div class="card"><div class="chead"><div class="ci gold">🏷️</div><div><h3>' + esc(d.produto) + " " + abcClasseChip(d.abc) + '</h3>' +
-      '<div class="cs">' + esc(d.categoria) + " · " + esc(state.loja) + " · giro 30d " + (d.venda_media_diaria_30d == null ? "—" : d.venda_media_diaria_30d + "/dia") + " · promo de " + d.duracao_dias + " dias</div></div></div>";
+      '<div class="cs">' + esc(d.categoria) + " · " + esc(d.loja || state.loja) + " · giro 30d " + (d.venda_media_diaria_30d == null ? "—" : d.venda_media_diaria_30d + "/dia") + " · promo de " + d.duracao_dias + " dias" + (d.cobertura_rotulo ? " · estoque " + esc(d.cobertura_rotulo) : "") + "</div></div></div>";
     out += '<div class="pp-kpis">' +
       '<div class="pp-k"><span>Preço normal</span><b>R$ ' + brl(d.preco_normal) + "</b></div>" +
       '<div class="pp-k"><span>Custo' + (d.custo_proxy ? " (proxy " + esc(d.custo_proxy_origem || "") + ")" : "") + '</span><b>' + (d.custo == null ? "—" : "R$ " + brl(d.custo)) + "</b></div>" +
@@ -1547,7 +1592,7 @@
       "</div>";
     out += '<div class="card"><div class="chead"><div class="ci red">📉</div><div><h3>Lucro incremental × desconto</h3><div class="cs">elasticidade ' + el.valor + " (" + esc(el.fonte) + ")" +
       (d.lift_historico_categoria ? " · lift histórico da categoria " + d.lift_historico_categoria + "×" : "") + "</div></div></div>" +
-      ppCurvaSvg(d.curva, r.desconto_pct, lim.break_even_desconto_pct) +
+      (d.curva && d.curva.length >= 2 ? ppCurvaSvg(d.curva, r.desconto_pct, lim.break_even_desconto_pct) : ppBarsFromTestar(d.testar)) +
       '<div class="cs">Break-even em -' + (lim.break_even_desconto_pct == null ? "—" : lim.break_even_desconto_pct + "%") +
       " · desconto sem prejuízo até -" + (lim.desconto_max_sem_prejuizo_pct == null ? "—" : lim.desconto_max_sem_prejuizo_pct + "%") +
       " · teto avaliado -" + lim.desconto_teto_pct + "%</div></div>";
@@ -1564,12 +1609,66 @@
     out += '<div class="result" style="margin-top:10px;background:#fff6e6;border-color:#f0c98a;color:#8a5a00">' + esc(d.aviso) + "</div>";
     return out;
   }
+  // acha o detalhe embutido de um produto (ranking, sem_custo ou qualquer grupo) — usado no
+  // site publicado, onde não dá para chamar o endpoint por produto.
+  function ppDetalheEmbutido(id, ean) {
+    var d = mkt._pp; if (!d) return null;
+    var pools = [d.produtos || [], (d.sem_custo && d.sem_custo.produtos) || []];
+    (d.por_grupo || []).forEach(function (g) { pools.push(g.produtos || []); });
+    for (var i = 0; i < pools.length; i++) {
+      var hit = pools[i].find(function (p) {
+        return (id && String(p.produto_id) === String(id)) || (ean && String(p.ean) === String(ean));
+      });
+      if (hit && hit.detalhe) return hit.detalhe;
+    }
+    return null;
+  }
+  async function ppAbrirProduto(box, id, ean, dias) {
+    box.innerHTML = '<div class="empty">Analisando…</div>';
+    var qs = (id ? "produto_id=" + encodeURIComponent(id) : "ean=" + encodeURIComponent(ean)) + (dias ? "&dias=" + encodeURIComponent(dias) : "");
+    try {
+      var d = await getJSON("/api/marketing/" + encodeURIComponent(state.loja) + "/promo-pricing?" + qs);
+      if (d && d.recomendado) { box.innerHTML = promoDeepDiveHtml(d); return; }
+      var emb = ppDetalheEmbutido(id, ean);
+      box.innerHTML = emb ? promoDeepDiveHtml(emb) : '<div class="result err">Detalhe indisponível para este produto.</div>';
+    } catch (e) {
+      var emb2 = ppDetalheEmbutido(id, ean);
+      box.innerHTML = emb2 ? promoDeepDiveHtml(emb2) : '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>";
+    }
+  }
   function wirePromoPricing() {
+    var root = view.querySelector("#mktBody");
+    if (!root) return;
     var form = view.querySelector("#ppForm");
-    if (!form) return;
-    form.addEventListener("submit", async function (ev) {
+    var diasDe = function () { return (form && form.dias.value.trim()) || ""; };
+
+    // seletor de grupo
+    var sel = view.querySelector("#ppGrupo");
+    if (sel) sel.addEventListener("change", function () {
+      var box = view.querySelector("#ppGrupoOut");
+      box.innerHTML = sel.value ? promoGrupoTable(mkt._pp, sel.value) : "";
+    });
+
+    // clique em qualquer linha de produto (ranking, grupo, sem custo) -> detalhe inline
+    root.addEventListener("click", function (ev) {
+      var tr = ev.target.closest && ev.target.closest("tr.pp-clic");
+      if (!tr || !root.contains(tr)) return;
+      var id = tr.getAttribute("data-pp-id"), ean = tr.getAttribute("data-pp-ean");
+      if (!id && !ean) return;
+      var box = tr.closest("table").parentNode.querySelector(".pp-detalhe") || (function () {
+        var b = document.createElement("div"); b.className = "pp-detalhe"; b.style.marginTop = "12px";
+        tr.closest("table").parentNode.appendChild(b); return b;
+      })();
+      view.querySelectorAll(".pp-clic.on").forEach(function (x) { x.classList.remove("on"); });
+      tr.classList.add("on");
+      ppAbrirProduto(box, id, ean, diasDe());
+      box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+
+    // busca livre por EAN / descrição
+    if (form) form.addEventListener("submit", async function (ev) {
       ev.preventDefault();
-      var q = form.q.value.trim(), dias = form.dias.value.trim();
+      var q = form.q.value.trim(), dias = diasDe();
       var out = view.querySelector("#ppOut");
       if (!q) { out.innerHTML = '<div class="cs">Informe um EAN ou parte da descrição.</div>'; return; }
       out.innerHTML = '<div class="empty">Analisando…</div>';
@@ -1578,7 +1677,15 @@
         (isEan ? "ean=" + encodeURIComponent(q) : "produto=" + encodeURIComponent(q)) + (dias ? "&dias=" + encodeURIComponent(dias) : "");
       try {
         var d = await getJSON(url);
-        out.innerHTML = promoDeepDiveHtml(d);
+        if (d && d.recomendado) { out.innerHTML = promoDeepDiveHtml(d); return; }
+        // site publicado devolveu o ranking (sem backend) — procura o produto nos dados embutidos
+        var ql = q.toLowerCase();
+        var d0 = mkt._pp, pools = [(d0 && d0.produtos) || [], (d0 && d0.sem_custo && d0.sem_custo.produtos) || []];
+        (d0 && d0.por_grupo || []).forEach(function (g) { pools.push(g.produtos || []); });
+        var hit = null;
+        pools.some(function (arr) { return (hit = arr.find(function (p) { return (isEan && String(p.ean) === q) || String(p.produto).toLowerCase().indexOf(ql) >= 0; })); });
+        out.innerHTML = hit && hit.detalhe ? promoDeepDiveHtml(hit.detalhe)
+          : '<div class="result">No site publicado a busca livre cobre só os produtos já listados abaixo (ranking + grupos). Para qualquer produto do catálogo, abra a Precificação no servidor local.</div>';
       } catch (e) {
         out.innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>";
       }
@@ -1641,6 +1748,10 @@
       (p.papeis && p.papeis.length > 1 ? ' <span class="cs">+ ' + p.papeis.slice(1).map(esc).join(", ") + "</span>" : "") + "</div>" +
       '<div class="cs">' + esc(p.categoria || "") + (p.ean ? " · EAN " + p.ean : "") + "</div>" +
       '<div class="cc-act">→ ' + esc(p.acao_sugerida) + "</div>" +
+      (p.promo ? '<div class="cc-promo">🏷️ colocar a <b>R$ ' + brl(p.promo.preco_recomendado) + "</b> (-" + p.promo.desconto_pct + "% de R$ " + brl(p.promo.preco_normal) + ") · margem " +
+        (p.promo.margem_pct_na_promo == null ? "—" : Math.round(p.promo.margem_pct_na_promo * 100) + "%") +
+        " · +R$ " + brl(p.promo.lucro_incremental_previsto) + " lucro / " + p.promo.duracao_dias + "d" +
+        (p.promo.tem_promo_planejada ? ' · <span class="tag">na tabela</span>' : "") + "</div>" : "") +
       '<div class="cc-scores">' +
         ssPill("Opport.", p.opportunity_score) +
         ssPill("Tráfego", s.traffic_score && s.traffic_score.valor) +
@@ -2070,6 +2181,9 @@
             '<td class="num" data-l="Giro 30d">' + (r.nossa_receita_30d == null ? "—" : "R$ " + brl(r.nossa_receita_30d)) + "</td>" +
             '<td data-l="Margem">' + (r.nossa_margem_pct == null ? '<span class="cs">s/ custo</span>' : pct(r.nossa_margem_pct * 100)) + "</td>" +
             '<td data-l="Veredito">' + esc(r.veredito) +
+              (r.reagir_com ? '<div class="cs" style="margin-top:3px;color:var(--s1)">🏷️ reagir a <b>R$ ' + brl(r.reagir_com.preco_recomendado) + "</b> (-" + r.reagir_com.desconto_pct + "%) · margem " +
+                (r.reagir_com.margem_pct_na_promo == null ? "—" : Math.round(r.reagir_com.margem_pct_na_promo * 100) + "%") +
+                (r.reagir_com.cobre_o_concorrente === false ? " · <b>não chega</b> no preço deles sem furar a margem" : r.reagir_com.cobre_o_concorrente === true ? " · cobre o preço deles" : "") + "</div>" : "") +
               (r.contra_ataque ? '<div class="cs" style="margin-top:3px;color:var(--brand-2)">→ promover no lugar: <b>' + esc(r.contra_ataque.produto) + "</b> <span class=\"cs\">(" + esc(r.contra_ataque.motivo) + ")</span></div>" : "") +
             "</td></tr>";
         }).join("") + "</tbody></table>" : '<div class="empty">Nada relevante para reagir — eles não baixaram nada que a gente venda em volume.</div>') + "</div>";

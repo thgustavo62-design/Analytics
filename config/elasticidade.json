@@ -17,7 +17,7 @@
   "passo_desconto": 0.02,
   "desconto_teto": 0.4,
   "piso_margem_pct": 0.05,
-  "duracao_dias_padrao": 3,
+  "duracao_dias_padrao": 7,
   "_nota_halo": "halo_r$_por_unidade = ganho estimado de margem EM OUTROS PRODUTOS por unidade incremental vendida na promoção (efeito tráfego/cesta). É EXIBIDO como 'efeito_cesta_estimado' ao lado do resultado, mas NÃO entra na recomendação — a recomendação é pelo lucro incremental do próprio SKU, para nunca recomendar vender abaixo do que se ganha. Ajuste pela sua cesta média; 0 desliga a exibição.",
   "halo_r$_por_unidade": 0.8
 }

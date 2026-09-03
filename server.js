@@ -816,8 +816,8 @@ app.get("/api/marketing/:loja/promo-pricing", (req, res) => {
   try {
     const ctx = contextoMarketing(req.params.loja);
     const dur = +req.query.dias || undefined;
-    if (req.query.ean || req.query.produto || req.query.descricao) {
-      const r = promoPricing.precificarProduto(req.params.loja, { ...ctx, ean: req.query.ean, descricao: req.query.produto || req.query.descricao, duracaoDias: dur });
+    if (req.query.ean || req.query.produto || req.query.descricao || req.query.produto_id) {
+      const r = promoPricing.precificarProduto(req.params.loja, { ...ctx, ean: req.query.ean, produto_id: req.query.produto_id, descricao: req.query.produto || req.query.descricao, duracaoDias: dur });
       return res.status(r.erro ? 404 : 200).json(r);
     }
     const r = promoPricing.oportunidadesPromo(req.params.loja, { ...ctx, n: +req.query.n || undefined, duracaoDias: dur });

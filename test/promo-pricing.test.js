@@ -131,3 +131,46 @@ test("precificarProduto: produto inexistente devolve erro", { skip: SKIP }, () =
   const d = pp.precificarProduto(LOJA, { descricao: "zzz produto que nao existe zzz", concorrenciaCategorias: FRESH });
   assert.ok(d.erro);
 });
+
+test("oportunidadesPromo: recorte por_grupo cobre os grupos e embute o detalhe de cada produto", { skip: SKIP }, () => {
+  const o = pp.oportunidadesPromo(LOJA, { n: 8, concorrenciaCategorias: FRESH });
+  assert.ok(Array.isArray(o.por_grupo) && o.por_grupo.length >= 1, "sem por_grupo");
+  assert.deepEqual(o.grupos_disponiveis, o.por_grupo.map((g) => g.categoria));
+  // por_grupo ordenado desc por lucro incremental total
+  for (let i = 1; i < o.por_grupo.length; i++) assert.ok(o.por_grupo[i].lucro_incremental_total <= o.por_grupo[i - 1].lucro_incremental_total + 1e-6);
+  // a soma dos produtos de todos os grupos = total de linhas interessantes (nada perdido/duplicado)
+  const totalNoGrupo = o.por_grupo.reduce((s, g) => s + g.n_interessantes, 0);
+  const totalListado = o.produtos.length + o.sem_custo.n; // top é subconjunto, mas com custo todos entram em por_grupo
+  assert.ok(totalNoGrupo >= o.produtos.length, "por_grupo não cobre o ranking");
+  for (const g of o.por_grupo) {
+    assert.ok(g.produtos.length === g.mostrando && g.mostrando <= g.n_interessantes);
+    for (const p of g.produtos) {
+      assert.ok(p.produto_id != null || p.ean != null, "produto do grupo sem identificador");
+      assert.ok(p.detalhe && !p.detalhe.erro, "grupo sem detalhe embutido");
+      assert.ok(p.detalhe.recomendado && p.detalhe.testar.length >= 1, "detalhe incompleto");
+      assert.equal(p.detalhe.curva, undefined, "detalhe do grupo deveria ser sem curva");
+      // o preço/desc do resumo bate com o recomendado do detalhe
+      assert.equal(p.preco_recomendado, p.detalhe.recomendado.preco);
+      assert.equal(p.desconto_pct, p.detalhe.recomendado.desconto_pct);
+    }
+  }
+  // o ranking global embute a curva (reamostrada) para o gráfico
+  for (const p of o.produtos) {
+    assert.ok(p.detalhe && Array.isArray(p.detalhe.curva) && p.detalhe.curva.length >= 2, "ranking sem curva embutida");
+    assert.ok(p.detalhe.aviso === undefined, "detalhe não deveria repetir o aviso");
+  }
+});
+
+test("precoRapido: só devolve produtos que valem promoção, com preço/margem coerentes", { skip: SKIP }, () => {
+  const o = pp.oportunidadesPromo(LOJA, { n: 10, concorrenciaCategorias: FRESH });
+  const ids = o.produtos.map((p) => p.produto_id).filter(Boolean);
+  if (!ids.length) return;
+  const m = pp.precoRapido(LOJA, { concorrenciaCategorias: FRESH }, ids);
+  assert.ok(m instanceof Map);
+  for (const [, rec] of m) {
+    assert.ok(rec.desconto_pct > 0);
+    assert.ok(rec.preco_recomendado < rec.preco_normal);
+    if (rec.margem_pct_na_promo != null) assert.ok(rec.margem_pct_na_promo >= CFG.piso_margem_pct - 1e-6);
+    assert.equal(rec.elasticidade_premissa, true);
+  }
+});

@@ -12,6 +12,7 @@
 const mpa = require("../marketing-product-analytics");
 const { papelDeProduto } = require("./roles");
 const { subScores } = require("./scores");
+const promoPricing = require("./promo-pricing");
 
 function r2(n) { return n == null ? null : Math.round(n * 100) / 100; }
 
@@ -36,13 +37,15 @@ function nome2txt(n) {
   }[n] || n;
 }
 
-function slim(p) {
+function slim(p, promoMap) {
   const pap = papelDeProduto(p);
   const sub = subScores(p);
+  const promo = promoMap && promoMap.get(String(p.produto_id));
   return {
     descricao: p.descricao,
     ean: p.ean,
     categoria: p.categoria,
+    promo: promo || null,
     opportunity_score: p.opportunity.score,
     opportunity_confianca: p.opportunity.confianca,
     papel_primario: pap.papel_primario,
@@ -80,7 +83,10 @@ function commandCenter(loja, opts = {}) {
   const ocultosC = anunciaveisRaw.length - anunciaveis.length;
   const bloqueados = r.produtos.filter((p) => p.do_not_promote);
 
-  const anunciar = anunciaveis.slice(0, limAnunciar).map(slim);
+  const aList = anunciaveis.slice(0, limAnunciar);
+  let promoMap = new Map();
+  try { promoMap = promoPricing.precoRapido(loja, opts, aList); } catch (e) { /* segue sem preço de promo */ }
+  const anunciar = aList.map((p) => slim(p, promoMap));
 
   const nao_anunciar = bloqueados.slice(0, limBloq).map((p) => {
     const m = p.do_not_promote.motivos || [];

@@ -13,6 +13,7 @@ const { montarContexto } = require("./intelligence/contexto");
 const { normalizarEan } = require("./catalogo");
 const { bestMatch } = require("./match");
 const { categoriaCanonica, expandirSuperGrupo } = require("./categorias");
+const promoPricing = require("./marketing/promo-pricing");
 
 const LOJAS_CFG = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "lojas.json"), "utf8"));
 const CFG_STOCK = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "marketing-stock.json"), "utf8"));
@@ -307,9 +308,31 @@ function analisarConcorrencia(loja) {
       nossa_classe: p ? p.classe : null, nossa_margem_pct: margem, nossa_cobertura: p ? p.cobertura_rotulo : null,
       score, veredito,
       contra_ataque: contra,
+      _pid: p ? p.produto_id : null,
     });
   }
   reagir.sort((a, b) => b.score - a.score);
+
+  // preço recomendado para reagir (mesmo motor da tela Precificação) — nos itens que vendemos.
+  // Anota também o preço-alvo p/ igualar o concorrente e se o motor topa descer até lá.
+  try {
+    const ids = reagir.filter((r) => r._pid).slice(0, 40).map((r) => r._pid);
+    const pr = promoPricing.precoRapido(loja, {}, ids);
+    for (const r of reagir) {
+      const rec = r._pid && pr.get(String(r._pid));
+      const precoAlvo = r.nosso_preco && r.preco_deles ? round(r.preco_deles, 2) : null;
+      const descAlvo = r.nosso_preco && r.preco_deles ? round((1 - r.preco_deles / r.nosso_preco) * 100, 1) : null;
+      r.reagir_com = rec ? {
+        preco_recomendado: rec.preco_recomendado, desconto_pct: rec.desconto_pct,
+        margem_pct_na_promo: rec.margem_pct_na_promo, lucro_incremental_previsto: rec.lucro_incremental_previsto,
+        duracao_dias: rec.duracao_dias, elasticidade_premissa: true,
+        cobre_o_concorrente: precoAlvo != null ? rec.preco_recomendado <= precoAlvo + 0.01 : null,
+      } : null;
+      r.preco_para_igualar = precoAlvo;
+      r.desconto_para_igualar_pct = descAlvo;
+      delete r._pid;
+    }
+  } catch (e) { for (const r of reagir) delete r._pid; }
 
   // ---- resumo + ações (determinístico) ----
   const maisAgressivo = concorrentes.filter((c) => c.temColeta).sort((a, b) => b.abaixo - a.abaixo)[0];
