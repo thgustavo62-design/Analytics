@@ -389,7 +389,11 @@
         '<div class="hint">A soma é conferida contra o "Total:" do rodapé. Se não bater, é recusado.</div></fieldset>' +
       '<fieldset><legend>Instagram (Meta Business Suite)</legend><div class="hint">Digite olhando o print. Vazio = ignora. Variação pode ser negativa.</div><div id="igF"></div></fieldset>' +
       '<fieldset><legend>Concorrentes (xlsx)</legend><input type="file" name="concorrentes" accept=".xlsx"></fieldset>' +
-      '<button class="btn" type="submit" id="upGo">Gerar análise</button></form><div id="upRes" class="result" hidden></div></div>';
+      '<button class="btn" type="submit" id="upGo">Gerar análise</button></form><div id="upRes" class="result" hidden></div></div>' +
+      '<div class="card form-card"><form id="fPromo"><fieldset><legend>Tabela de promoções (o "tabelão" / encarte)</legend>' +
+      '<div class="hint">Planilha (xlsx ou csv) com os produtos que vão entrar em oferta e o preço. Colunas: produto (ou EAN), preço de / preço por (ou desconto), início, fim, campanha, loja. Não precisa loja/mês aqui — o sistema descobre pelo arquivo. Alimenta o Share of Promotions e o Calendário.</div>' +
+      '<input type="file" name="promo" accept=".xlsx,.csv" required></fieldset>' +
+      '<button class="btn" type="submit">Enviar tabela de promoções</button></form><div id="promoRes" class="result" hidden></div></div>';
     var mes = view.querySelector("#upMes");
     ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"].forEach(function (n, i) {
       var o = document.createElement("option"); o.value = i + 1; o.textContent = n; mes.appendChild(o);
@@ -405,6 +409,29 @@
         '<div><label class="f">Obs (opcional)</label><input type="text" data-ig="' + m[0] + '" data-k="obs"></div></div>'));
     });
     view.querySelector("#fUp").addEventListener("submit", uploadSubmit);
+    view.querySelector("#fPromo").addEventListener("submit", promoSubmit);
+  }
+  async function promoSubmit(ev) {
+    ev.preventDefault();
+    var f = ev.target, btn = f.querySelector("button"), box = view.querySelector("#promoRes");
+    if (!f.promo.files[0]) return;
+    btn.disabled = true; btn.textContent = "Enviando…"; box.hidden = true;
+    var fd = new FormData(); fd.append("arquivo", f.promo.files[0]);
+    try {
+      var r = await fetch("/upload/promocoes", { method: "POST", body: fd });
+      var d = await r.json();
+      if (!r.ok) throw new Error(d.erro || ("HTTP " + r.status));
+      var p = d.promocoes || {};
+      box.className = "result ok";
+      box.textContent = "OK — " + (p.linhas || 0) + " linha(s) lidas, " + (p.casados_no_catalogo || 0) + " casadas com o catálogo (EAN/nome)." +
+        (p.resumo ? "\nLojas: " + (p.resumo.lojas || []).join(", ") + " · com prazo: " + p.resumo.com_prazo + (p.resumo.sem_preco_ignoradas ? " · " + p.resumo.sem_preco_ignoradas + " sem preço/desconto (ignoradas)" : "") : "") +
+        "\nVê em Concorrentes → Share of Promotions.";
+      box.hidden = false;
+    } catch (e) {
+      box.className = "result err"; box.textContent = e.message; box.hidden = false;
+    } finally {
+      btn.disabled = false; btn.textContent = "Enviar tabela de promoções";
+    }
   }
   async function uploadSubmit(ev) {
     ev.preventDefault();
@@ -1884,8 +1911,9 @@
         '<div class="cs" style="margin-bottom:8px">Ofertas na coleta — ' + sp.por_concorrente.map(function (c) { return esc(c.concorrente) + ": <b>" + int(c.ofertas) + "</b>"; }).join(" · ") + "</div>" +
         '<table class="tbl mobile-cards"><thead><tr><th>Categoria</th><th class="num">Nossa ação</th><th class="num">Ofertas deles</th><th class="num">Abaixo do nosso</th><th>Pressão</th><th>Leitura</th></tr></thead><tbody>' +
         sp.por_categoria.slice(0, 14).map(function (c) {
-          return "<tr><td data-l=\"Categoria\">" + esc(c.categoria) + "</td>" +
-            '<td class="num" data-l="Nossa ação">' + (c.nossas_promocoes ? int(c.nossas_promocoes) + " prod." : c.promo_recorrente ? "recorrente" : "—") + "</td>" +
+          var ex = (c.nossas_exemplos || []).map(function (x) { return esc(x.descricao) + (x.preco_promo ? " R$ " + brl(x.preco_promo) : x.desconto_pct ? " -" + Math.round(x.desconto_pct * 100) + "%" : ""); }).join(" · ");
+          return "<tr><td data-l=\"Categoria\">" + esc(c.categoria) + (ex ? '<div class="cs">' + ex + "</div>" : "") + "</td>" +
+            '<td class="num" data-l="Nossa ação">' + (c.nossas_promocoes ? int(c.nossas_promocoes) + " na tabela" : c.promo_recorrente ? "recorrente" : "—") + "</td>" +
             '<td class="num" data-l="Ofertas deles">' + int(c.ofertas_concorrentes) + "</td>" +
             '<td class="num" data-l="Abaixo">' + int(c.ofertas_abaixo_do_nosso) + "</td>" +
             '<td data-l="Pressão">' + pressPill(c.pressao) + "</td>" +

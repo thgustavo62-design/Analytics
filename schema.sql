@@ -371,3 +371,28 @@ CREATE TABLE IF NOT EXISTS analises_comerciais (
   atualizado_em TEXT NOT NULL,
   UNIQUE(loja_id, ano, mes)
 );
+
+-- ============================================================================
+
+-- Tabela de PLANEJAMENTO de promoções: os produtos que vão entrar em oferta e a que
+-- preço (o "tabelão"/encarte que a loja monta). Lida de um xlsx/csv jogado na inbox.
+-- Alimenta o Share of Promotions (Concorrentes), o Calendário e o Campaign Builder.
+CREATE TABLE IF NOT EXISTS promocoes_planejadas (
+  id            INTEGER PRIMARY KEY,
+  loja_id       INTEGER,                 -- NULL = todas as lojas
+  produto_id    INTEGER,                 -- resolvido do catálogo; NULL se não casou
+  ean           TEXT,
+  descricao     TEXT NOT NULL,
+  categoria     TEXT,
+  preco_normal  REAL,
+  preco_promo   REAL,
+  desconto_pct  REAL,
+  data_inicio   TEXT,                    -- 'AAAA-MM-DD' ou NULL (vigente já / sem data)
+  data_fim      TEXT,                    -- 'AAAA-MM-DD' ou NULL (sem prazo)
+  campanha      TEXT,
+  fonte_arquivo TEXT,
+  chave         TEXT UNIQUE,             -- loja|ean-ou-descricao|inicio  (dedupe no re-upload)
+  criado_em     TEXT NOT NULL,
+  atualizado_em TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_promo_plan_loja ON promocoes_planejadas(loja_id, data_fim);

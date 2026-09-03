@@ -1,0 +1,20 @@
+{
+  "_nota": "Tabela de PLANEJAMENTO de promoções — os produtos que vão entrar em oferta e a que preço (o 'tabelão'/encarte da loja). Jogue o xlsx/csv na pasta inbox; o nome deve conter uma das palavras de 'arquivo_contem' + (opcional) a loja ('minas' / 'farma e farma' / 'geral' para as duas), ou inclua uma coluna 'loja'. O sistema lê e usa em: Share of Promotions (Concorrentes), Calendário e Campaign Builder. Ajuste os sinônimos de coluna aqui sem tocar no código.",
+  "arquivo_contem": ["promoc", "promoç", "promo ", "promo_", "oferta", "ofertas", "encarte", "tabelao", "tabelão", "tabelaço", "precos promo", "preços promo", "plano de midia", "plano de mídia"],
+  "colunas": {
+    "produto":       ["produto", "descricao", "descrição", "desc", "item", "nome do produto", "nome"],
+    "ean":           ["ean", "codigo de barras", "código de barras", "cod barras", "cod. barras", "barras", "gtin"],
+    "codigo":        ["codigo", "código", "cod", "cod.", "cod interno", "codigo interno", "sku", "ref", "referencia", "referência", "plu"],
+    "categoria":     ["categoria", "grupo", "secao", "seção", "departamento", "linha", "familia", "família"],
+    "marca":         ["marca", "fabricante"],
+    "preco_normal":  ["preco normal", "preço normal", "preco de", "preço de", "preco de r$", "preço de r$", "de r$", "de:", "de", "preco cheio", "preço cheio", "preco tabela", "preço tabela", "preco venda", "preço venda", "preco atual", "preço atual", "valor normal", "vlr normal", "preco 1", "preço 1"],
+    "preco_promo":   ["preco promo", "preço promo", "preco promocional", "preço promocional", "preco por", "preço por", "por r$", "por:", "por", "preco oferta", "preço oferta", "preco de oferta", "preço de oferta", "valor promocional", "vlr promo", "preco final", "preço final", "oferta r$", "preco 2", "preço 2", "novo preco", "novo preço"],
+    "desconto_pct":  ["desconto", "desc", "% desc", "desconto %", "% desconto", "% off", "off", "abatimento"],
+    "inicio":        ["inicio", "início", "data inicio", "data início", "data de inicio", "vigencia inicio", "vigência início", "valido de", "válido de", "de (data)", "inicio vigencia", "inicio promo"],
+    "fim":           ["fim", "data fim", "termino", "término", "data termino", "data término", "ate", "até", "vigencia fim", "vigência fim", "validade", "valido ate", "válido até", "vencimento", "fim vigencia", "fim promo"],
+    "campanha":      ["campanha", "acao", "ação", "evento", "encarte", "tema", "titulo", "título", "nome da campanha"],
+    "loja":          ["loja", "unidade", "filial", "estabelecimento", "praca", "praça"]
+  },
+  "nome_todas_as_lojas": ["geral", "rede", "consolidado", "todas", "todos", "ambas", "ambos", "matriz"],
+  "formatos_data": ["DD/MM/AAAA", "AAAA-MM-DD", "DD/MM", "excel-serial", "até DD/MM/AAAA"]
+}

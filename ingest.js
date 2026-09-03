@@ -202,6 +202,23 @@ function ingestInstagramJson(filePath) {
   return { tipo: "instagram", loja, periodo: payload.periodo, metricas: metricas.length };
 }
 
+// --- tabela de planejamento de promoções (o "tabelão"/encarte) ---------
+
+function ingestPromocoes(filePath) {
+  const { parsePromocoes } = require("./parsers/promocoes");
+  const base = path.basename(filePath);
+  const { linhas, header, resumo } = parsePromocoes(filePath);
+  if (!linhas.length) throw new Error(`tabela de promoções "${base}" sem linhas úteis (produto + preço promocional/desconto).`);
+  const r = require("./db").substituirPromocoesPlanejadas(base, linhas);
+  // muda o Share of Promotions e o Calendário — re-detecta as duas lojas
+  try {
+    for (const loja of LOJAS_VALIDAS) require("./intelligence").rodarDeteccao(loja);
+  } catch (e) {
+    console.error("[ingest] detecção pós-promoções:", e.message);
+  }
+  return { tipo: "promocoes", arquivo: base, header, ...r, resumo };
+}
+
 // --- dispatcher ---------------------------------------------------------
 
 const CONC_CFG = (() => {
@@ -214,6 +231,11 @@ async function ingestFile(filePath) {
   const base = path.basename(filePath).toLowerCase();
   const ext = path.extname(base);
   if (ext === ".pdf") return ingestVendas(filePath);
+  const { ehArquivoPromocao } = require("./parsers/promocoes");
+  if ((ext === ".xlsx" || ext === ".csv") && ehArquivoPromocao(base) && !ehArquivoConcorrente(base)) {
+    return ingestPromocoes(filePath);
+  }
+  if (ext === ".csv") throw new Error("csv só é lido como tabela de promoções (nome deve conter 'promo'/'oferta'/'encarte').");
   if (ext === ".xlsx") {
     if (ehArquivoConcorrente(base)) {
       const r = ingestConcorrentes(filePath);
@@ -253,4 +275,4 @@ async function ingestFile(filePath) {
   throw new Error(`tipo de arquivo não suportado (${ext || "sem extensão"}).`);
 }
 
-module.exports = { ingestFile, ingestVendas, ingestConcorrentes, ingestInstagramJson, ingestAnaliseComercial, resolveLoja };
+module.exports = { ingestFile, ingestVendas, ingestConcorrentes, ingestInstagramJson, ingestAnaliseComercial, ingestPromocoes, resolveLoja };

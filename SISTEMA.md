@@ -15,8 +15,8 @@ Decision Intelligence + plano em 7 fases), [`docs/EVOLUCAO-INTELLIGENCE.md`](doc
 ## 1. O que o sistema faz
 
 Recebe documentos brutos das farmácias (relatório de vendas em PDF, planilha de
-estoque+custo+preço, coleta de concorrentes, métricas de Instagram) jogados numa pasta,
-processa sozinho e entrega:
+estoque+custo+preço, coleta de concorrentes, **tabela de planejamento de promoções**,
+métricas de Instagram) jogados numa pasta, processa sozinho e entrega:
 
 - **Command Center** (Fase A) — tela de abertura: "o que anunciar hoje" (ranqueado, com papel
   de marketing + ação + motivos e evidência) × "o que NÃO anunciar" (ruptura / margem / sem
@@ -67,12 +67,13 @@ do Supabase (Vercel + GitHub Pages).
              -> resolve loja pelo CNPJ do cabeçalho · split por mês
              -> replaceVendas + catalogo.sincronizarProdutosDeVendas + basket.calcularCesta
              -> intelligence.rodarDeteccao
-     .xlsx  -> concorrente?  parsers/concorrentes.js (36 col OU planilha simples, config-driven)
+ .xlsx/.csv -> concorrente?   parsers/concorrentes.js (36 col OU planilha simples)
+             -> promoção?     parsers/promocoes.js -> promocoes_planejadas (o "tabelão")
              -> estoque/custo/preço?  catalogo.ingestPlanilhaProduto (1 arquivo alimenta os 3)
-             -> em ambos: rodarDeteccao das lojas tocadas
+             -> rodarDeteccao das lojas tocadas
      .json  -> análise comercial (validate-analise.js) OU instagram
                                  v
-   db.js  (node:sqlite / DatabaseSync)  —  data/analytics.db  —  27 tabelas
+   db.js  (node:sqlite / DatabaseSync)  —  data/analytics.db  —  28 tabelas
                                  v
    ┌─ camada determinística ──────────────────────────────────────────────┐
    │ aggregate · analytics-deep · classify · insights · match             │
@@ -115,6 +116,7 @@ do Supabase (Vercel + GitHub Pages).
 | `ingest.js` | dispatcher: extensão + nome do arquivo → função de ingestão; resolve loja pelo **CNPJ** do cabeçalho do PDF; split de PDF multi-mês; roda detecção pós-ingestão |
 | `parsers/vendas.js` | PDF "Analítico de Vendas" via `pdfjs-dist` → transações + empresa (CNPJ/razão social) + **validação da soma vs. "Total:"** (não bate → lança, nada é gravado) + detecção de dia parcial |
 | `parsers/concorrentes.js` | xlsx de concorrente — formato de 36 colunas **ou** planilha simples (Concorrente+Produto+Preço); colunas mapeadas por `config/concorrentes.json`; sem status = tudo confirmado |
+| `parsers/promocoes.js` | **tabela de planejamento de promoções** (o "tabelão"/encarte) — xlsx **ou csv**; acha o cabeçalho, mapeia colunas por `config/promocoes.json` (produto/EAN, preço de/por ou desconto, início, fim, campanha, loja), lê datas `DD/MM` sem "adivinhação US" (`raw:true`), deriva preço↔desconto quando falta um. `data/promocoes_planejadas` (via `db.substituirPromocoesPlanejadas`, dedupe por `chave` no re-upload). Alimenta o **Share of Promotions** e o Calendário. |
 | `parsers/instagram.js` | normaliza o formulário / JSON de métricas do Instagram |
 | `catalogo.js` | `sincronizarProdutosDeVendas()` popula `produtos` pelos EAN das vendas; `ingestPlanilhaProduto()` lê planilha de estoque — **um arquivo alimenta estoque + preço de venda + preço de promoção + custo** ("Últ. Prc. Entrada"); nome com `geral`/`rede` aplica nas 2 lojas |
 | `classify.js` | categoria por palavra-chave (`config/categorias.json`) |
@@ -128,7 +130,7 @@ do Supabase (Vercel + GitHub Pages).
 | `insights.js` | 3 regras automáticas → cards (`config/insights.json`) |
 | `marketing-product-analytics.js` | **Fase 2** — por produto: unidades/receita/cupons 7/14/30/60/90d, venda média diária, tendência (14d×14d, clamp ±300%), `dias_cobertura` por categoria (`config/marketing-stock.json`), margem (só com custo), classes, **Opportunity Score** (7 componentes + peso + contribuição + fonte + confiança, `config/opportunity-score.json`), `do-not-promote` + substituto, estoque parado. Memo de 45s. |
 | `analise-cruzada.js` | vendas × estoque × custo × margem → `resultado_30d` (lucro estimado por produto), `capital_parado`, `giro_mensal`, **matriz** VACA_LEITEIRA/ISCA_CARA/PESO_MORTO/APOSTA/SUMINDO/RUPTURA/NORMAL, `custo_suspeito` (custo > 1,3× preço = erro de ERP, balde separado) |
-| `concorrencia-analise.js` | panorama, por concorrente (pressão + categorias atacadas + exemplos), por categoria (ALTA/MÉDIA/BAIXA), **"onde reagir"** priorizado por relevância × quão abaixo × dá pra cobrir (margem real) — com **`contra_ataque`** (Fase E: melhor produto da mesma categoria para promover no lugar quando o SKU atacado não dá pra cobrir), **`share_promocoes`** (Fase E: nossa ação promocional [campanhas cadastradas + calendário recorrente] × ofertas do concorrente por categoria → subcomunicando / esforço-sem-pressão / equilibrado), resumo + ações |
+| `concorrencia-analise.js` | panorama, por concorrente (pressão + categorias atacadas + exemplos), por categoria (ALTA/MÉDIA/BAIXA), **"onde reagir"** priorizado por relevância × quão abaixo × dá pra cobrir (margem real) — com **`contra_ataque`** (Fase E: melhor produto da mesma categoria para promover no lugar quando o SKU atacado não dá pra cobrir), **`share_promocoes`** (Fase E: nossa ação promocional [**tabela de planejamento de promoções** vigente na data → fallback campanhas cadastradas] + calendário recorrente × ofertas do concorrente por categoria → subcomunicando / esforço-sem-pressão / equilibrado; promoções são forward-looking, usa a data de hoje), resumo + ações |
 | `campanhas.js` | **Fase 3** — `eficienciaCalendario` (DEMAND_LIFT dias-de-campanha vs. demais, veredito EXCELENTE→DESTRUTIVA; nunca DESTRUTIVA sem custo), **Campaign Builder** (elenco por papel), **Offer Simulator** (cenários conservador/provável/agressivo, nunca promete venda) |
 | `basket.js` | **Fase 4** — cesta por cupom (`data+lancamento`): support/confidence/lift; corte de ruído (mínimo por produto isolado); `centralidade()`; `combos()` |
 | `marketing/roles.js` | **Fase A** — papel de marketing por produto: 1 primário + secundários (CHAMARIZ / TRÁFEGO / HERO / MARGEM / COMPLEMENTAR / DESOVA / RECORRÊNCIA / IMAGEM / GIRO), com força 0..1, racional e confiança. Regras em `config/marketing-roles.json`. RECORRÊNCIA/IMAGEM são proxies (confiança baixa). |
@@ -174,7 +176,7 @@ do Supabase (Vercel + GitHub Pages).
 
 ## 4. Banco de dados (`data/analytics.db`, SQLite via `node:sqlite`)
 
-27 tabelas. Migrations **idempotentes** no boot: `schema.sql` roda `CREATE TABLE IF NOT EXISTS`
+28 tabelas. Migrations **idempotentes** no boot: `schema.sql` roda `CREATE TABLE IF NOT EXISTS`
 + bloco de `ALTER TABLE … ADD COLUMN` em try/catch (engole "duplicate column name"). Nada é
 destrutivo.
 
@@ -185,6 +187,7 @@ destrutivo.
 | | `vendas_transacoes` | `periodo_id`, `data`, `lancamento` (cupom), `barras` (EAN), `descricao`, `categoria`, `quantidade`, `valor_liquido`, `forma_pagto`, `emp_id`, `cli_id` |
 | | `instagram_metricas` | `periodo_id`, `metrica`, `valor_exibicao`, `delta_pct` |
 | | `concorrencia_ofertas` | `periodo_id`, `concorrente`, `produto`, `preco_normal/promo`, `validade`, `nivel_confianca`, `status_validacao`, `nosso_preco_medio`, `abaixo_do_nosso`, **`data_coleta`**, **`fonte`** (`coleta`/`manual`) |
+| | `promocoes_planejadas` | tabela do "tabelão"/encarte: `loja_id` (NULL = todas), `produto_id` (resolvido, pode ser NULL), `ean`, `descricao`, `categoria`, `preco_normal/promo`, `desconto_pct`, `data_inicio/fim`, `campanha`, `fonte_arquivo`, `chave` UNIQUE |
 | **Catálogo (Fase 1)** | `produtos` | `ean` UNIQUE (nullable), `descricao[_normalizada]`, `categoria`, `*_manual` (override vence), `fonte` (`vendas`/`catalogo`/`manual`) |
 | | `produto_estoque` | snapshot por `(loja_id, produto_id, data_referencia)` |
 | | `produto_custo` | historizado — `data_inicio`/`data_fim` (vigência; nunca sobrescreve) |
@@ -240,7 +243,8 @@ CRUD `GET/POST/PATCH/DELETE /api/marketing/:loja/campaigns[/:id]`.
 `GET /api/analise-comercial/:loja[/:ym]` · `POST /analise-comercial/upload` (token) ·
 `POST /analise-comercial/gerar/:loja/:ym` (usa a API da Anthropic).
 
-**Upload / publicação** — `POST /upload/`{`vendas`, `analise`, `concorrentes`, `instagram`} ·
+**Upload / publicação** — `POST /upload/`{`vendas`, `analise`, `concorrentes`, `instagram`, `promocoes`} ·
+`GET /api/promocoes/:loja` (promoções planejadas vigentes) ·
 `POST /api/publicar` (força regenerar + Supabase) · `POST /api/catalogo/produtos/:id` (correção manual).
 
 **Export** — `GET /export/:loja/:periodo` e `/export-analise/:loja/:ym` (HTML autocontido de 1 tela) ·
@@ -255,11 +259,11 @@ CRUD `GET/POST/PATCH/DELETE /api/marketing/:loja/campaigns[/:id]`.
 | **Command Center** (Fase A · tela de abertura) | Alertas (ruptura com venda relevante / concorrência atacando / capital parado / feed faltando) · linha de resumo (analisados · anunciáveis · bloqueados · mix de papéis) · **🔥 O que anunciar hoje** — cards ranqueados por Opportunity: papel + ação sugerida, mini-barras dos sub-scores (Opport./Tráfego/Lucro/Desova/Campanha/Criativo), interpretação, 3 motivos com evidência, chips de tendência/cobertura/margem · **⛔ O que NÃO anunciar** — motivo curto + motivos com evidência + substituto |
 | **Painel** | 4 cartões de resumo + abas: Visão Geral · Vendas · Redes Sociais · Concorrência · Categorias · Top Produtos · Tendência. Gráficos SVG (combo barras+linha, donut, dia-da-semana, tendência). |
 | **Marketing** (12 abas) | **Resultado** (KPIs de lucro/capital parado/risco + matriz visual + tabelas top-lucro / vende-e-não-lucra / custo-a-conferir / peso-morto / ruptura / sumindo) · Produtos · Recomendados · Não anunciar · Estoque parado · Cestas & Combos · Eficiência · **Medição** (por campanha do calendário: baseline mesmo dia da semana, incremental, canibalização + campo de investimento → ROAS e retorno sobre margem) · **Playbooks** (por campanha recorrente: badge de tendência, melhor dia, barras de lift por dia, veredito, produtos + ângulo dominante; seção de fadiga de produto) · **Calendário** (semana a semana + ocorrências com status OK/SUSPENDER/RENOVAR/REVISAR + slots sugeridos + ciclo fechado) · **Montar campanha** (Campaign Builder 2.0: escolhe dias + tema → campanha inteira com score, elenco por papel, preço/ângulo/forecast por item, combos e forecast em 3 cenários) · Simulador de oferta |
-| **Concorrentes** | Botão **➕ Registrar oferta** (formulário rápido **ou** "colar encarte/post" → preview → salvar em lote) · KPIs (ofertas, abaixo do nosso, desconto médio) · Leitura automática + ações · **Onde reagir** (priorizado, com veredito) · Por concorrente (pressão + categorias atacadas) · Pressão por categoria |
+| **Concorrentes** | Botão **➕ Registrar oferta** (formulário rápido **ou** "colar encarte/post" → preview → salvar em lote) · KPIs (ofertas, abaixo do nosso, desconto médio) · Leitura automática + ações · **Onde reagir** (priorizado, com veredito, + "promover no lugar") · **Share of Promotions** (nossa ação promocional da tabela de promoções × ofertas do concorrente, por categoria) · Por concorrente (pressão + categorias atacadas) · Pressão por categoria |
 | **Intelligence** (7 abas) | **War Room** (bloco escuro: prioridade #1, decisões recomendadas, Threat/Opportunity Map, contradições, situação por categoria) · **Recomendações** (decisões cruzadas + "Registrar como decisão") · Sinais (com "Por quê?", Observando, Resolver, Virar decisão) · Investigações · Decisões · Padrões · Pauta 7 dias · Perguntar |
 | **Conexões** | grafo radial SVG — nós (loja/categoria/canal/campanha/concorrente/sinal/…) ligados por arestas com significado; clique → foco + painel lateral navegável |
 | **Análise Comercial** | diagnóstico executivo, decisão principal, KPIs, baseline semanal, scorecard de campanhas, canais, riscos, ações, "o que mudou", faixa SIM/NÃO (só se houver JSON do Motor) |
-| **Upload de dados** | envio manual (loja, mês, PDF, form do Instagram, xlsx) |
+| **Upload de dados** | envio manual (loja, mês, PDF, form do Instagram, xlsx de concorrentes) + card separado **tabela de promoções** (xlsx/csv, sem loja/mês — o parser descobre) |
 | **Histórico** | todos os meses processados por loja |
 | **Configurações** | pasta `inbox/` + log dos últimos arquivos + card "Catálogo (EAN)" com freshness de estoque/custo/preço |
 
@@ -280,6 +284,7 @@ KPIs/matriz em 2 colunas.
 | `insights.json` | limiares das 3 regras de insight do Painel |
 | `catalogo.json` | como reconhecer/ler as planilhas de estoque/custo/preço (nome do arquivo + sinônimos de coluna); `nome_todas_as_lojas` |
 | `concorrentes.json` | pistas de nome de arquivo + sinônimos de coluna da coleta de concorrente |
+| `promocoes.json` | pistas de nome de arquivo + sinônimos de coluna da **tabela de planejamento de promoções** (produto/EAN, preço de/por, desconto, início, fim, campanha, loja) |
 | `marketing-stock.json` | limiares de dias de cobertura (ruptura/atenção/normal/oportunidade/parado) por categoria; `margem_pct_minima_para_anunciar`, `margem_pct_lucrativo` |
 | `opportunity-score.json` | **pesos dos 7 componentes** do Opportunity Score + limiares de rótulo e de classe |
 | `marketing-roles.json` | **Fase A** — limiares das regras de papel por produto (percentil + piso absoluto de volume) + categorias de recorrência/imagem + rótulo/ação/ícone de cada papel |
@@ -353,7 +358,7 @@ leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 
 ## 11. Testes
 
-`npm test` (`node --test`) — **94 testes**, arquivos em separado (`process.env.VA_DB_PATH`
+`npm test` (`node --test`) — **97 testes**, arquivos em separado (`process.env.VA_DB_PATH`
 isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\Admin\Downloads\`.
 
 | Arquivo | Cobre |
@@ -365,6 +370,7 @@ isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\A
 | `padroes-mkt.test.js` | **Fase D** — uma entrada por campanha; `por_dia_semana` ordenado por lift; `tendencia` em conjunto válido; lift da ocorrência ≈ receita campanha / baseline; veredito coerente com a tendência; fadiga só de categoria de campanha, ainda vendendo (`lift_atual > 0`), com queda real e volume mínimo |
 | `concorrencia-analise.test.js` | **Fase E** — `share_promocoes`: estrutura, `nossas_promocoes_total` 0 sem campanhas cadastradas, linha "nós" em `por_concorrente`, categoria do calendário marcada recorrente, "subcomunicando" só com ≥2 ofertas abaixo do nosso preço e sem ação nossa; `contra_ataque` nunca aponta o próprio produto e só surge quando não vale cobrir |
 | `calendar.test.js` | **Fase G** — janela começa depois do último dia de dados; ocorrências caem no dia-da-semana da campanha e dentro da janela; `status` em conjunto válido, ajuste com motivo + evidência; slots só de categoria sem campanha; ciclo fechado com uma entrada por campanha, recomendação e link de montagem |
+| `promocoes.test.js` | **tabela de promoções** — parser (colunas, datas `DD/MM` lidas certo, desconto↔preço derivado, resolução de loja); `promocoesVigentes` filtra por data (vigente/futura/expirada/sem-prazo); re-upload não duplica (`chave`); Share of Promotions passa a citar a fonte "tabela de planejamento" |
 | `concorrentes.test.js` | filtro de marca, parse de validade/preço, resolução de loja por CNPJ |
 | `catalogo.test.js` | `normalizarEan`, `sincronizarProdutosDeVendas`, histórico de custo, planilha combinada estoque+custo+preço |
 | `marketing-product.test.js` | janelas monotônicas, clamp de tendência, 7 componentes do score somando ao score, confiança < 1 sem feed, classes, do-not-promote |

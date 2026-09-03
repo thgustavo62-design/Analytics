@@ -206,6 +206,87 @@ function getConcorrencia(periodoId) {
   return db.prepare("SELECT * FROM concorrencia_ofertas WHERE periodo_id = ?").all(periodoId);
 }
 
+// --- promoções planejadas (o "tabelão"/encarte da loja) -------------------
+
+function _normDesc(s) {
+  return String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+// substitui todas as linhas vindas de UM arquivo (re-upload é seguro)
+function substituirPromocoesPlanejadas(fonteArquivo, linhas) {
+  const ts = nowIso();
+  const ins = db.prepare(
+    `INSERT INTO promocoes_planejadas
+       (loja_id, produto_id, ean, descricao, categoria, preco_normal, preco_promo, desconto_pct, data_inicio, data_fim, campanha, fonte_arquivo, chave, criado_em, atualizado_em)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(chave) DO UPDATE SET
+       loja_id = excluded.loja_id, produto_id = excluded.produto_id, ean = excluded.ean, descricao = excluded.descricao,
+       categoria = excluded.categoria, preco_normal = excluded.preco_normal, preco_promo = excluded.preco_promo,
+       desconto_pct = excluded.desconto_pct, data_inicio = excluded.data_inicio, data_fim = excluded.data_fim,
+       campanha = excluded.campanha, fonte_arquivo = excluded.fonte_arquivo, atualizado_em = excluded.atualizado_em`
+  );
+  db.exec("BEGIN");
+  try {
+    db.prepare("DELETE FROM promocoes_planejadas WHERE fonte_arquivo = ?").run(fonteArquivo);
+    let casados = 0;
+    for (const l of linhas) {
+      const lojasAlvo = l.loja === "__todas__" ? [null] : [lojaId(l.loja)];
+      // resolve produto + categoria efetiva
+      let prod = null;
+      if (l.ean) prod = getProdutoPorEan(l.ean);
+      if (!prod && l.descricao) prod = getProdutoPorNorm(_normDesc(l.descricao));
+      if (prod) casados++;
+      const categoria = l.categoria || (prod && prod.categoria) || null;
+      for (const lid of lojasAlvo) {
+        const chave = [lid == null ? "__todas__" : lid, l.ean || _normDesc(l.descricao), l.data_inicio || ""].join("|");
+        ins.run(
+          lid, prod ? prod.id : null, l.ean || null, l.descricao, categoria,
+          l.preco_normal ?? null, l.preco_promo ?? null, l.desconto_pct ?? null,
+          l.data_inicio || null, l.data_fim || null, l.campanha || null, fonteArquivo, chave, ts, ts
+        );
+      }
+    }
+    db.exec("COMMIT");
+    return { linhas: linhas.length, casados_no_catalogo: casados };
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+}
+
+// promoções vigentes numa data: sem data (vale sempre) OU refDate dentro de [inicio, fim]
+function promocoesVigentes(lojaNome, refDate) {
+  const lid = lojaId(lojaNome);
+  const d = refDate || nowIso().slice(0, 10);
+  return db
+    .prepare(
+      `SELECT * FROM promocoes_planejadas
+        WHERE (loja_id = ? OR loja_id IS NULL)
+          AND (data_inicio IS NULL OR data_inicio <= ?)
+          AND (data_fim IS NULL OR data_fim >= ?)
+        ORDER BY COALESCE(preco_promo, 0) DESC`
+    )
+    .all(lid, d, d);
+}
+
+function promocoesPorCategoria(lojaNome, refDate) {
+  const m = new Map();
+  for (const p of promocoesVigentes(lojaNome, refDate)) {
+    const cat = p.categoria || "(sem categoria)";
+    if (!m.has(cat)) m.set(cat, { n: 0, exemplos: [] });
+    const e = m.get(cat);
+    e.n++;
+    if (e.exemplos.length < 4) e.exemplos.push({ descricao: p.descricao, preco_promo: p.preco_promo, preco_normal: p.preco_normal, desconto_pct: p.desconto_pct, campanha: p.campanha });
+  }
+  return m;
+}
+
+function freshnessPromocoes(lojaNome) {
+  const lid = lojaId(lojaNome);
+  const r = db.prepare("SELECT MAX(atualizado_em) u, COUNT(*) n FROM promocoes_planejadas WHERE loja_id = ? OR loja_id IS NULL").get(lid);
+  return { ultima: (r && r.u) || null, total: (r && r.n) || 0 };
+}
+
 // --- análise comercial (Fase 2) — guardada no banco ----------------------
 
 function saveAnaliseComercial(loja, ano, mes, doc) {
@@ -888,6 +969,10 @@ module.exports = {
   replaceConcorrencia,
   adicionarOfertasConc,
   getConcorrencia,
+  substituirPromocoesPlanejadas,
+  promocoesVigentes,
+  promocoesPorCategoria,
+  freshnessPromocoes,
   saveAnaliseComercial,
   getAnaliseComercial,
   listAnalisesComerciais,

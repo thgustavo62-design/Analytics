@@ -19,31 +19,37 @@ const PISO_MARGEM = CFG_STOCK.margem_pct_minima_para_anunciar != null ? CFG_STOC
 const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
 const round = (n, d) => (n == null ? null : Math.round((n + Number.EPSILON) * Math.pow(10, d ?? 2)) / Math.pow(10, d ?? 2));
 
-// "nossas promoções" = ação promocional DELIBERADA por categoria: produtos de campanhas
-// cadastradas (campanha_produtos) ativas/recentes. NÃO usamos a coluna "preço promocional"
-// do feed de estoque — nesse feed ela costuma vir preenchida para o catálogo inteiro e não
-// significa promoção. Categorias do calendário entram como "recorrente" (sinal binário).
+// "nossas promoções" = ação promocional DELIBERADA por categoria, da TABELA DE PLANEJAMENTO
+// de promoções (o "tabelão"/encarte que a loja monta — parsers/promocoes.js). Fallback:
+// produtos de campanhas cadastradas. NÃO usamos a coluna "preço promocional" do feed de
+// estoque (vinha preenchida para o catálogo inteiro). Categorias do calendário entram como
+// "recorrente" (sinal binário).
 function nossasPromocoesPorCategoria(loja, refDate) {
-  const lid = db.lojaId(loja);
-  const corte = new Date(new Date(refDate + "T12:00:00").getTime() - 45 * 86400000).toISOString().slice(0, 10);
-  let rows = [];
+  const porCategoria = new Map();
+  const exemplos = new Map();
+  let total = 0, fonte = null;
+  const plan = db.promocoesPorCategoria(loja, refDate);
+  if (plan.size) {
+    fonte = "tabela de planejamento de promoções";
+    for (const [cat, e] of plan) { porCategoria.set(cat, e.n); exemplos.set(cat, e.exemplos); total += e.n; }
+    return { porCategoria, exemplos, total, fonte };
+  }
+  // fallback: campanhas cadastradas
   try {
-    rows = db.db
+    const lid = db.lojaId(loja);
+    const corte = new Date(new Date(refDate + "T12:00:00").getTime() - 45 * 86400000).toISOString().slice(0, 10);
+    const rows = db.db
       .prepare(
         `SELECT COALESCE(pr.categoria_manual, pr.categoria) AS categoria, COUNT(DISTINCT cp.produto_id) AS n
-           FROM campanha_produtos cp
-           JOIN campanhas c ON c.id = cp.campanha_id
-           JOIN produtos pr ON pr.id = cp.produto_id
-          WHERE c.loja_id = ?
-            AND (c.status IN ('ativa', 'aprovada', 'em_andamento') OR c.data_fim IS NULL OR c.data_fim >= ?)
+           FROM campanha_produtos cp JOIN campanhas c ON c.id = cp.campanha_id JOIN produtos pr ON pr.id = cp.produto_id
+          WHERE c.loja_id = ? AND (c.status IN ('ativa','aprovada','em_andamento') OR c.data_fim IS NULL OR c.data_fim >= ?)
           GROUP BY 1`
       )
       .all(lid, corte);
-  } catch (e) { rows = []; }
-  const m = new Map();
-  let total = 0;
-  for (const r of rows) { m.set(r.categoria, r.n); total += r.n; }
-  return { porCategoria: m, total };
+    for (const r of rows) { porCategoria.set(r.categoria, r.n); total += r.n; }
+    if (total) fonte = "campanhas cadastradas";
+  } catch (e) { /* sem campanhas */ }
+  return { porCategoria, exemplos, total, fonte };
 }
 
 // acha o período mais recente que tem coleta de concorrência
@@ -189,7 +195,9 @@ function analisarConcorrencia(loja) {
     .sort((a, b) => b.abaixo - a.abaixo || b.ofertas - a.ofertas);
 
   // ---- SHARE OF PROMOTIONS: nossas promoções × ofertas de concorrente, por categoria ----
-  const nossasPromo = nossasPromocoesPorCategoria(loja, refDate);
+  // promoções são forward-looking: usa hoje (ou o último dia de dados, o que for maior)
+  const hojeIso = new Date().toISOString().slice(0, 10);
+  const nossasPromo = nossasPromocoesPorCategoria(loja, hojeIso > refDate ? hojeIso : refDate);
   const catsRecorrentes = new Set((cfg.campanhas || []).flatMap((c) => c.categorias || []));
   const catInfo = new Map(categorias.map((c) => [c.categoria, c]));
   const todasCats = new Set([...catInfo.keys(), ...nossasPromo.porCategoria.keys(), ...catsRecorrentes]);
@@ -215,6 +223,7 @@ function analisarConcorrencia(loja) {
     return {
       categoria: cat,
       nossas_promocoes: nossas,
+      nossas_exemplos: (nossasPromo.exemplos && nossasPromo.exemplos.get(cat)) || [],
       promo_recorrente: recorrente,
       ofertas_concorrentes: ofertasDeles,
       ofertas_abaixo_do_nosso: deles,
@@ -232,7 +241,9 @@ function analisarConcorrencia(loja) {
   if (exc.length) shareResumo.push(`Esforço sem pressão (temos campanha, concorrência parada): ${exc.slice(0, 3).map((c) => c.categoria).join("; ")}.`);
   if (!sub.length && !exc.length) shareResumo.push("Presença promocional equilibrada frente à concorrência nas categorias com dado.");
   const share_promocoes = {
-    fonte_nossas: nossasPromo.total > 0 ? "produtos de campanhas cadastradas + calendário de campanhas" : "campanhas cadastradas: nenhuma — só o calendário de campanhas (config/lojas.json)",
+    fonte_nossas: nossasPromo.fonte
+      ? `${nossasPromo.fonte} + calendário de campanhas`
+      : "sem tabela de promoções nem campanhas cadastradas — só o calendário de campanhas (config/lojas.json)",
     nossas_promocoes_total: nossasPromo.total,
     ofertas_concorrentes_total: ofertas.length,
     por_concorrente: [...porConc.values()].filter((c) => c.temColeta).map((c) => ({ concorrente: c.concorrente, ofertas: c.ofertas })).sort((a, b) => b.ofertas - a.ofertas).concat([{ concorrente: `${loja} (nós)`, ofertas: nossasPromo.total, nos: true }]),

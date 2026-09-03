@@ -391,6 +391,36 @@ app.post("/upload/concorrentes", upload.single("arquivo"), (req, res) => {
   }
 });
 
+// tabela de planejamento de promoções (o "tabelão"/encarte) — xlsx ou csv
+app.post("/upload/promocoes", upload.single("arquivo"), (req, res) => {
+  try {
+    if (!req.file) throw httpErr(400, "Arquivo 'arquivo' (xlsx ou csv) obrigatório.");
+    let nome = String(req.file.originalname || "promocoes.xlsx").replace(/[^\w.\- ]+/g, "_");
+    if (!/promoc|promoç|oferta|encarte|tabelao|tabelão/i.test(nome)) nome = "promocoes_" + nome; // garante o roteamento
+    const dir = path.join(UPLOAD_DIR, "_promocoes");
+    fs.mkdirSync(dir, { recursive: true });
+    const dest = path.join(dir, nome);
+    fs.writeFileSync(dest, req.file.buffer);
+    const r = require("./ingest").ingestPromocoes(dest);
+    regenerarPublicoEmBreve();
+    res.json({ ok: true, promocoes: r });
+  } catch (e) {
+    res.status(e.status || 500).json({ erro: e.message });
+  }
+});
+
+app.get("/api/promocoes/:loja", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const ref = require("./db").getUltimaDataVenda(req.params.loja) || new Date().toISOString().slice(0, 10);
+    const vig = require("./db").promocoesVigentes(req.params.loja, ref);
+    const fr = require("./db").freshnessPromocoes(req.params.loja);
+    res.json({ loja: req.params.loja, referencia: ref, freshness: fr, total: vig.length, promocoes: vig });
+  } catch (e) {
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 // --- leitura -------------------------------------------------------------
 
 const MESES_PT = ["", "janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
