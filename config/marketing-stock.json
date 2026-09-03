@@ -9,13 +9,38 @@
     "parado": 120
   },
   "por_categoria": {
-    "Fraldas":        { "ruptura": 10, "atencao": 18, "normal_max": 75, "oportunidade": 75, "parado": 150 },
-    "Leite Infantil": { "ruptura": 10, "atencao": 18, "normal_max": 75, "oportunidade": 75, "parado": 150 },
-    "Limpeza":        { "ruptura": 7,  "atencao": 14, "normal_max": 90, "oportunidade": 90, "parado": 180 },
-    "Medicamentos/Outros": { "ruptura": 5, "atencao": 10, "normal_max": 45, "oportunidade": 45, "parado": 120 }
+    "Fraldas": {
+      "ruptura": 10,
+      "atencao": 18,
+      "normal_max": 75,
+      "oportunidade": 75,
+      "parado": 150
+    },
+    "Leite Infantil": {
+      "ruptura": 10,
+      "atencao": 18,
+      "normal_max": 75,
+      "oportunidade": 75,
+      "parado": 150
+    },
+    "Limpeza": {
+      "ruptura": 7,
+      "atencao": 14,
+      "normal_max": 90,
+      "oportunidade": 90,
+      "parado": 180
+    },
+    "Medicamentos/Outros": {
+      "ruptura": 5,
+      "atencao": 10,
+      "normal_max": 45,
+      "oportunidade": 45,
+      "parado": 120
+    }
   },
   "campanha_dias_min": 4,
   "sem_giro_dias": 45,
   "margem_pct_minima_para_anunciar": 0.06,
-  "margem_pct_lucrativo": 0.18
+  "margem_pct_lucrativo": 0.18,
+  "custo_proxy_entre_lojas": true
 }

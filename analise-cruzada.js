@@ -69,6 +69,7 @@ function analiseCruzada(loja, opts = {}) {
       const suspeito = custoSuspeito(p);
       return {
         ean: p.ean, descricao: p.descricao, categoria: p.categoria, classe: p.classe, custo_suspeito: suspeito,
+        custo_proxy: !!p.custo_proxy, custo_proxy_origem: p.custo_proxy_origem || null,
         unid_30d: u30, unid_90d: u90, receita_30d: p.receita.d30, tendencia: p.tendencia.rotulo, tendencia_pct: p.tendencia.pct,
         estoque_atual: p.estoque_atual, dias_cobertura: p.dias_cobertura, cobertura_rotulo: p.cobertura_rotulo,
         custo_atual: p.custo_atual, preco: p.preco_atual ?? p.preco_praticado, margem_unitaria: p.margem_unitaria, margem_pct: p.margem_pct,

@@ -185,10 +185,16 @@ function analisarProdutos(loja, opts = {}) {
       if (e) estoqueAtual = e.disponivel != null ? e.disponivel : e.quantidade;
     }
     let custoAtual = null;
+    let custoProxy = false;
+    let custoProxyOrigem = null;
     let precoAtual = null;
-    if (temCusto && produtoId) {
+    if (produtoId) {
       const c = db.getCustoEm(lid, produtoId, refDate);
       if (c) custoAtual = c.custo;
+      else if (CFG_STOCK.custo_proxy_entre_lojas) {
+        const px = db.getCustoProxyOutraLoja(lid, produtoId, refDate);
+        if (px && px.custo > 0) { custoAtual = px.custo; custoProxy = true; custoProxyOrigem = px.loja_origem; }
+      }
     }
     if (temPreco && produtoId) {
       const p = db.getPrecoEm(lid, produtoId, refDate, "normal");
@@ -228,7 +234,8 @@ function analisarProdutos(loja, opts = {}) {
       dias_cobertura: diasCobertura === Infinity ? null : diasCobertura,
       cobertura_infinita: diasCobertura === Infinity,
       cobertura_rotulo: coberturaRot,
-      custo_atual: custoAtual, preco_atual: precoAtual, preco_praticado: precoPraticado,
+      custo_atual: custoAtual, custo_proxy: custoProxy, custo_proxy_origem: custoProxyOrigem,
+      preco_atual: precoAtual, preco_praticado: precoPraticado,
       margem_unitaria: margemUnit, margem_pct: margemPct,
       _dias_sem_venda: v.j[90] && v.j[90].ultima ? Math.round((new Date(refDate) - new Date(v.j[90].ultima)) / DIA) : null,
     });
@@ -261,7 +268,7 @@ function analisarProdutos(loja, opts = {}) {
     let mv;
     if (b.margem_pct != null) {
       mv = lerp(b.margem_pct, CFG_SCORE.margem.piso_pct, CFG_SCORE.margem.teto_pct);
-      comp.margem = { valor: round(mv, 3), fonte: `margem_pct=${(b.margem_pct * 100).toFixed(1)}% (preço ${b.preco_atual ?? b.preco_praticado} − custo ${b.custo_atual})`, periodo: refDate };
+      comp.margem = { valor: round(mv, 3), fonte: `margem_pct=${(b.margem_pct * 100).toFixed(1)}% (preço ${b.preco_atual ?? b.preco_praticado} − custo ${b.custo_atual}${b.custo_proxy ? ` — PROXY: custo da ${b.custo_proxy_origem}` : ""})`, periodo: refDate };
     } else {
       mv = 0.5;
       ausentes.push("margem (sem custo cadastrado)");
@@ -398,14 +405,18 @@ function analisarProdutos(loja, opts = {}) {
   let abcResumo = null;
   try { abcResumo = require("./marketing/abc").classificarProdutosABC(produtos); } catch (e) { /* opcional */ }
 
+  const nProxy = produtos.filter((p) => p.custo_proxy).length;
+  const nComCusto = produtos.filter((p) => p.custo_atual != null).length;
   const resultado = {
     loja,
     refDate,
     abc: abcResumo,
-    feeds: { estoque: temEstoque, custo: temCusto, preco: temPreco, freshness },
+    feeds: { estoque: temEstoque, custo: temCusto || nProxy > 0, custo_proprio: temCusto, preco: temPreco, freshness },
+    custo_proxy: nProxy > 0 ? { n: nProxy, de: nComCusto, origem: (produtos.find((p) => p.custo_proxy) || {}).custo_proxy_origem, nota: "margem/lucro desses itens usa o custo do mesmo EAN na outra loja — aproximado" } : null,
     dados_ausentes_globais: [
       !temEstoque && "estoque (days-of-cover, ruptura, estoque parado indisponíveis)",
-      !temCusto && "custo (margem, campaign margin sacrifice indisponíveis)",
+      !temCusto && nProxy === 0 && "custo (margem, campaign margin sacrifice indisponíveis)",
+      !temCusto && nProxy > 0 && `custo próprio ausente — ${nProxy} itens usam o custo da ${(produtos.find((p) => p.custo_proxy) || {}).custo_proxy_origem} como proxy (margem aproximada)`,
       !temPreco && "preço de tabela (usando preço médio praticado como referência)",
     ].filter(Boolean),
     total: produtos.length,

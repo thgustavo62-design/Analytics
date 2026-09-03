@@ -50,6 +50,25 @@ test("dataQuality: score, problemas e freshness bem formados", { skip: SKIP }, (
   assert.equal(d.freshness.vendas.ultima, d.refDate);
 });
 
+test("custo proxy entre lojas: usa o custo da outra loja quando a própria não tem", { skip: SKIP }, () => {
+  const mpa = require("../marketing-product-analytics");
+  const outra = LOJA === "Farma e Farma" ? "Minas Farma" : "Farma e Farma";
+  const lidLoja = db.lojaId(LOJA);
+  const lidOutra = db.lojaId(outra);
+  // 1º call ANTES de mexer no custo — pega um produto vendido sem custo em lugar nenhum
+  const semCusto = mpa.analisarProdutos(LOJA).produtos.find((p) => p.produto_id && p.custo_atual == null && (p.receita.d30 || 0) > 0);
+  if (!semCusto) return;
+  db.inserirCusto(lidOutra, semCusto.produto_id, 3.21, "2026-08-01", "teste-proxy");
+  // muda a memoKey passando um Set de concorrência (altera o 'c' da chave do memo)
+  const b = mpa.analisarProdutos(LOJA, { concorrenciaCategorias: new Set(["__x__"]) });
+  const alvo = b.produtos.find((p) => p.produto_id === semCusto.produto_id);
+  assert.ok(alvo, "produto sumiu");
+  assert.equal(alvo.custo_atual, 3.21);
+  assert.equal(alvo.custo_proxy, true);
+  assert.equal(alvo.custo_proxy_origem, outra);
+  assert.ok(b.custo_proxy && b.custo_proxy.n >= 1);
+});
+
 test("dataQuality: detecta custo > preço", { skip: SKIP }, () => {
   // insere um produto com custo cadastrado acima do preço de venda
   const lid = db.lojaId(LOJA);

@@ -478,6 +478,16 @@ function getEstoqueEm(lojaId0, produtoId, data) {
 function getCustoEm(lojaId0, produtoId, data) {
   return db.prepare("SELECT * FROM produto_custo WHERE loja_id = ? AND produto_id = ? AND data_inicio <= ? AND (data_fim IS NULL OR data_fim >= ?) ORDER BY data_inicio DESC LIMIT 1").get(lojaId0, produtoId, data, data) || null;
 }
+
+// custo do MESMO produto em QUALQUER loja diferente da dada — proxy quando a loja não tem custo
+function getCustoProxyOutraLoja(lojaId0, produtoId, data) {
+  const r = db.prepare(
+    `SELECT c.*, l.nome AS loja_origem FROM produto_custo c JOIN lojas l ON l.id = c.loja_id
+      WHERE c.loja_id <> ? AND c.produto_id = ? AND c.data_inicio <= ? AND (c.data_fim IS NULL OR c.data_fim >= ?)
+      ORDER BY c.data_inicio DESC LIMIT 1`
+  ).get(lojaId0, produtoId, data, data);
+  return r || null;
+}
 function getPrecoEm(lojaId0, produtoId, data, tipoPreco) {
   return db.prepare("SELECT * FROM produto_preco WHERE loja_id = ? AND produto_id = ? AND tipo_preco = ? AND data_inicio <= ? AND (data_fim IS NULL OR data_fim >= ?) ORDER BY data_inicio DESC LIMIT 1").get(lojaId0, produtoId, tipoPreco || "normal", data, data) || null;
 }
@@ -1020,6 +1030,7 @@ module.exports = {
   inserirPreco,
   getEstoqueEm,
   getCustoEm,
+  getCustoProxyOutraLoja,
   getPrecoEm,
   freshnessCatalogo,
   // Fase 2/3/4 — janelas de venda + campanhas + cesta

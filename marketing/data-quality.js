@@ -67,24 +67,42 @@ function dataQuality(loja) {
     });
   }
 
-  // --- 3) produto que vende mas não tem custo cadastrado (margem/lucro não calculável) ---
+  // --- 3) produto que vende sem custo EM NENHUMA loja (nem próprio, nem proxy) ---
   const semCusto = q1(
     `SELECT COUNT(DISTINCT pr.id) n, COALESCE(SUM(x.rec),0) rec FROM (
         SELECT pr.id id, SUM(v.valor_liquido) rec FROM vendas_transacoes v
           JOIN periodos p ON p.id = v.periodo_id JOIN produtos pr ON pr.ean = v.barras
          WHERE p.loja_id = ? AND v.data >= ? AND v.data <= ? GROUP BY pr.id
       ) x JOIN produtos pr ON pr.id = x.id
-      LEFT JOIN produto_custo c ON c.produto_id = pr.id AND c.loja_id = ? AND c.data_fim IS NULL
-      WHERE c.produto_id IS NULL`, lid, ini90, refDate, lid);
+      LEFT JOIN produto_custo c ON c.produto_id = pr.id AND c.custo > 0 AND c.data_fim IS NULL
+      WHERE c.produto_id IS NULL`, lid, ini90, refDate);
+  // dos que a LOJA não tem custo próprio, quantos são cobertos pelo proxy da outra loja
+  const proxyN = q1(
+    `SELECT COUNT(DISTINCT pr.id) n FROM (
+        SELECT pr.id id FROM vendas_transacoes v JOIN periodos p ON p.id = v.periodo_id JOIN produtos pr ON pr.ean = v.barras
+         WHERE p.loja_id = ? AND v.data >= ? AND v.data <= ? GROUP BY pr.id
+      ) x JOIN produtos pr ON pr.id = x.id
+      LEFT JOIN produto_custo cp ON cp.produto_id = pr.id AND cp.loja_id = ? AND cp.custo > 0 AND cp.data_fim IS NULL
+      JOIN produto_custo co ON co.produto_id = pr.id AND co.loja_id <> ? AND co.custo > 0 AND co.data_fim IS NULL
+      WHERE cp.produto_id IS NULL`, lid, ini90, refDate, lid, lid).n;
   if (semCusto.n > 0) {
-    const temAlgumCusto = q1("SELECT COUNT(*) n FROM produto_custo WHERE loja_id = ?", lid).n > 0;
     add({
-      id: "vende_sem_custo", severidade: temAlgumCusto ? "BAIXO" : "MEDIO",
-      titulo: "Produtos que vendem sem custo cadastrado",
+      id: "vende_sem_custo", severidade: semCusto.rec >= 20000 ? "MEDIO" : "BAIXO",
+      titulo: "Produtos que vendem sem custo em nenhuma loja",
       n: semCusto.n,
-      detalhe: `Margem, lucro estimado e ROI não saem para R$ ${r2(semCusto.rec)} de receita 90d.` + (temAlgumCusto ? "" : " Esta loja não tem NENHUM custo — a planilha de estoque dela não traz a coluna."),
+      detalhe: `Margem, lucro e ROI não saem para R$ ${r2(semCusto.rec)} de receita 90d — nem esta loja nem a outra têm o custo do EAN.`,
       exemplos: [],
-      como_corrigir: "Inclua a coluna de custo ('Últ. Prc. Entrada' / 'Custo Médio') no export de estoque desta loja.",
+      como_corrigir: "Inclua a coluna de custo ('Últ. Prc. Entrada' / 'Custo Médio') preenchida no export de estoque.",
+    });
+  }
+  if (proxyN > 0) {
+    add({
+      id: "custo_proxy_outra_loja", severidade: "BAIXO",
+      titulo: "Produtos usando o custo da outra loja como proxy",
+      n: proxyN,
+      detalhe: "A margem/lucro desses itens é aproximada (custo do mesmo EAN na outra loja). Some quando o export de custo desta loja vier preenchido.",
+      exemplos: [],
+      como_corrigir: "Traga o custo próprio desta loja no export de estoque; o proxy sai sozinho.",
     });
   }
 

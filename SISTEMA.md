@@ -130,7 +130,7 @@ do Supabase (Vercel + GitHub Pages).
 | `aggregate.js` | KPIs, série diária, dia-da-semana, categorias, top produtos, preço médio por produto |
 | `analytics-deep.js` | ticket médio E mediano, baseline semanal c/ desvio, incrementalidade intradiária por campanha, canais Convênio/Delivery/Balcão, concentração cliente/convênio, operadores, resumo de concorrência |
 | `insights.js` | 3 regras automáticas → cards (`config/insights.json`) |
-| `marketing-product-analytics.js` | **Fase 2** — por produto: unidades/receita/cupons 7/14/30/60/90d, venda média diária, tendência (14d×14d, clamp ±300%), `dias_cobertura` por categoria (`config/marketing-stock.json`), margem (só com custo), classes, **Opportunity Score** (7 componentes + peso + contribuição + fonte + confiança, `config/opportunity-score.json`), `do-not-promote` + substituto, estoque parado. Memo de 45s. |
+| `marketing-product-analytics.js` | **Fase 2** — por produto: unidades/receita/cupons 7/14/30/60/90d, venda média diária, tendência (14d×14d, clamp ±300%), `dias_cobertura` por categoria (`config/marketing-stock.json`), margem, classes, **Opportunity Score** (7 componentes + peso + contribuição + fonte + confiança, `config/opportunity-score.json`), **curva ABC** (`.abc`), `do-not-promote` + substituto, estoque parado. **Custo proxy entre lojas**: se a loja não tem custo do EAN mas a outra tem, usa esse (`custo_proxy: true`, `custo_proxy_origem`, tudo marcado como aproximado; toggle `custo_proxy_entre_lojas`). Memo de 45s. |
 | `analise-cruzada.js` | vendas × estoque × custo × margem → `resultado_30d` (lucro estimado por produto), `capital_parado`, `giro_mensal`, **matriz** VACA_LEITEIRA/ISCA_CARA/PESO_MORTO/APOSTA/SUMINDO/RUPTURA/NORMAL, `custo_suspeito` (custo > 1,3× preço = erro de ERP, balde separado) |
 | `concorrencia-analise.js` | panorama, por concorrente (pressão + categorias atacadas + exemplos), por categoria (ALTA/MÉDIA/BAIXA), **"onde reagir"** priorizado por relevância × quão abaixo × dá pra cobrir (margem real) — com **`contra_ataque`** (Fase E: melhor produto da mesma categoria para promover no lugar quando o SKU atacado não dá pra cobrir), **`share_promocoes`** (Fase E: nossa ação promocional [**tabela de planejamento de promoções** vigente na data → fallback campanhas cadastradas] + calendário recorrente × ofertas do concorrente por categoria → subcomunicando / esforço-sem-pressão / equilibrado; promoções são forward-looking, usa a data de hoje), resumo + ações |
 | `campanhas.js` | **Fase 3** — `eficienciaCalendario` (DEMAND_LIFT dias-de-campanha vs. demais, veredito EXCELENTE→DESTRUTIVA; nunca DESTRUTIVA sem custo), **Campaign Builder** (elenco por papel), **Offer Simulator** (cenários conservador/provável/agressivo, nunca promete venda) |
@@ -294,7 +294,7 @@ KPIs/matriz em 2 colunas.
 | `catalogo.json` | como reconhecer/ler as planilhas de estoque/custo/preço (nome do arquivo + sinônimos de coluna); `nome_todas_as_lojas` |
 | `concorrentes.json` | pistas de nome de arquivo + sinônimos de coluna da coleta de concorrente |
 | `promocoes.json` | pistas de nome de arquivo + sinônimos de coluna da **tabela de planejamento de promoções** — produto/EAN, preço de, **preço promo (inclui "Valor Aproximado")**, desconto, início, fim, campanha, loja |
-| `marketing-stock.json` | limiares de dias de cobertura (ruptura/atenção/normal/oportunidade/parado) por categoria; `margem_pct_minima_para_anunciar`, `margem_pct_lucrativo` |
+| `marketing-stock.json` | limiares de dias de cobertura (ruptura/atenção/normal/oportunidade/parado) por categoria; `margem_pct_minima_para_anunciar`, `margem_pct_lucrativo`, `custo_proxy_entre_lojas` |
 | `opportunity-score.json` | **pesos dos 7 componentes** do Opportunity Score + limiares de rótulo e de classe |
 | `marketing-roles.json` | **Fase A** — limiares das regras de papel por produto (percentil + piso absoluto de volume) + categorias de recorrência/imagem + rótulo/ação/ícone de cada papel |
 | `angulos.json` | **Fase B** — rótulo/ícone/template de copy de cada ângulo + pesos da seleção (desconto planejado, folga de margem, janela curta, concorrência) |
@@ -357,7 +357,7 @@ leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 3. Loja do PDF vem do **CNPJ** do cabeçalho; não reconheceu → lança em vez de adivinhar.
 4. **A IA nunca faz aritmética** sobre a base — a camada determinística agrega, o LLM interpreta.
 5. Toda conclusão de sinal/recomendação carrega **evidência** (campo, valor, fonte, período) e **confiança**.
-6. Feed ausente (sem custo/estoque/concorrência) → campo `null` + flag em `dados_ausentes` — **nunca estimado**.
+6. Feed ausente (sem custo/estoque/concorrência) → campo `null` + flag em `dados_ausentes` — **nunca estimado**. Exceção declarada: custo do EAN pode ser tomado da outra loja como **proxy** (marcado `custo_proxy`, nunca soma resultados das duas).
 7. Categoria de produto: **"Nome Grupo" do ERP** (planilha de estoque) quando existe, senão **palavra-chave** (fallback). Correção manual vence tudo. Todo rótulo — nosso, do ERP, da coleta de concorrente — passa pelo **vocabulário canônico** (`categorias.js`) antes de ser comparado/agregado.
 8. Dia parcial (relatório do meio do dia) é marcado e **excluído dos gráficos de tendência**.
 9. Custo cadastrado > 1,3× preço → `custo_suspeito` (erro provável de ERP), fora dos agregados de margem.
@@ -367,7 +367,7 @@ leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 
 ## 11. Testes
 
-`npm test` (`node --test`) — **109 testes**, arquivos em separado (`process.env.VA_DB_PATH`
+`npm test` (`node --test`) — **110 testes**, arquivos em separado (`process.env.VA_DB_PATH`
 isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\Admin\Downloads\`.
 
 | Arquivo | Cobre |
@@ -382,7 +382,7 @@ isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\A
 | `promocoes.test.js` | **tabela de promoções** — parser (colunas, datas `DD/MM` lidas certo, desconto↔preço derivado, resolução de loja); `promocoesVigentes` filtra por data (vigente/futura/expirada/sem-prazo); re-upload não duplica (`chave`); Share of Promotions passa a citar a fonte "tabela de planejamento" |
 | `categorias.test.js` | **vocabulário canônico** — `categoriaCanonica` (aliases antigos e da coleta, desconhecido em title-case); `mapGrupoErp` (prefixo separa OTC de Ético; subgrupo vira subcategoria; grupo sem regra → null); `expandirSuperGrupo`; `upsertProduto` não deixa a categoria de vendas sobrescrever a do ERP |
 | `abc.test.js` | **curva ABC** — corte cumulativo A/B/C (classe do % acumulado ANTES do item; receita 0 → C; pct soma ~100); `curvaABC` (produtos + categorias ordenadas com classe + clientes); `analisarProdutos` marca `.abc` e `recomendados` esconde a classe C (`incluirC` traz de volta) |
-| `data-quality.test.js` | **Data Quality** — score 0–100; `por_severidade` soma = nº de problemas; cada problema com severidade válida + `titulo`/`n`/`como_corrigir`; problemas ordenados ALTO→BAIXO; `freshness` dos feeds; detecta `custo_maior_que_preco` num produto inserido com custo acima do preço |
+| `data-quality.test.js` | **Data Quality** — score 0–100; `por_severidade` soma = nº de problemas; cada problema com severidade válida + `titulo`/`n`/`como_corrigir`; problemas ordenados ALTO→BAIXO; `freshness` dos feeds; detecta `custo_maior_que_preco` num produto inserido com custo acima do preço; custo proxy entre lojas (produto sem custo próprio usa o da outra loja, marcado) |
 | `concorrentes.test.js` | filtro de marca, parse de validade/preço, resolução de loja por CNPJ |
 | `catalogo.test.js` | `normalizarEan`, `sincronizarProdutosDeVendas`, histórico de custo, planilha combinada estoque+custo+preço |
 | `marketing-product.test.js` | janelas monotônicas, clamp de tendência, 7 componentes do score somando ao score, confiança < 1 sem feed, classes, do-not-promote |
