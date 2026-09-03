@@ -489,9 +489,34 @@
     });
   }
 
+  function dqSevCor(s) { return s === "ALTO" ? "var(--down)" : s === "MEDIO" ? "#c98a00" : "var(--ink-2)"; }
+  function dataQualidadeHtml(d) {
+    if (!d || d.erro) return "";
+    var c = d.score >= 85 ? "var(--s1)" : d.score >= 60 ? "var(--s3)" : "var(--down)";
+    var fresh = Object.keys(d.freshness).map(function (k) {
+      var v = d.freshness[k];
+      var atras = v.dias == null ? "" : v.dias > 20 ? ' <span class="tag bad">' + v.dias + "d</span>" : " " + v.dias + "d";
+      return "<tr><td>" + k + "</td><td>" + (v.ultima || '<span class="cs">nunca</span>') + atras + "</td></tr>";
+    }).join("");
+    return '<div class="card" style="margin-bottom:16px"><div class="chead"><div class="ci red">🩺</div><div><h3>Qualidade dos dados — ' + esc(d.loja) + '</h3>' +
+      '<div class="cs">o que dá para melhorar na origem (ERP/planilha) — conserta todas as telas de uma vez</div></div>' +
+      '<div class="dq-score" style="background:' + c + '">' + d.score + '<small>/100</small></div></div>' +
+      '<div class="cs" style="margin:2px 0 10px"><b>' + esc(d.veredito) + '</b> · ' + d.por_severidade.ALTO + " alto · " + d.por_severidade.MEDIO + " médio · " + d.por_severidade.BAIXO + " baixo</div>" +
+      (d.problemas.length ? d.problemas.map(function (p) {
+        return '<div class="dq-prob"><div class="dq-prob-h"><span class="tag" style="background:' + dqSevCor(p.severidade) + ';color:#fff">' + p.severidade + "</span> <b>" + esc(p.titulo) + '</b> <span class="cs">· ' + int(p.n) + "</span></div>" +
+          '<div class="cs">' + esc(p.detalhe) + "</div>" +
+          (p.exemplos && p.exemplos.length ? '<div class="cs" style="margin-top:2px">ex.: ' + p.exemplos.map(function (e) { return esc(Object.values(e).join(" · ")); }).join(" | ") + "</div>" : "") +
+          '<div class="dq-fix">→ ' + esc(p.como_corrigir) + "</div></div>";
+      }).join("") : '<div class="empty">Sem problemas detectáveis. 👌</div>') +
+      '<div class="cs" style="margin:10px 0 4px;font-weight:600">Atualização dos feeds</div>' +
+      '<table class="tbl"><tbody>' + fresh + "</tbody></table>" +
+      '<div class="cs" style="margin-top:6px">' + esc(d.aviso) + "</div></div>";
+  }
   async function renderConfig() {
     view.innerHTML = '<div class="page-head"><div><h1>⚙️ Configurações</h1><div class="sub">Somente leitura aqui. Edite os arquivos em <b>config/</b> e o site recarrega.</div></div></div><div id="cc"><div class="empty">Carregando…</div></div>';
     var log = await getJSON("/api/ingest-log");
+    var dq = null;
+    try { dq = await getJSON("/api/data-quality/" + encodeURIComponent(state.loja)); } catch (e) {}
     var cat = null;
     try { cat = await getJSON("/api/catalogo/" + encodeURIComponent(state.loja)); } catch (e) {}
     var catHtml = "";
@@ -520,6 +545,7 @@
         esc(e.ok ? JSON.stringify(e.resultado && (e.resultado.loja || e.resultado.tipo)) : e.erro) + "</td></tr>";
     }).join("");
     view.querySelector("#cc").innerHTML =
+      dataQualidadeHtml(dq) +
       '<div class="card" style="margin-bottom:16px"><div class="chead"><div class="ci red">📥</div><div><h3>Pasta de entrada</h3>' +
         '<div class="cs">' + esc(log.inbox) + "</div></div></div>" +
         '<p style="font-size:13px;color:var(--ink-2)">Jogue aqui o "Analítico de Vendas" (.pdf), o Concorrentes_Coleta_*.xlsx e as planilhas Estoque_/Custo_/Precos_*.xlsx. O painel do mês corrente se atualiza sozinho (a cada ' + log.pollMin + ' min no navegador).</p></div>' +

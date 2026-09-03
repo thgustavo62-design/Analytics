@@ -409,6 +409,19 @@ app.post("/upload/promocoes", upload.single("arquivo"), (req, res) => {
   }
 });
 
+// Data Quality — o que está sujo nos dados, com R$ de impacto e como corrigir
+const dqEng = require("./marketing/data-quality");
+app.get("/api/data-quality/:loja", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const r = dqEng.dataQuality(req.params.loja);
+    res.status(r.erro ? 404 : 200).json(r);
+  } catch (e) {
+    console.error("[api/data-quality]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 app.get("/api/promocoes/:loja", (req, res) => {
   if (!lojaOk(req, res)) return;
   try {

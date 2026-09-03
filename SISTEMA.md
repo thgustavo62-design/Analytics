@@ -142,6 +142,7 @@ do Supabase (Vercel + GitHub Pages).
 | `marketing/campaign-builder.js` | **Fase B** — `montarCampanha(loja, {dias, tema, categorias})`: janela contígua, elenco por papel (Fase A) com preço sugerido (respeita piso de margem) + ângulo + forecast por perna, combos viáveis do elenco, lista de evitar, **forecast da campanha inteira** (3 cenários + margem incremental + estoque necessário) e **score da campanha 0–100** (cobertura de papéis + margem prevista + estoque + força da âncora). `config/campaign-plan.json`. |
 | `marketing/campaign-measure.js` | **Fase C** — `medirCampanha(loja, {nome \| dias+categorias, janelaDias, investimento})`: **baseline pelo mesmo dia da semana** (fallback "demais dias" com `confianca: baixa`), receita/unidades/lucro incremental, % sobre baseline, **ROAS** e **retorno sobre margem** (com investimento), **canibalização** (variação das outras categorias — só medida com baseline do mesmo dia da semana). Leitura observacional, com aviso. |
 | `marketing/padroes-mkt.js` | **Fase D** — `padroesMarketing(loja)`: cada campanha recorrente do calendário, semana a semana — **melhor dia** (comparação relativa, sem viés), **tendência do lift** (melhorando / estável / piorando = fadiga), lift médio (indicativo). `playbooks(loja)`: manual por categoria (melhor dia, produtos recomendados, ângulo dominante, veredito pela tendência) + `padroes` + `fadiga`. `fadigaProdutos(loja)`: produtos das categorias de campanha que rendiam nos dias de campanha e perderam força ao longo de blocos de 30 d (ainda vendendo — queda a zero = ruptura, não fadiga). |
+| `marketing/data-quality.js` | **Data Quality** — `dataQuality(loja)`: score 0–100 + lista de problemas com severidade (ALTO/MÉDIO/BAIXO), quantidade, **R$ de impacto** e **como corrigir**: custo > preço, categoria só do chute, vende sem custo, estoque negativo, promoção não casada / sem desconto, vendas sem EAN, cliente não identificado, feed desatualizado/ausente. + `freshness` consolidado dos 6 feeds. |
 | `marketing/abc.js` | **Curva ABC** por receita 90d. `classificarProdutosABC(produtos)` marca cada produto com `.abc` (A = até 80% da receita acumulada, B = 80–95%, C = cauda). Chamado dentro de `analisarProdutos` → todo produto carrega `.abc`. `curvaABC(loja)` = resumo: produtos, categorias e clientes (concentração por `cli_id`). Recomendados / Command Center / Campaign Builder usam **só A+B** (`opts.incluirC` traz tudo). `config/abc.json`. |
 | `marketing/calendar.js` | **Fase G** — `calendarioMarketing(loja, {dias})`: monta as ocorrências das campanhas recorrentes nos próximos N dias e **ajusta** cada uma: ruptura na categoria → `SUSPENDER`, fadiga (≥2 produtos ou tendência piorando) → `RENOVAR`, esforço sem pressão → `REVISAR`. Sugere **slots de DEFESA** (concorrência subcomunicada, sem campanha nossa) e **OPORTUNIDADE** (categoria forte no Command Center, sem campanha). `ciclo_fechado`: por campanha, junta a última Medição (C) + o padrão (D) + a fadiga numa **recomendação para a próxima rodada** + link para montar (`campaign-plan`). |
 
@@ -229,6 +230,7 @@ POST `/analise-comercial/upload` (token próprio). `VA_NO_AUTH=1` desliga (só l
 `GET /api/marketing/:loja/playbooks` (Fase D — playbooks + padrões + fadiga) ·
 `GET /api/marketing/:loja/calendar` (Fase G — `dias`; ocorrências ajustadas + slots + ciclo fechado) ·
 `GET /api/marketing/:loja/abc` (curva ABC — produtos / categorias / clientes) ·
+`GET /api/data-quality/:loja` (score + problemas com R$ de impacto e como corrigir) ·
 `GET /api/marketing/:loja/:periodo/`{`resultado`, `produtos`, `recommended-products`,
 `do-not-promote`, `stagnant-stock`, `baskets`, `combos`, `campaign-builder`, `products/:ean`} ·
 `GET /api/marketing/:loja/campaign-efficiency` · `POST /api/marketing/:loja/offer-simulator` ·
@@ -269,7 +271,7 @@ CRUD `GET/POST/PATCH/DELETE /api/marketing/:loja/campaigns[/:id]`.
 | **Análise Comercial** | diagnóstico executivo, decisão principal, KPIs, baseline semanal, scorecard de campanhas, canais, riscos, ações, "o que mudou", faixa SIM/NÃO (só se houver JSON do Motor) |
 | **Upload de dados** | envio manual (loja, mês, PDF, form do Instagram, xlsx de concorrentes) + card separado **tabela de promoções** (xlsx/csv, sem loja/mês — o parser descobre) |
 | **Histórico** | todos os meses processados por loja |
-| **Configurações** | pasta `inbox/` + log dos últimos arquivos + card "Catálogo (EAN)" com freshness de estoque/custo/preço |
+| **Configurações** | card **Qualidade dos dados** (score 0–100 + problemas com severidade / R$ / como corrigir + freshness dos feeds) · pasta `inbox/` + log dos últimos arquivos · card "Catálogo (EAN)" com freshness de estoque/custo/preço |
 
 A tela de abertura passou a ser o **Command Center** (`#command`); Painel segue no menu.
 
@@ -365,7 +367,7 @@ leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 
 ## 11. Testes
 
-`npm test` (`node --test`) — **106 testes**, arquivos em separado (`process.env.VA_DB_PATH`
+`npm test` (`node --test`) — **109 testes**, arquivos em separado (`process.env.VA_DB_PATH`
 isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\Admin\Downloads\`.
 
 | Arquivo | Cobre |
@@ -380,6 +382,7 @@ isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\A
 | `promocoes.test.js` | **tabela de promoções** — parser (colunas, datas `DD/MM` lidas certo, desconto↔preço derivado, resolução de loja); `promocoesVigentes` filtra por data (vigente/futura/expirada/sem-prazo); re-upload não duplica (`chave`); Share of Promotions passa a citar a fonte "tabela de planejamento" |
 | `categorias.test.js` | **vocabulário canônico** — `categoriaCanonica` (aliases antigos e da coleta, desconhecido em title-case); `mapGrupoErp` (prefixo separa OTC de Ético; subgrupo vira subcategoria; grupo sem regra → null); `expandirSuperGrupo`; `upsertProduto` não deixa a categoria de vendas sobrescrever a do ERP |
 | `abc.test.js` | **curva ABC** — corte cumulativo A/B/C (classe do % acumulado ANTES do item; receita 0 → C; pct soma ~100); `curvaABC` (produtos + categorias ordenadas com classe + clientes); `analisarProdutos` marca `.abc` e `recomendados` esconde a classe C (`incluirC` traz de volta) |
+| `data-quality.test.js` | **Data Quality** — score 0–100; `por_severidade` soma = nº de problemas; cada problema com severidade válida + `titulo`/`n`/`como_corrigir`; problemas ordenados ALTO→BAIXO; `freshness` dos feeds; detecta `custo_maior_que_preco` num produto inserido com custo acima do preço |
 | `concorrentes.test.js` | filtro de marca, parse de validade/preço, resolução de loja por CNPJ |
 | `catalogo.test.js` | `normalizarEan`, `sincronizarProdutosDeVendas`, histórico de custo, planilha combinada estoque+custo+preço |
 | `marketing-product.test.js` | janelas monotônicas, clamp de tendência, 7 componentes do score somando ao score, confiança < 1 sem feed, classes, do-not-promote |
@@ -401,8 +404,7 @@ Ver [`docs/AUDITORIA.md`](docs/AUDITORIA.md) (Decision Intelligence, 7 fases) e
 - **Creative Intelligence** + Content Gap — travado no feed de log de publicações (Fase F)
 - **Refinamento de dados** (em curso): ✅ categoria real do ERP + vocabulário canônico +
   reconciliação com a concorrência; ✅ **curva ABC** (listas de recomendação e Campaign Builder
-  usam só A+B; ~2.800 SKUs de cauda fora). Falta: **momentum por subcategoria**, **elasticidade
-  de preço** (com a tabela de promoções), **tela Data Quality** com score e R$ de impacto.
+  usam só A+B; ~2.800 SKUs de cauda fora). ✅ **curva ABC**; ✅ **tela Data Quality** (score + problemas com R$ e como corrigir). Falta: **momentum por subcategoria**, **elasticidade de preço** (com a tabela de promoções).
 - **Forecast Engine** (previsão 7/15/fechamento + probabilidade de meta)
 - **Meta Engine** (metas em `config/lojas.json` → realizado/gap/venda-diária-necessária)
 - Card único **R$ potencial identificado / R$ em risco** consolidado
