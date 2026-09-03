@@ -392,6 +392,16 @@ input[type=text], input[type=number], input[type=file], select.inp { width: 100%
 .abc-C { background: var(--muted); }
 .abc-chip { display: inline-block; min-width: 20px; text-align: center; border-radius: 6px; padding: 1px 7px; color: #fff; font-weight: 800; font-size: 12px; }
 
+/* ===== Precificação de promoção (Promo Pricing) ===== */
+.pp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 10px 0; }
+.pp-k { background: var(--card-2, #f7f7f9); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.pp-k span { display: block; font-size: 11px; color: var(--ink-2); }
+.pp-k b { font-size: 16px; }
+.pp-k.big { background: var(--s1); color: #fff; }
+.pp-k.big span { color: rgba(255,255,255,.85); }
+.pp-k b small { font-size: 12px; font-weight: 600; opacity: .85; }
+.pp-svg { width: 100%; height: auto; max-height: 170px; display: block; margin: 6px 0; }
+
 /* ===== Marketing Calendar (Fase G) ===== */
 .cal-week { padding: 8px 0; border-bottom: 1px solid var(--line); }
 .cal-week:last-child { border-bottom: 0; }

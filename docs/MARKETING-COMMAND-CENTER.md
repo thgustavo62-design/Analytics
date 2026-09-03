@@ -106,6 +106,14 @@ Bloqueada até existir um **log de publicações**. Duas opções de feed (a dec
 - ou formulário na tela de Upload.
 Depois: cruzamento com métricas do Instagram + vendas → Creative Score real (Fase A) + Content Gap (nº de posts por categoria × receita/margem).
 
+### Extra — Precificação de promoção  ·  pontos 1, 2, 3 (aprofundamento)  ·  ✅ ENTREGUE (2026-09-03)
+"Qual valor colocar, qual valor testar, quanto de lucro dá, qual produto promover — análise universal pelos dados."
+- ✅ `config/elasticidade.json` — elasticidade-preço **em contexto de promoção** por categoria (quantos % as unidades sobem por 1% de desconto), `desconto_teto`, `piso_margem_pct`, `halo_r$_por_unidade`. É **premissa de categoria** enquanto não há histórico de promoções; calibra quando a tabela de promoções tiver janelas passadas.
+- ✅ `marketing/promo-pricing.js` + `GET /api/marketing/:loja/promo-pricing`:
+  - `precificarProduto(loja, {ean|produto|descricao, dias})` — varre 0..teto, projeta unidades pela elasticidade, devolve **preço recomendado** (maximiza o **lucro incremental do próprio SKU**), **3 preços para testar** (conservador / recomendado / agressivo), **curva lucro×desconto**, **break-even** e desconto máx. sem prejuízo, e compara com a **promoção já planejada** na tabela. O efeito-cesta (`halo`) é exibido mas **não decide** — assim nunca recomenda vender abaixo do que se ganha.
+  - `oportunidadesPromo(loja, {n, dias})` — "**o que colocar em promoção**": ranqueia os candidatos A/B pelo lucro incremental da melhor promoção de cada um (horizonte de 30 d para comparação). Produtos sem custo (próprio ou proxy da outra loja) vão para o balde `sem_custo`, ranqueado por receita incremental.
+- ✅ Tela: nova aba **Precificação** em Marketing — ranking + busca por produto (curva SVG lucro×desconto, marcadores de recomendado e break-even, tabela dos 3 preços, comparação com a promoção planejada). Testes: `test/promo-pricing.test.js` (+6 → 116).
+
 ### Fase G — Calendário e ciclo fechado  ·  pontos 17, 20  ·  ✅ ENTREGUE (2026-09-02)
 - ✅ `marketing/calendar.js` + `GET /api/marketing/:loja/calendar?dias=30`:
   - **ocorrências** das campanhas recorrentes nos próximos N dias, cada uma **ajustada**: ruptura na categoria (≥2 produtos ≥ R$300/30d) → `SUSPENDER`; fadiga (≥2 produtos ou Playbooks "piorando") → `RENOVAR` com a lista de SKUs a trocar; esforço sem pressão (Share of Promotions) → `REVISAR`. `papel_do_dia` (CHAMARIZ no melhor dia, HERO/MARGEM o período todo).

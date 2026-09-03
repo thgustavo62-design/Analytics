@@ -1,0 +1,23 @@
+{
+  "_nota": "Elasticidade-preço EM CONTEXTO DE PROMOÇÃO por categoria: quantos % as UNIDADES sobem para cada 1% de desconto (valor negativo). Promoção comunicada tem elasticidade bem maior que a variação normal de preço. É PREMISSA de categoria enquanto não há histórico de promoções para calibrar — quando promoções da tabela rodarem, o motor calibra pelo lift observado. O modelo conta só o lucro incremental DO PRÓPRIO produto (não conta o tráfego/cesta que a promo traz), então tende a ser conservador. Ajuste conforme os resultados reais.",
+  "default": -2.0,
+  "por_categoria": {
+    "Fraldas": -3.5,
+    "Bebê": -3.2,
+    "Leite Infantil": -3.0,
+    "Limpeza": -3.0,
+    "Higiene e Beleza": -2.5,
+    "Suplementos": -2.2,
+    "Dermocosmético": -2.0,
+    "Naturais": -1.8,
+    "Saúde e Bem-estar": -1.2,
+    "Medicamento": -0.9
+  },
+  "uplift_max": 5.0,
+  "passo_desconto": 0.02,
+  "desconto_teto": 0.4,
+  "piso_margem_pct": 0.05,
+  "duracao_dias_padrao": 3,
+  "_nota_halo": "halo_r$_por_unidade = ganho estimado de margem EM OUTROS PRODUTOS por unidade incremental vendida na promoção (efeito tráfego/cesta). É EXIBIDO como 'efeito_cesta_estimado' ao lado do resultado, mas NÃO entra na recomendação — a recomendação é pelo lucro incremental do próprio SKU, para nunca recomendar vender abaixo do que se ganha. Ajuste pela sua cesta média; 0 desliga a exibição.",
+  "halo_r$_por_unidade": 0.8
+}

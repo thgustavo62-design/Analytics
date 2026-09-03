@@ -809,6 +809,25 @@ app.get("/api/marketing/:loja/campaign-measure", (req, res) => {
   }
 });
 
+// Precificação de promoção — que preço colocar, quanto de lucro, qual produto promover
+const promoPricing = require("./marketing/promo-pricing");
+app.get("/api/marketing/:loja/promo-pricing", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const ctx = contextoMarketing(req.params.loja);
+    const dur = +req.query.dias || undefined;
+    if (req.query.ean || req.query.produto || req.query.descricao) {
+      const r = promoPricing.precificarProduto(req.params.loja, { ...ctx, ean: req.query.ean, descricao: req.query.produto || req.query.descricao, duracaoDias: dur });
+      return res.status(r.erro ? 404 : 200).json(r);
+    }
+    const r = promoPricing.oportunidadesPromo(req.params.loja, { ...ctx, n: +req.query.n || undefined, duracaoDias: dur });
+    res.status(r.erro ? 404 : 200).json(r);
+  } catch (e) {
+    console.error("[api/marketing promo-pricing]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 // Curva ABC por receita (produtos / categorias / clientes)
 const abcEng = require("./marketing/abc");
 app.get("/api/marketing/:loja/abc", (req, res) => {
