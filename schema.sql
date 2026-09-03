@@ -53,6 +53,42 @@ CREATE TABLE IF NOT EXISTS instagram_metricas (
 );
 CREATE INDEX IF NOT EXISTS ix_ig_periodo ON instagram_metricas(periodo_id);
 
+-- Tráfego pago (Meta Ads / Instagram) — extraído de print pelo motor de visão.
+CREATE TABLE IF NOT EXISTS trafego_pago (
+  id                 INTEGER PRIMARY KEY,
+  periodo_id         INTEGER NOT NULL REFERENCES periodos(id),
+  fonte_arquivo      TEXT,
+  data_ini           TEXT,               -- 'AAAA-MM-DD' se visível no print
+  data_fim           TEXT,
+  investimento       REAL,               -- R$ gastos no período do print
+  impressoes         INTEGER,
+  alcance            INTEGER,
+  cliques            INTEGER,
+  ctr_pct            REAL,
+  cpc                REAL,
+  cpm                REAL,
+  resultados         INTEGER,
+  tipo_resultado     TEXT,               -- 'mensagens' | 'cliques no link' | 'conversas' | ...
+  custo_por_resultado REAL,
+  campanha           TEXT,
+  plataforma         TEXT,               -- 'Instagram' | 'Facebook' | 'Meta' | ...
+  criado_em          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS ix_tp_periodo ON trafego_pago(periodo_id);
+
+-- Auditoria: todo print processado pelo motor de visão (o que foi lido, de qual arquivo).
+CREATE TABLE IF NOT EXISTS social_prints (
+  id            INTEGER PRIMARY KEY,
+  loja          TEXT NOT NULL,
+  periodo_id    INTEGER REFERENCES periodos(id),
+  tipo          TEXT NOT NULL,           -- 'conta' | 'trafego_pago' | 'desconhecido'
+  arquivo       TEXT NOT NULL,
+  extraido_json TEXT,                    -- JSON cru devolvido pelo motor de visão
+  modelo        TEXT,
+  criado_em     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS ix_sp_loja ON social_prints(loja, criado_em);
+
 CREATE TABLE IF NOT EXISTS concorrencia_ofertas (
   id               INTEGER PRIMARY KEY,
   periodo_id       INTEGER NOT NULL REFERENCES periodos(id),

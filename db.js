@@ -160,6 +160,74 @@ function getInstagram(periodoId) {
   return db.prepare("SELECT * FROM instagram_metricas WHERE periodo_id = ? ORDER BY ordem").all(periodoId);
 }
 
+// mescla: mantém as métricas já gravadas e sobrepõe só as que vierem preenchidas agora
+// (um print costuma trazer o resumo inteiro, mas dois prints parciais também funcionam).
+function mergeInstagram(periodoId, metricas) {
+  const atuais = getInstagram(periodoId);
+  const porChave = new Map(atuais.map((m) => [m.metrica, m]));
+  for (const m of metricas) {
+    if (m.valor_exibicao == null || String(m.valor_exibicao).trim() === "") continue;
+    porChave.set(m.metrica, {
+      metrica: m.metrica, rotulo: m.rotulo,
+      valor_exibicao: String(m.valor_exibicao).trim(),
+      delta_pct: m.delta_pct ?? null,
+      observacao: m.observacao ?? (porChave.get(m.metrica) || {}).observacao ?? null,
+    });
+  }
+  replaceInstagram(periodoId, [...porChave.values()]);
+}
+
+// --- tráfego pago + auditoria de prints ------------------------------------
+const TP_COLS = ["fonte_arquivo", "data_ini", "data_fim", "investimento", "impressoes", "alcance",
+  "cliques", "ctr_pct", "cpc", "cpm", "resultados", "tipo_resultado", "custo_por_resultado", "campanha", "plataforma"];
+
+function inserirTrafegoPago(periodoId, dados) {
+  const vals = TP_COLS.map((c) => (dados[c] === undefined ? null : dados[c]));
+  db.prepare(
+    `INSERT INTO trafego_pago (periodo_id, ${TP_COLS.join(", ")}) VALUES (${["?", ...TP_COLS.map(() => "?")].join(", ")})`
+  ).run(periodoId, ...vals);
+  touchPeriodo(periodoId);
+}
+
+function getTrafegoPago(periodoId) {
+  return db.prepare("SELECT * FROM trafego_pago WHERE periodo_id = ? ORDER BY COALESCE(data_fim, criado_em)").all(periodoId);
+}
+
+// soma do investimento de tráfego pago de um período (loja + AAAA-MM) — alimenta a Medição (Fase C)
+function investimentoTrafegoPago(loja, ano, mes) {
+  const row = db.prepare(
+    `SELECT COALESCE(SUM(tp.investimento), 0) AS total, COUNT(*) AS n
+       FROM trafego_pago tp JOIN periodos p ON p.id = tp.periodo_id JOIN lojas l ON l.id = p.loja_id
+      WHERE l.nome = ? AND p.ano = ? AND p.mes = ?`
+  ).get(loja, ano, mes);
+  return { total: row.total || 0, n: row.n || 0 };
+}
+
+function registrarSocialPrint(loja, periodoId, tipo, arquivo, extraidoJson, modelo) {
+  db.prepare(
+    "INSERT INTO social_prints (loja, periodo_id, tipo, arquivo, extraido_json, modelo) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(loja, periodoId ?? null, tipo, arquivo, extraidoJson ?? null, modelo ?? null);
+}
+
+function listSocialPrints(loja, limite = 40) {
+  return db.prepare(
+    "SELECT id, loja, periodo_id, tipo, arquivo, modelo, criado_em FROM social_prints WHERE loja = ? ORDER BY criado_em DESC LIMIT ?"
+  ).all(loja, limite);
+}
+
+// série mensal de faturamento (para cruzar com métricas sociais) — uma loja só
+function faturamentoMensal(loja) {
+  return db.prepare(
+    `SELECT p.ano, p.mes, printf('%04d-%02d', p.ano, p.mes) AS ym,
+            ROUND(SUM(v.valor_liquido), 2) AS faturamento,
+            COUNT(DISTINCT v.lancamento) AS vendas
+       FROM periodos p JOIN lojas l ON l.id = p.loja_id
+       JOIN vendas_transacoes v ON v.periodo_id = p.id
+      WHERE l.nome = ?
+      GROUP BY p.ano, p.mes ORDER BY p.ano, p.mes`
+  ).all(loja);
+}
+
 // --- concorrência ----------------------------------------------------------
 
 const _insOferta = () => db.prepare(
@@ -1004,7 +1072,14 @@ module.exports = {
   setVendasMeta,
   getVendas,
   replaceInstagram,
+  mergeInstagram,
   getInstagram,
+  inserirTrafegoPago,
+  getTrafegoPago,
+  investimentoTrafegoPago,
+  registrarSocialPrint,
+  listSocialPrints,
+  faturamentoMensal,
   replaceConcorrencia,
   adicionarOfertasConc,
   getConcorrencia,

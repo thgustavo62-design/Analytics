@@ -89,6 +89,7 @@ async function coletarLoja(get, nome) {
     intelligence: { [nome]: intelligence },
     concorrencia: { [nome]: await get(`/api/concorrencia/${L}`) },
     dataQuality: { [nome]: await get(`/api/data-quality/${L}`) },
+    social: { [nome]: await get(`/api/social/${L}`) },
     catalogo: { [nome]: await get(`/api/catalogo/${L}`) },
   };
 }
@@ -101,7 +102,7 @@ async function coletarTudo({ port, cookie }) {
     geradoEm: new Date().toISOString(),
     lojas,
     periodos: {}, analise: {}, ontologia: {}, ontologiaUlt: {},
-    analiseComercial: {}, marketing: {}, intelligence: {}, concorrencia: {}, dataQuality: {}, catalogo: {},
+    analiseComercial: {}, marketing: {}, intelligence: {}, concorrencia: {}, dataQuality: {}, social: {}, catalogo: {},
   };
   const porLoja = {};
   for (const l of lojas) {
@@ -116,6 +117,7 @@ async function coletarTudo({ port, cookie }) {
     Object.assign(B.intelligence, parte.intelligence);
     Object.assign(B.concorrencia, parte.concorrencia);
     Object.assign(B.dataQuality, parte.dataQuality);
+    Object.assign(B.social, parte.social);
     Object.assign(B.catalogo, parte.catalogo);
   }
   return { B, porLoja };

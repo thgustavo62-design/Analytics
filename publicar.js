@@ -97,6 +97,7 @@ function stubScript(B) {
       if (s[1] === "catalogo" && s.length === 3) return B.catalogo[s[2]];
       if (s[1] === "concorrencia") return (B.concorrencia || {})[s[2]];
       if (s[1] === "data-quality") return (B.dataQuality || {})[s[2]];
+      if (s[1] === "social") return (B.social || {})[s[2]];
       if (s[1] === "marketing") { var m = B.marketing[s[2]]; return m ? m[MKM[s[s.length - 1]]] : undefined; }
       if (s[1] === "intelligence") { var g = B.intelligence[s[2]]; return g ? g[MKI[s[s.length - 1]]] : undefined; }
       return undefined;
@@ -112,6 +113,7 @@ function stubScript(B) {
       if (h === "catalogo") return r[0] + "|catalogo|";
       if (h === "concorrencia") return r[0] + "|concorrencia|";
       if (h === "data-quality") return r[0] + "|data-quality|";
+      if (h === "social") return r[0] + "|social|";
       if (h === "marketing") return r[0] + "|marketing/" + r[r.length - 1] + "|";
       if (h === "intelligence") return r[0] + "|intelligence/" + r[r.length - 1] + "|";
       return null;

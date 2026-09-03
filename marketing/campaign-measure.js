@@ -75,7 +75,16 @@ function medirCampanha(loja, opts = {}) {
   const ini = addDias(refDate, -(janelaDias - 1));
   const setDows = new Set(diasCamp);
   const setCats = new Set(cats);
-  const investimento = opts.investimento != null && opts.investimento !== "" ? Number(opts.investimento) : null;
+  // investimento: o parâmetro manda; se não vier, usa o tráfego pago do mês (prints lidos por visão)
+  let investimento = opts.investimento != null && opts.investimento !== "" ? Number(opts.investimento) : null;
+  let investimentoFonte = investimento != null ? "informado" : null;
+  if (investimento == null) {
+    try {
+      const [ay, am] = refDate.split("-").map(Number);
+      const tp = db.investimentoTrafegoPago(loja, ay, am);
+      if (tp && tp.total > 0) { investimento = r2(tp.total); investimentoFonte = `tráfego pago do mês (${tp.n} print(s))`; }
+    } catch (e) { /* sem tráfego pago — segue sem investimento */ }
+  }
 
   // --- soma diária: receita da categoria da campanha e das OUTRAS categorias ---
   const rows = db.vendasCategoriaPorData(loja, ini, refDate);
@@ -151,13 +160,14 @@ function medirCampanha(loja, opts = {}) {
   const amostraOk = nDiasCamp >= CFG.amostra_min_dias_campanha && (foraMesmoDow.length >= CFG.amostra_min_dias_baseline || foraD.length >= CFG.amostra_min_dias_baseline);
   const ausentes = [];
   if (!feeds.custo.ultima) ausentes.push("custo (lucro incremental, retorno sobre margem, break-even indisponíveis)");
-  if (investimento == null) ausentes.push("investimento (ROAS e retorno indisponíveis — informe no parâmetro)");
+  if (investimento == null) ausentes.push("investimento (ROAS e retorno indisponíveis — informe no parâmetro ou jogue o print de tráfego pago na inbox)");
 
   return {
     loja, refDate,
     janela: { inicio: ini, fim: refDate, dias: janelaDias },
     campanha: { nome, dias_semana: diasCamp, categorias: cats, fonte },
     investimento,
+    investimento_fonte: investimentoFonte,
     confianca: baselineMesmoDow ? "alta" : "baixa",
     baseline: {
       metodo: baselineMetodo,

@@ -377,6 +377,27 @@ app.post("/upload/instagram", (req, res) => {
   }
 });
 
+// print (screenshot) de Instagram / tráfego pago — lido por visão (precisa ANTHROPIC_API_KEY)
+app.post("/upload/print", upload.single("arquivo"), async (req, res) => {
+  try {
+    if (!req.file) throw httpErr(400, "Arquivo 'arquivo' (imagem) obrigatório.");
+    const loja = String(req.body.loja || "");
+    if (!LOJAS_VALIDAS.includes(loja)) throw httpErr(400, "Informe a loja.");
+    const ext = (require("path").extname(req.file.originalname || "").toLowerCase() || ".png").replace(/[^.a-z]/g, "");
+    if (!/\.(png|jpe?g|webp)$/.test(ext)) throw httpErr(400, "Imagem precisa ser png, jpg ou webp.");
+    const slug = loja.toLowerCase().replace(/\s+/g, "-");
+    const dir = require("path").join(UPLOAD_DIR, slug);
+    require("fs").mkdirSync(dir, { recursive: true });
+    const dest = require("path").join(dir, `print-${slug}-${Date.now()}${ext}`);
+    require("fs").writeFileSync(dest, req.file.buffer);
+    const r = await require("./ingest").ingestSocialPrint(dest, loja);
+    regenerarPublicoEmBreve();
+    res.json({ ok: true, print: r });
+  } catch (e) {
+    res.status(e.status || (e.code === "SEM_CHAVE" ? 400 : 500)).json({ erro: e.message, code: e.code || null });
+  }
+});
+
 app.post("/upload/concorrentes", upload.single("arquivo"), (req, res) => {
   try {
     const { loja, ano, mes } = validarLojaPeriodo(req.body);
@@ -418,6 +439,18 @@ app.get("/api/data-quality/:loja", (req, res) => {
     res.status(r.erro ? 404 : 200).json(r);
   } catch (e) {
     console.error("[api/data-quality]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+const socialEng = require("./social-analise");
+app.get("/api/social/:loja", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const r = socialEng.analiseSocial(req.params.loja);
+    res.status(r.erro ? 404 : 200).json(r);
+  } catch (e) {
+    console.error("[api/social]", e);
     res.status(500).json({ erro: e.message });
   }
 });

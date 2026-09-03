@@ -2046,6 +2046,151 @@
   }
 
   // ---------- Concorrentes ----------
+  // ---------- Redes Sociais ----------
+  function ssSpark(pontos, w, h) {
+    w = w || 160; h = h || 34;
+    var vals = pontos.map(function (p) { return p.valor; }).filter(function (v) { return v != null && isFinite(v); });
+    if (vals.length < 2) return '<span class="cs">sem série</span>';
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals), rng = (max - min) || 1;
+    var step = w / (pontos.length - 1);
+    var d = pontos.map(function (p, i) {
+      var y = p.valor == null ? null : h - 3 - ((p.valor - min) / rng) * (h - 6);
+      return (p.valor == null ? "M" : (i === 0 ? "M" : "L")) + (i * step).toFixed(1) + "," + (y == null ? h / 2 : y.toFixed(1));
+    }).join(" ");
+    var last = pontos[pontos.length - 1];
+    var lx = (pontos.length - 1) * step, ly = last.valor == null ? h / 2 : h - 3 - ((last.valor - min) / rng) * (h - 6);
+    return '<svg class="ss-spark" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none"><path d="' + d + '" fill="none" stroke="var(--s1)" stroke-width="1.6"/>' +
+      '<circle cx="' + lx.toFixed(1) + '" cy="' + ly.toFixed(1) + '" r="2.4" fill="var(--s1)"/></svg>';
+  }
+  function ssDelta(v) {
+    if (v == null) return '<span class="cs">—</span>';
+    var c = v > 0 ? "var(--ok)" : v < 0 ? "var(--down)" : "var(--muted)";
+    return '<b style="color:' + c + '">' + (v > 0 ? "▲ +" : v < 0 ? "▼ " : "= ") + pct(Math.abs(v)) + "</b>";
+  }
+  function ssTom(t) { return t === "bom" ? "up" : t === "atencao" ? "warn" : "people"; }
+  function socialHtml(d) {
+    if (!d || d.erro) return '<div class="empty">' + esc((d && d.erro) || "erro") + "</div>";
+    var out = "";
+    if (!d.motor_visao_ativo) {
+      out += '<div class="result" style="background:#fff6e6;border-color:#f0c98a;color:#8a5a00">O leitor de prints está <b>desligado</b> — falta a <code>ANTHROPIC_API_KEY</code> no <code>.env</code> do servidor. ' +
+        "Com ela, é só jogar o screenshot na pasta <b>inbox</b> (nome com \"minas\" ou \"farma e farma\") que o sistema lê os números sozinho. Sem ela, use o formulário do Instagram na tela de Upload.</div>";
+    }
+    if (!d.tem_dados) {
+      out += '<div class="empty"><div class="big">Nenhum dado de rede social ainda</div>' +
+        "Jogue na pasta <b>inbox</b> um print da tela de <b>Insights da conta</b> (Visualizações / Alcance / Interações) e, se usar, um print de <b>resultados de anúncios</b>. O nome do arquivo precisa dizer a loja.</div>";
+      return out;
+    }
+    // orgânico — cards por métrica
+    out += '<div class="cc-sec-h">📈 Alcance orgânico — mês a mês</div>';
+    out += '<div class="grid cols-3" style="margin-bottom:8px">' + d.organico.series.map(function (s) {
+      var ult = s.pontos[s.pontos.length - 1] || {};
+      var vr = (d.organico.variacao.find(function (v) { return v.metrica === s.metrica; }) || {});
+      return '<div class="card"><div class="cs" style="font-weight:700;color:var(--ink-2)">' + esc(s.rotulo) + "</div>" +
+        '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin:2px 0">' + esc(ult.valor_texto || "—") + "</div>" +
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' + ssDelta(vr.delta_pct) +
+        '<span style="width:160px">' + ssSpark(s.pontos) + "</span></div>" +
+        (vr.fonte_delta ? '<div class="cs" style="margin-top:3px">variação: ' + esc(vr.fonte_delta) + "</div>" : "") + "</div>";
+    }).join("") + "</div>";
+    out += '<div class="card">' + d.organico.leitura.map(function (l) {
+      return '<div class="insight"><div class="ii ' + ssTom(l.tom) + '">' + (l.tom === "bom" ? "↑" : l.tom === "atencao" ? "!" : "•") + "</div><div><p>" + esc(l.texto) + "</p></div></div>";
+    }).join("") + "</div>";
+
+    // tráfego pago
+    out += '<div class="cc-sec-h">💸 Tráfego pago</div>';
+    if (d.pago.serie.length) {
+      out += '<div class="card"><table class="tbl mobile-cards"><thead><tr><th>Mês</th><th class="num">Investido</th><th class="num">Cliques</th><th class="num">Resultados</th><th class="num">CPC</th><th class="num">CPM</th><th class="num">CTR</th><th class="num">Custo/result.</th></tr></thead><tbody>' +
+        d.pago.serie.map(function (m) {
+          return '<tr><td data-l="Mês">' + esc(m.ym) + (m.campanhas && m.campanhas.length ? '<div class="cs">' + esc(m.campanhas.join(", ")) + "</div>" : "") + "</td>" +
+            '<td class="num" data-l="Investido">R$ ' + brl(m.investimento) + "</td>" +
+            '<td class="num" data-l="Cliques">' + int(m.cliques) + "</td>" +
+            '<td class="num" data-l="Resultados">' + (m.resultados == null ? "—" : int(m.resultados) + (m.tipo_resultado ? " " + esc(m.tipo_resultado) : "")) + "</td>" +
+            '<td class="num" data-l="CPC">' + (m.cpc == null ? "—" : "R$ " + brl(m.cpc)) + "</td>" +
+            '<td class="num" data-l="CPM">' + (m.cpm == null ? "—" : "R$ " + brl(m.cpm)) + "</td>" +
+            '<td class="num" data-l="CTR">' + (m.ctr_pct == null ? "—" : pct(m.ctr_pct)) + "</td>" +
+            '<td class="num" data-l="Custo/result.">' + (m.custo_por_resultado == null ? "—" : "R$ " + brl(m.custo_por_resultado)) + "</td></tr>";
+        }).join("") + "</tbody></table></div>";
+    }
+    out += '<div class="card">' + d.pago.leitura.map(function (l) {
+      return '<div class="insight"><div class="ii ' + ssTom(l.tom) + '">' + (l.tom === "bom" ? "↑" : l.tom === "atencao" ? "!" : "•") + '</div><div><p>' + esc(l.texto) + (l.aviso ? ' <span class="cs">(' + esc(l.aviso) + ")</span>" : "") + "</p></div></div>";
+    }).join("") + "</div>";
+
+    // cruzamento com faturamento
+    out += '<div class="cc-sec-h">🔗 Cruzamento com o faturamento da loja</div>';
+    out += '<div class="card"><table class="tbl mobile-cards"><thead><tr><th>Mês</th><th class="num">Faturamento</th><th class="num">Alcance</th><th class="num">Interações</th><th class="num">Seguidores</th><th class="num">Invest. pago</th></tr></thead><tbody>' +
+      d.cruzamento.tabela_mensal.map(function (r) {
+        return '<tr><td data-l="Mês">' + esc(r.ym) + "</td>" +
+          '<td class="num" data-l="Faturamento">' + (r.faturamento == null ? "—" : "R$ " + brl(r.faturamento)) + "</td>" +
+          '<td class="num" data-l="Alcance">' + (r.alcance == null ? "—" : int(r.alcance)) + "</td>" +
+          '<td class="num" data-l="Interações">' + (r.interacoes == null ? "—" : int(r.interacoes)) + "</td>" +
+          '<td class="num" data-l="Seguidores">' + (r.seguidores == null ? "—" : int(r.seguidores)) + "</td>" +
+          '<td class="num" data-l="Invest. pago">' + (r.investimento_pago == null ? "—" : "R$ " + brl(r.investimento_pago)) + "</td></tr>";
+      }).join("") + "</tbody></table>" +
+      (d.cruzamento.leitura.length ? '<div style="margin-top:8px">' + d.cruzamento.leitura.map(function (l) { return '<div class="insight"><div class="ii people">•</div><div><p>' + esc(l.texto) + (l.aviso ? ' <span class="cs">(' + esc(l.aviso) + ")</span>" : "") + "</p></div></div>"; }).join("") + "</div>" : "") + "</div>";
+
+    // fontes
+    if (d.fontes && d.fontes.length) {
+      out += '<div class="card"><div class="chead"><div class="ci bulb">🖼️</div><div><h3>Prints lidos</h3><div class="cs">o que a IA transcreveu de cada imagem</div></div></div>' +
+        '<table class="tbl mobile-cards"><thead><tr><th>Quando</th><th>Tipo</th><th>Arquivo</th></tr></thead><tbody>' +
+        d.fontes.map(function (f) {
+          var tipo = f.tipo === "conta" ? "resumo da conta" : f.tipo === "trafego_pago" ? "tráfego pago" : f.tipo;
+          return '<tr><td data-l="Quando">' + esc((f.criado_em || "").replace("T", " ").slice(0, 16)) + '</td><td data-l="Tipo">' + esc(tipo) + '</td><td data-l="Arquivo"><span class="cs">' + esc(f.arquivo) + "</span></td></tr>";
+        }).join("") + "</tbody></table></div>";
+    }
+    out += '<div class="result" style="margin-top:10px;background:#fff6e6;border-color:#f0c98a;color:#8a5a00">' + esc(d.aviso) + "</div>";
+    return out;
+  }
+  function socialPrintFormHtml() {
+    return '<div class="card form-card"><form id="spForm"><div class="rowf">' +
+      '<div><label class="f">Loja</label><select class="inp" name="loja">' + (state.lojas || []).map(function (l) { return '<option' + (l === state.loja ? " selected" : "") + ">" + esc(l) + "</option>"; }).join("") + "</select></div>" +
+      '<div style="flex:2"><label class="f">Print (Insights da conta ou resultados de anúncio)</label><input class="inp" type="file" name="arquivo" accept="image/png,image/jpeg,image/webp" required></div>' +
+      '</div><button class="btn" type="submit">Ler print</button><div id="spOut" class="result" hidden></div>' +
+      '<div class="hint">A imagem é lida por IA (só transcreve o que está na tela). Também dá para só jogar o arquivo na pasta <b>inbox</b>.</div></form></div>';
+  }
+  function wireSocialPrintForm() {
+    var f = view.querySelector("#spForm");
+    if (!f) return;
+    f.addEventListener("submit", async function (ev) {
+      ev.preventDefault();
+      var out = view.querySelector("#spOut");
+      out.hidden = false; out.className = "result"; out.textContent = "Lendo o print…";
+      var fd = new FormData();
+      fd.append("loja", f.loja.value);
+      if (f.arquivo.files[0]) fd.append("arquivo", f.arquivo.files[0]);
+      try {
+        var r = await fetch("/upload/print", { method: "POST", body: fd });
+        var j = await r.json();
+        if (!r.ok) throw new Error(j.erro || ("HTTP " + r.status));
+        out.className = "result ok";
+        out.textContent = j.print && j.print.tipo === "trafego-pago-print"
+          ? "Tráfego pago lido: R$ " + brl(j.print.investimento) + (j.print.resultados ? " · " + int(j.print.resultados) + " resultados" : "") + " (" + j.print.periodo + ")"
+          : "Resumo da conta lido: " + ((j.print && j.print.campos) || []).join(", ") + " (" + (j.print && j.print.periodo) + ")";
+        setTimeout(renderSocial, 900);
+      } catch (e) {
+        out.className = "result err"; out.textContent = e.message;
+      }
+    });
+  }
+  function renderSocial() {
+    state.view = "social";
+    document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === "social"); });
+    if (!state.loja) { view.innerHTML = '<div class="empty">Escolha uma loja.</div>'; return; }
+    var podeUpload = !(EXPORT || window.__HOSTED__ || window.__PUBLICO__);
+    view.innerHTML = '<div class="page-head"><div><h1>📣 Redes Sociais</h1><div class="sub">' + esc(state.loja) + " · métricas lidas dos seus prints, mês a mês, cruzadas com o faturamento</div></div>" +
+      (podeUpload ? '<button class="btn secondary" id="spToggle">🖼️ Ler um print</button>' : "") + "</div>" +
+      '<div id="spBox" hidden></div><div id="socialBody"><div class="empty">Carregando…</div></div>';
+    var tg = view.querySelector("#spToggle");
+    if (tg) tg.addEventListener("click", function () {
+      var b = view.querySelector("#spBox");
+      b.hidden = !b.hidden;
+      if (!b.hidden && !b.innerHTML) { b.innerHTML = socialPrintFormHtml(); wireSocialPrintForm(); }
+    });
+    getJSON("/api/social/" + encodeURIComponent(state.loja)).then(function (d) {
+      view.querySelector("#socialBody").innerHTML = socialHtml(d);
+    }).catch(function (e) {
+      view.querySelector("#socialBody").innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>";
+    });
+  }
+
   function renderConcorrentes() {
     state.view = "concorrentes";
     document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === "concorrentes"); });
@@ -2234,7 +2379,7 @@
   }
 
   // ---------- nav ----------
-  var VIEWS = ["command", "painel", "marketing", "concorrentes", "intelligence", "conexoes", "analise", "upload", "historico", "config"];
+  var VIEWS = ["command", "painel", "marketing", "concorrentes", "social", "intelligence", "conexoes", "analise", "upload", "historico", "config"];
   function go(v) {
     state.view = v;
     document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === v); });
@@ -2242,6 +2387,7 @@
     else if (v === "painel") { if (state.data) renderPainel(); else loadAnalise(); }
     else if (v === "marketing") { mkt.cache = {}; renderMarketing(); }
     else if (v === "concorrentes") renderConcorrentes();
+    else if (v === "social") renderSocial();
     else if (v === "intelligence") { itl.cache = {}; renderIntelligence(); }
     else if (v === "conexoes") renderConexoes();
     else if (v === "analise") renderAnalise();
@@ -2273,6 +2419,7 @@
       else if (state.view === "marketing") { mkt.cache = {}; loadPeriodos().then(function () { renderMarketing(); }); }
       else if (state.view === "intelligence") { itl.cache = {}; loadPeriodos().then(function () { renderIntelligence(); }); }
       else if (state.view === "concorrentes") { loadPeriodos().then(function () { renderConcorrentes(); }); }
+      else if (state.view === "social") { loadPeriodos().then(function () { renderSocial(); }); }
       else loadPeriodos();
     });
     selPeriodo.addEventListener("change", function () {

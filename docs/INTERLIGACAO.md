@@ -39,6 +39,7 @@ nenhuma recalcula giro/margem/classe por conta própria.
 | Opportunity Score → sub-scores (`marketing/scores.js`) | Command Center | Tráfego / Lucro / Desova / Campanha por produto (Criativo fica `null` até a Fase F) |
 | cesta (`basket.js`) | Campaign Builder (combos), Command Center (componente "cesta" do score) | pares support/confidence/lift + retrato de marketing de cada perna |
 | detecção (`intelligence/`) | War Room, Decisões recomendadas, Pauta 7 dias, Ontologia | sinais com evidência; `decisao.js` cruza sinais abertos em playbooks |
+| **Redes Sociais** (`social-analise.js`; prints lidos por visão) | tela Redes Sociais + **Medição (Fase C)** | métrica orgânica mês a mês + tráfego pago; `trafego_pago.investimento` do mês entra automático em `medirCampanha` quando não se passa `investimento` → ROAS/retorno sobre margem sem digitar. Cruza alcance/interações com o faturamento (co-movimento; nunca atribui venda ao anúncio). |
 
 ## O que a aba Precificação entrega agora
 

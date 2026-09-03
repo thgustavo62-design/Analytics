@@ -54,7 +54,7 @@ async function processar(filePath) {
   if (!st.isFile()) return;
   const nome = path.basename(filePath);
   if (nome.startsWith("~$") || nome.startsWith(".")) return;
-  if (!/\.(pdf|xlsx|json)$/i.test(nome)) return; // ignora LEIA-ME.txt e afins, sem barulho
+  if (!/\.(pdf|xlsx|csv|json|png|jpe?g|webp)$/i.test(nome)) return; // ignora LEIA-ME.txt e afins, sem barulho
   const sig = `${nome}|${st.size}|${Math.round(st.mtimeMs)}`;
   if (processados.has(sig)) return;
 

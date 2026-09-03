@@ -53,6 +53,7 @@ function achatar(B) {
   for (const [loja, c] of Object.entries(B.catalogo)) add(loja, "catalogo", null, c);
   for (const [loja, c] of Object.entries(B.concorrencia || {})) add(loja, "concorrencia", null, c);
   for (const [loja, c] of Object.entries(B.dataQuality || {})) add(loja, "data-quality", null, c);
+  for (const [loja, c] of Object.entries(B.social || {})) add(loja, "social", null, c);
   for (const [loja, mk] of Object.entries(B.marketing)) {
     if (!mk) continue;
     for (const [short, val] of Object.entries(mk)) add(loja, "marketing/" + (INV_MK[short] || short), null, val);

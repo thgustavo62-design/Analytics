@@ -15,6 +15,7 @@ const { parseConcorrentes } = require("./parsers/concorrentes");
 const { normalizeInstagram } = require("./parsers/instagram");
 const { classificar } = require("./classify");
 const { aggregate } = require("./aggregate");
+const db = require("./db");
 const {
   LOJAS_VALIDAS,
   getOrCreatePeriodo,
@@ -24,7 +25,7 @@ const {
   getVendas,
   replaceInstagram,
   replaceConcorrencia,
-} = require("./db");
+} = db;
 
 const LOJAS_CFG = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "lojas.json"), "utf8"));
 
@@ -202,6 +203,82 @@ function ingestInstagramJson(filePath) {
   return { tipo: "instagram", loja, periodo: payload.periodo, metricas: metricas.length };
 }
 
+// --- print (screenshot) de Instagram / tráfego pago, lido por visão -----
+
+const IG_ROTULOS = {
+  visualizacoes: "Visualizações", alcance: "Alcance", interacoes: "Interações",
+  visitas_perfil: "Visitas ao perfil", cliques_link: "Cliques no link", seguidores: "Seguidores",
+};
+const MESES_PT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+function lojaDoNome(base) {
+  if (/minas/.test(base)) return "Minas Farma";
+  if (/farma\s*e\s*farma|farmaefarma|\bf\s*e\s*f\b|\bff\b/.test(base)) return "Farma e Farma";
+  return null;
+}
+function ymDoNomeOuData(base, dataFim) {
+  if (dataFim && /^\d{4}-\d{2}/.test(dataFim)) return dataFim.slice(0, 7);
+  const iso = base.match(/(\d{4})[-_.](\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}`;
+  const mn = base.match(new RegExp(`\\b(${MESES_PT.join("|")})[a-zç]*[-_. ]?(\\d{4})?`, "i"));
+  if (mn) {
+    const mi = MESES_PT.indexOf(mn[1].toLowerCase().slice(0, 3)) + 1;
+    const ano = mn[2] ? +mn[2] : new Date().getFullYear();
+    return `${ano}-${String(mi).padStart(2, "0")}`;
+  }
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+async function ingestSocialPrint(filePath, lojaForcada) {
+  const base = path.basename(filePath).toLowerCase();
+  const { ativo, lerPrint } = require("./parsers/social-vision");
+  if (!ativo()) {
+    const e = new Error("Print recebido, mas ANTHROPIC_API_KEY não está no .env — sem ela o sistema não lê a imagem. Configure a chave (a dependência já existe) e jogue o print de novo. Enquanto isso, dá para lançar os números pelo formulário do Instagram na tela de Upload.");
+    e.code = "SEM_CHAVE";
+    throw e;
+  }
+  const loja = (LOJAS_VALIDAS.includes(lojaForcada) && lojaForcada) || lojaDoNome(base);
+  if (!loja) throw new Error(`Print "${path.basename(filePath)}" — não dá para saber a loja pelo nome do arquivo. Renomeie incluindo "minas" ou "farma e farma".`);
+
+  const ext = await lerPrint(filePath);
+  const ym = ymDoNomeOuData(base, ext.data_fim);
+  const [ano, mes] = ym.split("-").map(Number);
+  const periodoId = getOrCreatePeriodo(loja, ano, mes);
+
+  db.registrarSocialPrint(loja, periodoId, ext.tipo, path.basename(filePath), JSON.stringify(ext._bruto), ext.modelo);
+
+  if (ext.tipo === "conta") {
+    const metricas = [];
+    for (const [k, rotulo] of Object.entries(IG_ROTULOS)) {
+      const c = ext.conta[k] || {};
+      const txt = c.valor_texto || (c.valor != null ? String(c.valor) : null);
+      if (txt == null) continue;
+      metricas.push({ metrica: k, rotulo, valor_exibicao: txt, delta_pct: c.delta_pct ?? null, observacao: `lido do print ${path.basename(filePath)}` });
+    }
+    if (!metricas.length) throw new Error(`O print foi lido como "resumo da conta" mas nenhuma métrica ficou visível. Confira se é a tela de Insights / Visão geral.`);
+    db.mergeInstagram(periodoId, metricas);
+    return { tipo: "instagram-print", loja, periodo: ym, metricas: metricas.length, campos: metricas.map((m) => m.metrica) };
+  }
+
+  if (ext.tipo === "trafego_pago") {
+    const tp = ext.trafego_pago || {};
+    const temAlgo = ["investimento", "impressoes", "cliques", "resultados", "cpc", "cpm"].some((k) => tp[k] != null);
+    if (!temAlgo) throw new Error(`O print foi lido como "tráfego pago" mas nenhum número (investimento/impressões/cliques…) ficou visível.`);
+    db.inserirTrafegoPago(periodoId, {
+      fonte_arquivo: path.basename(filePath),
+      data_ini: ext.data_ini, data_fim: ext.data_fim,
+      investimento: tp.investimento, impressoes: tp.impressoes, alcance: tp.alcance,
+      cliques: tp.cliques, ctr_pct: tp.ctr_pct, cpc: tp.cpc, cpm: tp.cpm,
+      resultados: tp.resultados, tipo_resultado: tp.tipo_resultado, custo_por_resultado: tp.custo_por_resultado,
+      campanha: tp.campanha, plataforma: tp.plataforma,
+    });
+    return { tipo: "trafego-pago-print", loja, periodo: ym, investimento: tp.investimento, resultados: tp.resultados };
+  }
+
+  throw new Error(`Não reconheci esse print como "resumo da conta" nem "tráfego pago". Mande a tela de Insights da conta (Visualizações/Alcance/Interações) ou a de resultados de anúncios.`);
+}
+
 // --- tabela de planejamento de promoções (o "tabelão"/encarte) ---------
 
 function ingestPromocoes(filePath) {
@@ -231,6 +308,7 @@ async function ingestFile(filePath) {
   const base = path.basename(filePath).toLowerCase();
   const ext = path.extname(base);
   if (ext === ".pdf") return ingestVendas(filePath);
+  if (/\.(png|jpe?g|webp)$/i.test(ext)) return ingestSocialPrint(filePath);
   const { ehArquivoPromocao } = require("./parsers/promocoes");
   if ((ext === ".xlsx" || ext === ".csv") && ehArquivoPromocao(base) && !ehArquivoConcorrente(base)) {
     return ingestPromocoes(filePath);
@@ -275,4 +353,4 @@ async function ingestFile(filePath) {
   throw new Error(`tipo de arquivo não suportado (${ext || "sem extensão"}).`);
 }
 
-module.exports = { ingestFile, ingestVendas, ingestConcorrentes, ingestInstagramJson, ingestAnaliseComercial, ingestPromocoes, resolveLoja };
+module.exports = { ingestFile, ingestVendas, ingestConcorrentes, ingestInstagramJson, ingestSocialPrint, ingestAnaliseComercial, ingestPromocoes, resolveLoja };
