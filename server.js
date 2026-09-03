@@ -622,6 +622,16 @@ app.post("/api/publicar", async (req, res) => {
   try {
     const { B } = await coletarTudo({ port: PORT, cookie: makeToken() });
     const r = await publicar.regenerar({ outDir: PUBLIC_DIR, root: __dirname, B });
+    // mantém as pastas de deploy estático em dia (mesmo que este publish rode depois do boot)
+    try {
+      const src = path.join(PUBLIC_DIR, "index.html");
+      for (const d of ["analytics"]) {
+        const dst = path.join(__dirname, d);
+        fs.mkdirSync(dst, { recursive: true });
+        fs.copyFileSync(src, path.join(dst, "index.html"));
+        if (!fs.existsSync(path.join(dst, ".nojekyll"))) fs.writeFileSync(path.join(dst, ".nojekyll"), "");
+      }
+    } catch (e) { console.error("[api/publicar] cópia p/ analytics/:", e.message); }
     let supabase = { pulado: "SUPABASE_DB_URL não definida" };
     if (supabaseSync.ativo()) {
       try {
