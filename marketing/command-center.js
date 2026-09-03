@@ -74,7 +74,10 @@ function commandCenter(loja, opts = {}) {
   const limBloq = opts.limiteBloqueados || 8;
   const pisoScore = opts.pisoScore != null ? opts.pisoScore : 40;
 
-  const anunciaveis = r.produtos.filter((p) => !p.do_not_promote && p.opportunity.score >= pisoScore);
+  const anunciaveisRaw = r.produtos.filter((p) => !p.do_not_promote && p.opportunity.score >= pisoScore);
+  // a cauda longa (classe C da curva ABC) não vale slot de campanha — escondida por padrão
+  const anunciaveis = opts.incluirC ? anunciaveisRaw : anunciaveisRaw.filter((p) => p.abc !== "C");
+  const ocultosC = anunciaveisRaw.length - anunciaveis.length;
   const bloqueados = r.produtos.filter((p) => p.do_not_promote);
 
   const anunciar = anunciaveis.slice(0, limAnunciar).map(slim);
@@ -129,12 +132,14 @@ function commandCenter(loja, opts = {}) {
     refDate: r.refDate,
     feeds: r.feeds,
     dados_ausentes_globais: r.dados_ausentes_globais,
+    abc: r.abc,
     resumo: {
       total_analisado: r.total,
       anunciaveis: anunciaveis.length,
       bloqueados: bloqueados.length,
       mostrando_anunciar: anunciar.length,
       mostrando_bloqueados: nao_anunciar.length,
+      ocultos_classe_c: ocultosC,
       mix_papeis: mix,
     },
     plano_do_dia: { anunciar, nao_anunciar, alertas },

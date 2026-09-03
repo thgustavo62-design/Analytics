@@ -796,6 +796,20 @@ app.get("/api/marketing/:loja/campaign-measure", (req, res) => {
   }
 });
 
+// Curva ABC por receita (produtos / categorias / clientes)
+const abcEng = require("./marketing/abc");
+app.get("/api/marketing/:loja/abc", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const ctx = contextoMarketing(req.params.loja);
+    const r = abcEng.curvaABC(req.params.loja, ctx);
+    res.status(r.erro ? 404 : 200).json(r);
+  } catch (e) {
+    console.error("[api/marketing abc]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 // Fase G — Marketing Calendar + ciclo fechado
 const calendarEng = require("./marketing/calendar");
 app.get("/api/marketing/:loja/calendar", (req, res) => {

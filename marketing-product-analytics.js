@@ -394,9 +394,14 @@ function analisarProdutos(loja, opts = {}) {
     })
     .sort((a, c) => c.opportunity.score - a.opportunity.score);
 
+  // curva ABC por receita 90d — marca cada produto com .abc (A/B/C)
+  let abcResumo = null;
+  try { abcResumo = require("./marketing/abc").classificarProdutosABC(produtos); } catch (e) { /* opcional */ }
+
   const resultado = {
     loja,
     refDate,
+    abc: abcResumo,
     feeds: { estoque: temEstoque, custo: temCusto, preco: temPreco, freshness },
     dados_ausentes_globais: [
       !temEstoque && "estoque (days-of-cover, ruptura, estoque parado indisponíveis)",
@@ -416,10 +421,10 @@ function recomendados(loja, opts = {}) {
   const r = analisarProdutos(loja, opts);
   if (r.erro) return r;
   const limite = opts.limite || 40;
-  const lista = r.produtos
-    .filter((p) => !p.do_not_promote && p.opportunity.score >= (CFG_SCORE.rotulos.medio - 5))
-    .slice(0, limite);
-  return { ...r, produtos: lista };
+  const base = r.produtos.filter((p) => !p.do_not_promote && p.opportunity.score >= (CFG_SCORE.rotulos.medio - 5));
+  // por padrão esconde a cauda longa (classe C); opts.incluirC traz tudo
+  const semC = opts.incluirC ? base : base.filter((p) => p.abc !== "C");
+  return { ...r, produtos: semC.slice(0, limite), ocultos_classe_c: base.length - semC.length };
 }
 
 function naoAnunciar(loja, opts = {}) {

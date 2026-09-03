@@ -992,7 +992,7 @@
   var MKT_TABS = [
     ["resultado", "Resultado"], ["produtos", "Produtos"], ["recomendados", "Recomendados"], ["nao-anunciar", "Não anunciar"],
     ["estoque-parado", "Estoque parado"], ["cestas", "Cestas & Combos"], ["eficiencia", "Eficiência"], ["medicao", "Medição"],
-    ["playbooks", "Playbooks"], ["calendario", "Calendário"], ["builder", "Montar campanha"], ["simulador", "Simulador de oferta"],
+    ["abc", "Curva ABC"], ["playbooks", "Playbooks"], ["calendario", "Calendário"], ["builder", "Montar campanha"], ["simulador", "Simulador de oferta"],
   ];
   function mktPeriodo() { return state.periodo || (state.periodos[0] && state.periodos[0].periodo) || null; }
   function scoreBar(s) {
@@ -1157,6 +1157,9 @@
         var md = await mktFetch("/api/marketing/" + L + "/campaign-measure");
         host.innerHTML = medicaoHtml(md);
         wireMedicao();
+      } else if (mkt.tab === "abc") {
+        var abc = await mktFetch("/api/marketing/" + L + "/abc");
+        host.innerHTML = abcHtml(abc);
       } else if (mkt.tab === "playbooks") {
         var pb = await mktFetch("/api/marketing/" + L + "/playbooks");
         host.innerHTML = playbooksHtml(pb);
@@ -1314,6 +1317,37 @@
     });
   }
   function wireMedicao() { view.querySelectorAll(".med-card").forEach(wireMedCard); }
+  // ---- Curva ABC ----
+  function abcClasseChip(k) {
+    return '<span class="abc-chip abc-' + k + '">' + k + "</span>";
+  }
+  function abcHtml(d) {
+    if (!d || d.erro) return '<div class="empty">' + esc((d && d.erro) || "erro") + "</div>";
+    var p = d.produtos;
+    var out = '<div class="cs" style="margin-bottom:8px">Receita dos últimos ' + d.janela_dias + " dias · A até " + Math.round(d.cortes.a * 100) + "% acumulado, B até " + Math.round(d.cortes.b * 100) + "%. " + esc(d.aviso) + "</div>";
+    out += '<div class="card"><div class="chead"><div class="ci gold">📦</div><div><h3>Produtos</h3></div></div>' +
+      '<div class="abc-bar big">' + ["A", "B", "C"].map(function (k) {
+        return '<span class="abc-seg abc-' + k + '" style="flex:' + Math.max(1, p[k].receita || 1) + '">' + k + "<br>" + p[k].pct_receita + "%</span>";
+      }).join("") + "</div>" +
+      '<table class="tbl"><thead><tr><th>Classe</th><th class="num">Produtos</th><th class="num">% do catálogo</th><th class="num">Receita 90d</th><th class="num">% da receita</th></tr></thead><tbody>' +
+      ["A", "B", "C"].map(function (k) {
+        return "<tr><td>" + abcClasseChip(k) + "</td><td class=\"num\">" + int(p[k].n) + '</td><td class="num">' + (p.total_itens ? Math.round(p[k].n / p.total_itens * 100) : 0) + '%</td><td class="num">R$ ' + brl(p[k].receita) + '</td><td class="num"><b>' + p[k].pct_receita + "%</b></td></tr>";
+      }).join("") + "</tbody></table>" +
+      '<div class="cs" style="margin-top:6px">As telas de recomendação e o Campaign Builder usam só A+B. C ainda conta para estoque parado / liquidação.</div></div>';
+    out += '<div class="card"><div class="chead"><div class="ci red">🗂️</div><div><h3>Categorias</h3></div></div>' +
+      '<table class="tbl mobile-cards"><thead><tr><th>Categoria</th><th>Classe</th><th class="num">Receita 90d</th><th class="num">% da receita</th></tr></thead><tbody>' +
+      d.categorias.map(function (c) {
+        return "<tr><td data-l=\"Categoria\">" + esc(c.categoria) + "</td><td data-l=\"Classe\">" + abcClasseChip(c.abc) + '</td><td class="num" data-l="Receita">R$ ' + brl(c.receita_90d) + '</td><td class="num" data-l="%"><b>' + c.pct + "%</b></td></tr>";
+      }).join("") + "</tbody></table></div>";
+    var cl = d.clientes;
+    out += '<div class="card"><div class="chead"><div class="ci conc">👤</div><div><h3>Clientes</h3></div></div>' +
+      (!cl.disponivel ? '<div class="empty">' + esc(cl.nota) + "</div>" :
+        '<div class="cs">' + int(cl.clientes_identificados) + " clientes identificados · top 8 = <b>" + cl.pct_top8 + "%</b> da receita identificada · A " + int(cl.classe_A.n) + " · B " + int(cl.classe_B.n) + " · C " + int(cl.classe_C.n) + "</div>" +
+        '<table class="tbl"><thead><tr><th>Cliente</th><th class="num">Receita</th><th class="num">Cupons</th><th class="num">% do id.</th></tr></thead><tbody>' +
+        cl.top_clientes.map(function (t) { return "<tr><td>" + esc(t.cliente) + '</td><td class="num">R$ ' + brl(t.receita) + '</td><td class="num">' + int(t.cupons) + '</td><td class="num">' + t.pct + "%</td></tr>"; }).join("") + "</tbody></table>") + "</div>";
+    return out;
+  }
+
   // ---- Playbooks por categoria (Fase D) ----
   function pbTendChip(t) {
     var m = { "melhorando": ["▲ melhorando", "var(--s1)"], "estável": ["= estável", "var(--ink-2)"], "piorando (possível fadiga)": ["▼ perdendo força", "var(--down)"], "sem base": ["· sem base", "var(--muted)"] };
@@ -1504,7 +1538,13 @@
         return '<div class="cc-alert" style="color:' + c[0] + ";background:" + c[1] + '"><b>' + esc(a.nivel) + "</b><span>" + esc(a.texto) + "</span></div>";
       }).join("");
       out += '<div class="cs" style="margin:10px 0 4px">' + int(rz.total_analisado) + " produtos analisados · " + int(rz.anunciaveis) + " anunciáveis · " + int(rz.bloqueados) + " bloqueados" + (mix ? " · mix: " + esc(mix) : "") + "</div>";
-      out += '<div class="cc-sec-h">🔥 O que anunciar hoje</div>';
+      if (d.abc && d.abc.A) {
+        var ab = d.abc;
+        out += '<div class="abc-bar">' +
+          ["A", "B", "C"].map(function (k) { return '<span class="abc-seg abc-' + k + '" style="flex:' + Math.max(1, ab[k].n) + '" title="' + k + ": " + int(ab[k].n) + " prod · " + ab[k].pct_receita + '% da receita">' + k + " " + ab[k].pct_receita + "%</span>"; }).join("") +
+          "</div><div class=\"cs\">Curva ABC (receita 90d): <b>" + int(ab.A.n) + "</b> produtos classe A = " + ab.A.pct_receita + "% · " + int(ab.B.n) + " B · " + int(ab.C.n) + " C (cauda)</div>";
+      }
+      out += '<div class="cc-sec-h">🔥 O que anunciar hoje' + (rz.ocultos_classe_c ? ' <span class="cs" style="font-weight:400">(' + int(rz.ocultos_classe_c) + " da cauda / classe C fora)</span>" : "") + "</div>";
       out += (pd.anunciar && pd.anunciar.length) ? pd.anunciar.map(ccCard).join("") : '<div class="empty">Nada acima do piso de oportunidade neste período.</div>';
       out += '<div class="cc-sec-h">⛔ O que NÃO anunciar</div>';
       out += (pd.nao_anunciar && pd.nao_anunciar.length) ? pd.nao_anunciar.map(ccNo).join("") : '<div class="empty">Nenhum produto bloqueado com os feeds atuais.</div>';

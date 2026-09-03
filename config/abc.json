@@ -1,0 +1,7 @@
+{
+  "_nota": "Curva ABC por receita. A = produtos que somam até 'corte_a' da receita acumulada (os vitais); B = de 'corte_a' até 'corte_b'; C = o resto (a cauda longa). As listas de marketing mostram só A+B por padrão. Janela padrão 90 dias.",
+  "corte_a": 0.80,
+  "corte_b": 0.95,
+  "janela_dias": 90,
+  "min_receita_para_a": 1
+}

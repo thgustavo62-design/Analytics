@@ -146,7 +146,8 @@ function montarCampanha(loja, opts = {}) {
   let pool = analise.produtos;
   if (categorias) pool = pool.filter((p) => categorias.has(p.categoria));
 
-  const promoviveis = pool.filter((p) => !p.do_not_promote);
+  // elenco de campanha vem de A+B (classe C = cauda longa, não sustenta campanha)
+  const promoviveis = pool.filter((p) => !p.do_not_promote && (opts.incluirC || p.abc !== "C"));
   const evitar = pool.filter((p) => p.do_not_promote).slice(0, 15).map((p) => ({
     descricao: p.descricao, ean: p.ean, categoria: p.categoria,
     motivos: p.do_not_promote.motivos.map((m) => m.texto),

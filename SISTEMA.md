@@ -142,6 +142,7 @@ do Supabase (Vercel + GitHub Pages).
 | `marketing/campaign-builder.js` | **Fase B** — `montarCampanha(loja, {dias, tema, categorias})`: janela contígua, elenco por papel (Fase A) com preço sugerido (respeita piso de margem) + ângulo + forecast por perna, combos viáveis do elenco, lista de evitar, **forecast da campanha inteira** (3 cenários + margem incremental + estoque necessário) e **score da campanha 0–100** (cobertura de papéis + margem prevista + estoque + força da âncora). `config/campaign-plan.json`. |
 | `marketing/campaign-measure.js` | **Fase C** — `medirCampanha(loja, {nome \| dias+categorias, janelaDias, investimento})`: **baseline pelo mesmo dia da semana** (fallback "demais dias" com `confianca: baixa`), receita/unidades/lucro incremental, % sobre baseline, **ROAS** e **retorno sobre margem** (com investimento), **canibalização** (variação das outras categorias — só medida com baseline do mesmo dia da semana). Leitura observacional, com aviso. |
 | `marketing/padroes-mkt.js` | **Fase D** — `padroesMarketing(loja)`: cada campanha recorrente do calendário, semana a semana — **melhor dia** (comparação relativa, sem viés), **tendência do lift** (melhorando / estável / piorando = fadiga), lift médio (indicativo). `playbooks(loja)`: manual por categoria (melhor dia, produtos recomendados, ângulo dominante, veredito pela tendência) + `padroes` + `fadiga`. `fadigaProdutos(loja)`: produtos das categorias de campanha que rendiam nos dias de campanha e perderam força ao longo de blocos de 30 d (ainda vendendo — queda a zero = ruptura, não fadiga). |
+| `marketing/abc.js` | **Curva ABC** por receita 90d. `classificarProdutosABC(produtos)` marca cada produto com `.abc` (A = até 80% da receita acumulada, B = 80–95%, C = cauda). Chamado dentro de `analisarProdutos` → todo produto carrega `.abc`. `curvaABC(loja)` = resumo: produtos, categorias e clientes (concentração por `cli_id`). Recomendados / Command Center / Campaign Builder usam **só A+B** (`opts.incluirC` traz tudo). `config/abc.json`. |
 | `marketing/calendar.js` | **Fase G** — `calendarioMarketing(loja, {dias})`: monta as ocorrências das campanhas recorrentes nos próximos N dias e **ajusta** cada uma: ruptura na categoria → `SUSPENDER`, fadiga (≥2 produtos ou tendência piorando) → `RENOVAR`, esforço sem pressão → `REVISAR`. Sugere **slots de DEFESA** (concorrência subcomunicada, sem campanha nossa) e **OPORTUNIDADE** (categoria forte no Command Center, sem campanha). `ciclo_fechado`: por campanha, junta a última Medição (C) + o padrão (D) + a fadiga numa **recomendação para a próxima rodada** + link para montar (`campaign-plan`). |
 
 ### Camada de inteligência (`intelligence/`)
@@ -227,6 +228,7 @@ POST `/analise-comercial/upload` (token próprio). `VA_NO_AUTH=1` desliga (só l
 `GET /api/marketing/:loja/campaign-measure` (Fase C — `nome` ou `dias`+`categorias`, `investimento`; sem params = todas as campanhas do calendário) ·
 `GET /api/marketing/:loja/playbooks` (Fase D — playbooks + padrões + fadiga) ·
 `GET /api/marketing/:loja/calendar` (Fase G — `dias`; ocorrências ajustadas + slots + ciclo fechado) ·
+`GET /api/marketing/:loja/abc` (curva ABC — produtos / categorias / clientes) ·
 `GET /api/marketing/:loja/:periodo/`{`resultado`, `produtos`, `recommended-products`,
 `do-not-promote`, `stagnant-stock`, `baskets`, `combos`, `campaign-builder`, `products/:ean`} ·
 `GET /api/marketing/:loja/campaign-efficiency` · `POST /api/marketing/:loja/offer-simulator` ·
@@ -260,7 +262,7 @@ CRUD `GET/POST/PATCH/DELETE /api/marketing/:loja/campaigns[/:id]`.
 |---|---|
 | **Command Center** (Fase A · tela de abertura) | Alertas (ruptura com venda relevante / concorrência atacando / capital parado / feed faltando) · linha de resumo (analisados · anunciáveis · bloqueados · mix de papéis) · **🔥 O que anunciar hoje** — cards ranqueados por Opportunity: papel + ação sugerida, mini-barras dos sub-scores (Opport./Tráfego/Lucro/Desova/Campanha/Criativo), interpretação, 3 motivos com evidência, chips de tendência/cobertura/margem · **⛔ O que NÃO anunciar** — motivo curto + motivos com evidência + substituto |
 | **Painel** | 4 cartões de resumo + abas: Visão Geral · Vendas · Redes Sociais · Concorrência · Categorias · Top Produtos · Tendência. Gráficos SVG (combo barras+linha, donut, dia-da-semana, tendência). |
-| **Marketing** (12 abas) | **Resultado** (KPIs de lucro/capital parado/risco + matriz visual + tabelas top-lucro / vende-e-não-lucra / custo-a-conferir / peso-morto / ruptura / sumindo) · Produtos · Recomendados · Não anunciar · Estoque parado · Cestas & Combos · Eficiência · **Medição** (por campanha do calendário: baseline mesmo dia da semana, incremental, canibalização + campo de investimento → ROAS e retorno sobre margem) · **Playbooks** (por campanha recorrente: badge de tendência, melhor dia, barras de lift por dia, veredito, produtos + ângulo dominante; seção de fadiga de produto) · **Calendário** (semana a semana + ocorrências com status OK/SUSPENDER/RENOVAR/REVISAR + slots sugeridos + ciclo fechado) · **Montar campanha** (Campaign Builder 2.0: escolhe dias + tema → campanha inteira com score, elenco por papel, preço/ângulo/forecast por item, combos e forecast em 3 cenários) · Simulador de oferta |
+| **Marketing** (13 abas) | **Resultado** (KPIs de lucro/capital parado/risco + matriz visual + tabelas top-lucro / vende-e-não-lucra / custo-a-conferir / peso-morto / ruptura / sumindo) · Produtos · Recomendados · Não anunciar · Estoque parado · Cestas & Combos · Eficiência · **Curva ABC** (produtos A/B/C em barra + tabela, categorias, concentração de cliente) · **Medição** (por campanha do calendário: baseline mesmo dia da semana, incremental, canibalização + campo de investimento → ROAS e retorno sobre margem) · **Playbooks** (por campanha recorrente: badge de tendência, melhor dia, barras de lift por dia, veredito, produtos + ângulo dominante; seção de fadiga de produto) · **Calendário** (semana a semana + ocorrências com status OK/SUSPENDER/RENOVAR/REVISAR + slots sugeridos + ciclo fechado) · **Montar campanha** (Campaign Builder 2.0: escolhe dias + tema → campanha inteira com score, elenco por papel, preço/ângulo/forecast por item, combos e forecast em 3 cenários) · Simulador de oferta |
 | **Concorrentes** | Botão **➕ Registrar oferta** (formulário rápido **ou** "colar encarte/post" → preview → salvar em lote) · KPIs (ofertas, abaixo do nosso, desconto médio) · Leitura automática + ações · **Onde reagir** (priorizado, com veredito, + "promover no lugar") · **Share of Promotions** (nossa ação promocional da tabela de promoções × ofertas do concorrente, por categoria) · Por concorrente (pressão + categorias atacadas) · Pressão por categoria |
 | **Intelligence** (7 abas) | **War Room** (bloco escuro: prioridade #1, decisões recomendadas, Threat/Opportunity Map, contradições, situação por categoria) · **Recomendações** (decisões cruzadas + "Registrar como decisão") · Sinais (com "Por quê?", Observando, Resolver, Virar decisão) · Investigações · Decisões · Padrões · Pauta 7 dias · Perguntar |
 | **Conexões** | grafo radial SVG — nós (loja/categoria/canal/campanha/concorrente/sinal/…) ligados por arestas com significado; clique → foco + painel lateral navegável |
@@ -283,6 +285,7 @@ KPIs/matriz em 2 colunas.
 |---|---|
 | `lojas.json` | por loja: `cnpj` (roteia o PDF), `razaoSocial`, `horaFechamento`, `concorrentes[]`, **`campanhas[{nome, dias, categorias}]`** (calendário recorrente) |
 | `categorias.json` | dicionário do classificador de categoria por palavra-chave (regras `contem`/`igual`/`exceto`, ordenadas) — usado só quando o ERP não classificou |
+| `abc.json` | cortes da curva ABC (`corte_a` 0.80, `corte_b` 0.95) + janela (90d) |
 | `grupos-erp.json` | "Nome Grupo" do ERP → `{categoria, subcategoria, classe_comercial}`; regras `prefixo:true` casam com o grupo (antes do " - ") para separar Genérico/Similar/Ético/OTC |
 | `categorias-sinonimos.json` | vocabulário **canônico** (~11 categorias) + `aliases` (rótulo → canônico) + `super_grupos` (`Bebê` ⊇ Fraldas + Leite Infantil, para comparar com a concorrência) |
 | `insights.json` | limiares das 3 regras de insight do Painel |
@@ -362,7 +365,7 @@ leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 
 ## 11. Testes
 
-`npm test` (`node --test`) — **102 testes**, arquivos em separado (`process.env.VA_DB_PATH`
+`npm test` (`node --test`) — **106 testes**, arquivos em separado (`process.env.VA_DB_PATH`
 isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\Admin\Downloads\`.
 
 | Arquivo | Cobre |
@@ -376,6 +379,7 @@ isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\A
 | `calendar.test.js` | **Fase G** — janela começa depois do último dia de dados; ocorrências caem no dia-da-semana da campanha e dentro da janela; `status` em conjunto válido, ajuste com motivo + evidência; slots só de categoria sem campanha; ciclo fechado com uma entrada por campanha, recomendação e link de montagem |
 | `promocoes.test.js` | **tabela de promoções** — parser (colunas, datas `DD/MM` lidas certo, desconto↔preço derivado, resolução de loja); `promocoesVigentes` filtra por data (vigente/futura/expirada/sem-prazo); re-upload não duplica (`chave`); Share of Promotions passa a citar a fonte "tabela de planejamento" |
 | `categorias.test.js` | **vocabulário canônico** — `categoriaCanonica` (aliases antigos e da coleta, desconhecido em title-case); `mapGrupoErp` (prefixo separa OTC de Ético; subgrupo vira subcategoria; grupo sem regra → null); `expandirSuperGrupo`; `upsertProduto` não deixa a categoria de vendas sobrescrever a do ERP |
+| `abc.test.js` | **curva ABC** — corte cumulativo A/B/C (classe do % acumulado ANTES do item; receita 0 → C; pct soma ~100); `curvaABC` (produtos + categorias ordenadas com classe + clientes); `analisarProdutos` marca `.abc` e `recomendados` esconde a classe C (`incluirC` traz de volta) |
 | `concorrentes.test.js` | filtro de marca, parse de validade/preço, resolução de loja por CNPJ |
 | `catalogo.test.js` | `normalizarEan`, `sincronizarProdutosDeVendas`, histórico de custo, planilha combinada estoque+custo+preço |
 | `marketing-product.test.js` | janelas monotônicas, clamp de tendência, 7 componentes do score somando ao score, confiança < 1 sem feed, classes, do-not-promote |
@@ -396,9 +400,9 @@ Ver [`docs/AUDITORIA.md`](docs/AUDITORIA.md) (Decision Intelligence, 7 fases) e
 
 - **Creative Intelligence** + Content Gap — travado no feed de log de publicações (Fase F)
 - **Refinamento de dados** (em curso): ✅ categoria real do ERP + vocabulário canônico +
-  reconciliação com a concorrência. Falta: **curva ABC** (cortar a cauda de ~6 mil SKUs das
-  listas), **momentum por subcategoria**, **elasticidade de preço** (com a tabela de promoções),
-  **tela Data Quality** com score e R$ de impacto.
+  reconciliação com a concorrência; ✅ **curva ABC** (listas de recomendação e Campaign Builder
+  usam só A+B; ~2.800 SKUs de cauda fora). Falta: **momentum por subcategoria**, **elasticidade
+  de preço** (com a tabela de promoções), **tela Data Quality** com score e R$ de impacto.
 - **Forecast Engine** (previsão 7/15/fechamento + probabilidade de meta)
 - **Meta Engine** (metas em `config/lojas.json` → realizado/gap/venda-diária-necessária)
 - Card único **R$ potencial identificado / R$ em risco** consolidado
