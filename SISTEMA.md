@@ -123,7 +123,7 @@ do Supabase (Vercel + GitHub Pages).
 | `parsers/social-vision.js` | **lê um PRINT** (screenshot .png/.jpg/.webp) de Instagram / Meta Ads via **Claude com visão** (opt-in: `ANTHROPIC_API_KEY`; `SOCIAL_VISION_MODEL`, padrão `claude-sonnet-5`). Classifica `conta` / `trafego_pago` / `desconhecido` e extrai só o que está visível (ausente = null, nunca estima). `numBR` converte "1,2 mil" / "R$ 1.234,56" / "3,4%" pt-BR |
 | `parsers/social-xlsx.js` | **alternativa sem IA**: lê as mesmas métricas de uma **planilha** (xlsx/csv, uma linha por mês). Detecta `conta` vs `trafego_pago` pelas colunas; formato largo (métrica = coluna) ou longo (Métrica \| Valor \| Variação); deriva CPC/CPM/CTR/custo-por-resultado quando faltam. Loja pela coluna `Loja` ou pelo nome do arquivo. `config/social.json` (sinônimos de coluna). |
 | `social-analise.js` | `analiseSocial(loja)` — métricas orgânicas mês a mês (série + variação, delta do print/planilha ou calculado), tráfego pago (investimento / CPC / CPM / CTR / custo por resultado por mês) e **cruzamento com o faturamento** da loja (co-movimento, nunca atribui venda ao anúncio). Determinístico. |
-| `catalogo.js` | `sincronizarProdutosDeVendas()` popula `produtos` pelos EAN das vendas; `ingestPlanilhaProduto()` lê planilha de estoque — **um arquivo alimenta estoque + preço de venda + preço de promoção + custo + a categoria REAL do ERP** ("Nome Grupo" → `mapGrupoErp`) + `Princípio Ativo` + `Registro MS`; nome com `geral`/`rede` aplica nas 2 lojas |
+| `catalogo.js` | `sincronizarProdutosDeVendas()` popula `produtos` pelos EAN das vendas; `ingestPlanilhaProduto()` lê planilha de estoque — **um arquivo alimenta estoque + preço + custo + a categoria REAL do ERP** ("Nome Grupo" → `mapGrupoErp`) + `Princípio Ativo` + `Registro MS`; nome com `geral`/`rede` aplica nas 2 lojas. **Preço:** a coluna "preço de promoção" do estoque é o **preço praticado no BALCÃO** (o ERP já a preenche com a tabela menos o desconto fixo do grupo — Perfumaria −20%, Genérico/Similar −40%, `config/preco-balcao.json`); grava como `tipo_preco='normal'`. A coluna "preço de venda" vira `tipo_preco='tabela'` (referência). Coluna de promoção vazia → deriva o balcão do desconto do grupo. |
 | `classify.js` | categoria por palavra-chave (`config/categorias.json`) — **fallback**, só quando o ERP não deu grupo |
 | `categorias.js` | **vocabulário canônico** de categoria. `categoriaCanonica(rotulo)` resolve qualquer rótulo de fora (grupo de ERP, coleta de concorrente, classificador) para o mesmo conjunto (`config/categorias-sinonimos.json`); `mapGrupoErp(grupo)` → `{categoria, subcategoria, classe_comercial}` (`config/grupos-erp.json`, regras `prefixo` separam Genérico/Similar/Ético/OTC); `expandirSuperGrupo("Bebê")` → `[Bebê, Fraldas, Leite Infantil]` |
 | `scripts/recategorizar.js` | one-shot: canoniza toda categoria não-manual + reaplica o grupo do ERP das planilhas de estoque da inbox. Idempotente. Antes: 8 categorias (79% "Medicamentos/Outros"); depois: 11 canônicas + subcategorias |
@@ -204,7 +204,7 @@ destrutivo.
 | **Catálogo (Fase 1)** | `produtos` | `ean` UNIQUE (nullable), `descricao[_normalizada]`, `categoria` + **`categoria_fonte`** (`vendas`=palavra-chave < `erp` < `manual` — rank de sobrescrita), `subcategoria`, **`classe_comercial`** (Genérico/Similar/Ético/OTC), **`principio_ativo_cod`**, **`registro_ms`**, `*_manual` (override vence), `fonte` |
 | | `produto_estoque` | snapshot por `(loja_id, produto_id, data_referencia)` |
 | | `produto_custo` | historizado — `data_inicio`/`data_fim` (vigência; nunca sobrescreve) |
-| | `produto_preco` | idem + `tipo_preco` (normal/promocional/planejado) |
+| | `produto_preco` | idem + `tipo_preco`: **`normal`** = preço praticado no balcão (o que entra em margem/score/precificação), **`tabela`** = preço de lista (referência), `planejado` (tabela de promoções), `promocional` (legado, não mais gravado pelo estoque) |
 | **Campanhas (Fase 3)** | `campanhas` | `loja_id`, `nome`, `objetivo`, `data_inicio/fim`, `status`, `investimento`, `origem` |
 | | `campanha_produtos` | `papel` (CHAMARIZ/HERO/MARGEM/…), `preco_promocional` |
 | | `campanha_resultados` | `metricas_json`, `resultado` (EXCELENTE→DESTRUTIVA), `score` |
@@ -308,6 +308,7 @@ KPIs/matriz em 2 colunas.
 | `categorias-sinonimos.json` | vocabulário **canônico** (~11 categorias) + `aliases` (rótulo → canônico) + `super_grupos` (`Bebê` ⊇ Fraldas + Leite Infantil, para comparar com a concorrência) |
 | `insights.json` | limiares das 3 regras de insight do Painel |
 | `catalogo.json` | como reconhecer/ler as planilhas de estoque/custo/preço (nome do arquivo + sinônimos de coluna); `nome_todas_as_lojas` |
+| `preco-balcao.json` | desconto fixo do grupo aplicado sobre o preço de tabela para chegar ao **preço praticado no balcão** — `por_subcategoria` (Perfumaria 0.20), `por_classe_comercial` (Genérico/Similar 0.40), `default`. Usado só quando a coluna "preço de promoção" do estoque vem vazia. |
 | `concorrentes.json` | pistas de nome de arquivo + sinônimos de coluna da coleta de concorrente |
 | `promocoes.json` | pistas de nome de arquivo + sinônimos de coluna da **tabela de planejamento de promoções** — produto/EAN, preço de, **preço promo (inclui "Valor Aproximado")**, desconto, início, fim, campanha, loja |
 | `social.json` | pistas de nome de arquivo + sinônimos de coluna da **planilha de redes sociais** (resumo da conta e tráfego pago) — mês/período, loja, as 6 métricas orgânicas + "Var …", investimento/impressões/CPC/CPM/CTR/resultados/custo por resultado |
@@ -384,7 +385,7 @@ leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 
 ## 11. Testes
 
-`npm test` (`node --test`) — **129 testes**, arquivos em separado (`process.env.VA_DB_PATH`
+`npm test` (`node --test`) — **130 testes**, arquivos em separado (`process.env.VA_DB_PATH`
 isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\Admin\Downloads\`.
 
 | Arquivo | Cobre |
@@ -403,7 +404,7 @@ isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\A
 | `promo-pricing.test.js` | **precificação de promoção** — `elasticidadeDe` (categoria configurada / default / canonicalização); `oportunidadesPromo` ranqueia desc por lucro incremental, exclui classe C, só entra com desconto e lucro > 0, soma bate com o agregado, balde `sem_custo` sem lucro projetado; **`por_grupo`** cobre todos os grupos sem perder/duplicar, cada linha com `.detalhe` embutido (grupo sem curva, ranking com curva reamostrada, sem repetir o aviso), preço/desc do resumo = do detalhe; `precificarProduto` (curva ≥2, `recomendado` = ponto de maior lucro incremental, preço = normal×(1−desc), nunca abaixo do piso de margem, monotonia demanda×desconto); `precoRapido` (só produtos que valem promoção, margem ≥ piso); produto inexistente → erro |
 | `data-quality.test.js` | **Data Quality** — score 0–100; `por_severidade` soma = nº de problemas; cada problema com severidade válida + `titulo`/`n`/`como_corrigir`; problemas ordenados ALTO→BAIXO; `freshness` dos feeds; detecta `custo_maior_que_preco` num produto inserido com custo acima do preço; custo proxy entre lojas (produto sem custo próprio usa o da outra loja, marcado) |
 | `concorrentes.test.js` | filtro de marca, parse de validade/preço, resolução de loja por CNPJ |
-| `catalogo.test.js` | `normalizarEan`, `sincronizarProdutosDeVendas`, histórico de custo, planilha combinada estoque+custo+preço |
+| `catalogo.test.js` | `normalizarEan`, `sincronizarProdutosDeVendas`, histórico de custo, planilha combinada estoque+custo+preço; **preço de balcão** (coluna "preço de promoção" é o praticado; vazia → deriva do desconto do grupo: Perfumaria −20%, Genérico/Similar −40%; "preço de venda" vira `tipo_preco='tabela'`) |
 | `marketing-product.test.js` | janelas monotônicas, clamp de tendência, 7 componentes do score somando ao score, confiança < 1 sem feed, classes, do-not-promote |
 | `basket.test.js` | support/confidence/lift dentro dos limites, materialização, sem pseudo-produto |
 | `campanhas.test.js` | DEMAND_LIFT, nunca DESTRUTIVA sem custo, Campaign Builder por categoria, Offer Simulator (3 cenários), import idempotente do calendário, CRUD |

@@ -72,7 +72,7 @@ test("planilha de estoque da rede alimenta estoque + custo + preço + promoção
   assert.ok(r.feeds_do_arquivo, "não reportou os sub-feeds");
   assert.ok(r.feeds_do_arquivo.estoque > 500, "poucas linhas de estoque");
   assert.ok(r.feeds_do_arquivo.custo > 100, "não leu 'Últ. Prc. Entrada' como custo");
-  assert.ok(r.feeds_do_arquivo.preco > 100 && r.feeds_do_arquivo.preco_promocional > 100);
+  assert.ok(r.feeds_do_arquivo.preco_balcao > 100 && r.feeds_do_arquivo.preco_tabela > 100);
   assert.ok(r.sem_produto < r.linhas_aplicadas * 0.05, "muitos produtos não casaram");
 
   const fr = db.freshnessCatalogo("Minas Farma");
@@ -85,6 +85,31 @@ test("planilha de estoque da rede alimenta estoque + custo + preço + promoção
   const cst = db.getCustoEm(lid, p.id, hoje);
   const prc = db.getPrecoEm(lid, p.id, hoje, "normal");
   if (cst && prc) assert.ok(cst.custo > 0 && prc.preco >= cst.custo, "custo maior que preço — mapeamento de coluna trocado");
+});
+
+test("preço de BALCÃO: coluna 'preço de promoção' é o praticado; senão deriva do desconto do grupo", () => {
+  const p = path.join(os.tmpdir(), `estoque balcao minas ${process.pid}.csv`);
+  fs.writeFileSync(p,
+    "EAN,Descricao,Nome Grupo,Quantidade,Preco de Venda,Preco de Promocao\n" +
+    "7890000000201,PERFUME BALCAO TESTE,PERFUMARIA - PERFUMARIA,10,100,\n" +      // deriva -20% -> 80
+    "7890000000202,DIPIRONA GEN BALCAO,GENERICOS - GENERICO,10,50,\n" +           // deriva -40% -> 30
+    "7890000000203,SIMILAR BALCAO TESTE,SIMILARES - SIMILAR,10,40,\n" +           // deriva -40% -> 24
+    "7890000000204,ETICO BALCAO TESTE,ETICOS - ETICO,10,30,\n" +                  // sem desconto -> 30
+    "7890000000205,PROMO NA COLUNA,PERFUMARIA - PERFUMARIA,10,20,12\n");          // usa a coluna -> 12
+  const r = ingestPlanilhaProduto(p);
+  assert.ok(r.feeds_do_arquivo.balcao_derivado >= 3, "não derivou o balcão dos grupos");
+  const lid = db.lojaId("Minas Farma");
+  const hoje = new Date().toISOString().slice(0, 10);
+  const balcao = (ean) => db.getPrecoEm(lid, db.getProdutoPorEan(ean).id, hoje, "normal").preco;
+  const tabela = (ean) => db.getPrecoEm(lid, db.getProdutoPorEan(ean).id, hoje, "tabela").preco;
+  assert.equal(balcao("7890000000201"), 80);
+  assert.equal(balcao("7890000000202"), 30);
+  assert.equal(balcao("7890000000203"), 24);
+  assert.equal(balcao("7890000000204"), 30);
+  assert.equal(balcao("7890000000205"), 12);   // veio da coluna, não deriva
+  assert.equal(tabela("7890000000201"), 100);  // "preço de venda" vira o preço de TABELA
+  assert.equal(tabela("7890000000205"), 20);
+  fs.unlinkSync(p);
 });
 
 test("custo é historizado (fecha a vigência anterior; consulta por data)", () => {

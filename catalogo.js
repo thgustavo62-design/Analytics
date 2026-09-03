@@ -20,6 +20,20 @@ const classificarCanonico = (desc) => categoriaCanonica(classificar(desc));
 const CFG = JSON.parse(fs.readFileSync(path.join(__dirname, "config", "catalogo.json"), "utf8"));
 const LOJAS = require("./db").LOJAS_VALIDAS;
 
+// preço praticado no BALCÃO = tabela − desconto fixo do grupo (o ERP já preenche a coluna
+// "preço de promoção" com esse valor; se vier vazia, deriva daqui).
+const BALCAO = (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, "config", "preco-balcao.json"), "utf8")); }
+  catch { return { por_subcategoria: {}, por_classe_comercial: {}, default: 0 }; }
+})();
+function descontoBalcao(subcategoria, classeComercial) {
+  const bySub = subcategoria != null ? (BALCAO.por_subcategoria || {})[subcategoria] : null;
+  if (bySub != null) return bySub;
+  const byClasse = classeComercial != null ? (BALCAO.por_classe_comercial || {})[classeComercial] : null;
+  if (byClasse != null) return byClasse;
+  return BALCAO.default || 0;
+}
+
 const soDigitos = (s) => String(s ?? "").replace(/\D/g, "");
 // aceita 8–14 dígitos, não tudo-zero (os "barras" das vendas têm 10–14)
 function normalizarEan(v) {
@@ -188,12 +202,31 @@ function ingestPlanilhaProduto(filePath) {
   let baixaConfianca = 0;
   let catErp = 0;
   const grupoNaoMapeado = new Set();
-  const extra = { estoque: 0, preco: 0, preco_promocional: 0, custo: 0 }; // sub-tipos vindos do MESMO arquivo
+  const extra = { estoque: 0, preco_balcao: 0, preco_tabela: 0, balcao_derivado: 0, custo: 0 }; // sub-tipos vindos do MESMO arquivo
   const lojasIds = {};
   for (const l of LOJAS) lojasIds[l] = db.lojaId(l);
 
-  // aplica UMA linha (já resolvida a produtoId) a UMA loja
-  function aplicarLinha(lid, produtoId, row) {
+  // aplica UMA linha (já resolvida a produtoId) a UMA loja.
+  // descBalcao: desconto fixo do grupo (0..1) p/ derivar o balcão quando a planilha não traz.
+  function aplicarLinha(lid, produtoId, row, descBalcao) {
+    // preço de balcão (o que o cliente paga) vs. preço de tabela (referência).
+    // tabela = coluna "preço de venda"; balcão = coluna "preço de promoção", ou tabela − desconto do grupo.
+    function gravarPrecos(di) {
+      const pvTabela = idx.preco != null ? num(row[idx.preco]) : null;
+      const pvPromo = idx.preco_promocional != null ? num(row[idx.preco_promocional]) : null;
+      if (pvTabela != null && pvTabela > 0) { db.inserirPreco(lid, produtoId, pvTabela, di, "tabela", base); extra.preco_tabela++; }
+      let balcao = pvPromo != null && pvPromo > 0 ? pvPromo : null;
+      let derivado = false;
+      if (balcao == null && pvTabela != null && pvTabela > 0) {
+        balcao = descBalcao ? Math.round(pvTabela * (1 - descBalcao) * 100) / 100 : pvTabela;
+        derivado = !!descBalcao;
+      }
+      if (balcao != null && balcao > 0) {
+        db.inserirPreco(lid, produtoId, balcao, di, "normal", base); // "normal" = preço praticado no balcão
+        extra.preco_balcao++;
+        if (derivado) extra.balcao_derivado++;
+      }
+    }
     if (tipo === "estoque") {
       const q = num(row[idx.quantidade]);
       const di = (idx.data_referencia != null ? iso(row[idx.data_referencia]) : null) || dataArq;
@@ -209,14 +242,7 @@ function ingestPlanilhaProduto(filePath) {
         extra.estoque++;
       }
       // o export de estoque da rede já carrega preço e custo — aproveita do MESMO arquivo
-      if (idx.preco != null) {
-        const pv = num(row[idx.preco]);
-        if (pv != null && pv > 0) { db.inserirPreco(lid, produtoId, pv, di, "normal", base); extra.preco++; }
-      }
-      if (idx.preco_promocional != null) {
-        const pp = num(row[idx.preco_promocional]);
-        if (pp != null && pp > 0) { db.inserirPreco(lid, produtoId, pp, di, "promocional", base); extra.preco_promocional++; }
-      }
+      gravarPrecos(di);
       if (idx.custo != null && idx.custo !== idx.preco && idx.custo !== idx.preco_promocional) {
         const c = num(row[idx.custo]);
         if (c != null && c > 0) { db.inserirCusto(lid, produtoId, c, di, base); extra.custo++; }
@@ -227,13 +253,10 @@ function ingestPlanilhaProduto(filePath) {
       db.inserirCusto(lid, produtoId, c, (idx.data_inicio != null ? iso(row[idx.data_inicio]) : null) || dataArq, base);
       aplicadas++;
     } else if (tipo === "preco") {
-      const pNormal = num(row[idx.preco]);
       const di = (idx.data_inicio != null ? iso(row[idx.data_inicio]) : null) || dataArq;
-      if (pNormal != null && pNormal > 0) { db.inserirPreco(lid, produtoId, pNormal, di, "normal", base); aplicadas++; }
-      if (idx.preco_promocional != null) {
-        const pp = num(row[idx.preco_promocional]);
-        if (pp != null && pp > 0) { db.inserirPreco(lid, produtoId, pp, di, "promocional", base); aplicadas++; }
-      }
+      const antes = extra.preco_balcao + extra.preco_tabela;
+      gravarPrecos(di);
+      if (extra.preco_balcao + extra.preco_tabela > antes) aplicadas++;
     }
   }
 
@@ -253,9 +276,10 @@ function ingestPlanilhaProduto(filePath) {
       if (resolvido.confianca < 1) baixaConfianca++;
 
       // categoria REAL do ERP (grupo da planilha) + princípio ativo + registro MS
+      let mapa = {};
       if (tipo === "estoque" && (idx.grupo != null || idx.principio_ativo != null || idx.registro_ms != null)) {
         const grupoRaw = idx.grupo != null ? String(row[idx.grupo] ?? "").trim() : null;
-        const mapa = mapGrupoErp(grupoRaw) || {};
+        mapa = mapGrupoErp(grupoRaw) || {};
         const erp = db.setProdutoErp(resolvido.produtoId, {
           categoria: mapa.categoria || null,
           subcategoria: mapa.subcategoria || null,
@@ -267,12 +291,20 @@ function ingestPlanilhaProduto(filePath) {
         else if (grupoRaw && !mapa.categoria) grupoNaoMapeado.add(grupoRaw);
       }
 
+      // desconto fixo de balcão: do grupo da linha, ou do que já está gravado no produto
+      let sub = mapa.subcategoria || null, classe = mapa.classe_comercial || null;
+      if (sub == null && classe == null) {
+        const prod = db.getProdutoPorId(resolvido.produtoId);
+        if (prod) { sub = prod.subcategoria || null; classe = prod.classe_comercial || null; }
+      }
+      const descBalcao = descontoBalcao(sub, classe);
+
       const alvos = idx.loja != null
         ? [lojasIds[String(row[idx.loja] ?? "").trim()] || lojasIds[lojaDoNome(String(row[idx.loja] ?? "").toLowerCase()) || ""]]
         : lojasAplicar.map((l) => lojasIds[l]);
       for (const lid of alvos) {
         if (!lid) continue;
-        aplicarLinha(lid, resolvido.produtoId, row);
+        aplicarLinha(lid, resolvido.produtoId, row, descBalcao);
       }
     }
     db.db.exec("COMMIT");

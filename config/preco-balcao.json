@@ -1,0 +1,12 @@
+{
+  "_nota": "O preço PRATICADO NO BALCÃO é a coluna 'preço de promoção' do estoque — o ERP já a preenche com o preço de tabela ('preço de venda') MENOS o desconto fixo do grupo. A coluna 'preço de venda' passa a ser tratada como preço de TABELA (referência); o preço usado em margem / Opportunity Score / precificação / concorrência é o de balcão. Quando a coluna de promoção vem vazia, o sistema deriva o balcão a partir da tabela usando os descontos abaixo. Ajuste aqui sem tocar no código.",
+  "por_subcategoria": {
+    "Perfumaria": 0.20
+  },
+  "por_classe_comercial": {
+    "Genérico": 0.40,
+    "Generico": 0.40,
+    "Similar": 0.40
+  },
+  "default": 0
+}
