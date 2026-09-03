@@ -138,12 +138,6 @@ function stubScript(B) {
       if (!LIVE || /\\/logout$/.test(su) || /ingest-log/.test(su)) return Promise.resolve(fb());
       return daNuvem(u).then(function (p) { return OK(p); }).catch(function () { return fb(); });
     };
-    document.addEventListener("DOMContentLoaded", function () {
-      var b = document.createElement("div");
-      b.textContent = (LIVE ? "🔌 Ao vivo do Supabase" : "📄 Cópia estática") + " · " + new Date(B.geradoEm).toLocaleString("pt-BR") + " · Minas Farma + Farma e Farma";
-      b.style.cssText = "background:#1b1f29;color:#cfd3dc;font:12px/1.5 system-ui,sans-serif;padding:6px 14px;text-align:center";
-      document.body.insertBefore(b, document.body.firstChild);
-    });
   })();`;
 }
 

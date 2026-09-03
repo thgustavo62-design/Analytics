@@ -99,3 +99,72 @@ test("analiseSocial: estrutura, séries, tráfego pago e cruzamento", { skip: SK
 test("analiseSocial: loja inválida", () => {
   assert.ok(analiseSocial("Loja X").erro);
 });
+
+const { parseSocialXlsx, ehArquivoSocial } = require("../parsers/social-xlsx");
+const TMP = os.tmpdir();
+
+test("ehArquivoSocial: pega os nomes de planilha de rede social", () => {
+  assert.ok(ehArquivoSocial("metricas farma e farma.xlsx"));
+  assert.ok(ehArquivoSocial("trafego pago agosto.csv"));
+  assert.ok(ehArquivoSocial("Redes Sociais 2026.xlsx"));
+  assert.ok(!ehArquivoSocial("estoque minas farma.xlsx"));
+  assert.ok(!ehArquivoSocial("Concorrentes_Coleta_2026-08.xlsx"));
+});
+
+test("parseSocialXlsx: resumo da conta (formato largo, uma linha por mês)", () => {
+  const p = path.join(TMP, `sx-conta-${process.pid}.csv`);
+  fs.writeFileSync(p,
+    "Loja,Mes,Alcance,Var Alcance,Interacoes,Seguidores\n" +
+    "Minas Farma,2026-07,\"38 mil\",,\"2.100\",\"120\"\n" +
+    "Minas Farma,2026-08,\"52 mil\",\"+36,8%\",\"3.400\",\"145\"\n" +
+    "Farma e Farma,2026-08,\"31 mil\",,\"1.800\",\"90\"\n");
+  const r = parseSocialXlsx(p);
+  assert.equal(r.tipo, "conta");
+  assert.equal(r.linhas.length, 3);
+  const mf08 = r.linhas.find((l) => l.loja === "Minas Farma" && l.ym === "2026-08");
+  assert.equal(mf08.metricas.alcance.valor, 52000);
+  assert.equal(mf08.metricas.alcance.delta_pct, 36.8);
+  assert.equal(mf08.metricas.interacoes.valor, 3400);
+  assert.deepEqual(r.resumo.lojas.sort(), ["Farma e Farma", "Minas Farma"]);
+  fs.unlinkSync(p);
+});
+
+test("parseSocialXlsx: tráfego pago + derivação de CPC/CPM/CTR quando falta", () => {
+  const p = path.join(TMP, `sx-tp-${process.pid}.csv`);
+  fs.writeFileSync(p,
+    "Loja,Mes,Investimento,Impressoes,Cliques,Resultados,Tipo de resultado\n" +
+    "Minas Farma,2026-08,\"R$ 450,00\",\"30.000\",\"600\",\"25\",Conversas\n");
+  const r = parseSocialXlsx(p);
+  assert.equal(r.tipo, "trafego_pago");
+  assert.equal(r.linhas.length, 1);
+  const l = r.linhas[0];
+  assert.equal(l.investimento, 450);
+  assert.equal(l.cpc, 0.75);                 // 450/600
+  assert.equal(l.cpm, 15);                   // 450/30000*1000
+  assert.equal(l.ctr_pct, 2);                // 600/30000*100
+  assert.equal(l.custo_por_resultado, 18);   // 450/25
+  fs.unlinkSync(p);
+});
+
+test("parseSocialXlsx: loja pelo nome do arquivo quando não há coluna Loja", () => {
+  const p = path.join(TMP, `metricas minas farma ${process.pid}.csv`);
+  fs.writeFileSync(p, "Mes,Alcance,Seguidores\n2026-08,\"52 mil\",\"145\"\n");
+  const r = parseSocialXlsx(p);
+  assert.equal(r.linhas[0].loja, "Minas Farma");
+  fs.unlinkSync(p);
+});
+
+test("ingestSocialXlsx: grava e a análise passa a mostrar", { skip: SKIP }, async () => {
+  const { ingestSocialXlsx } = require("../ingest");
+  const p = path.join(TMP, `metricas ff ${process.pid}.csv`);
+  fs.writeFileSync(p,
+    "Loja,Mes,Alcance,Interacoes,Seguidores\n" +
+    `Farma e Farma,${ANO}-${String(MES).padStart(2, "0")},\"40 mil\",\"2.500\",\"80\"\n`);
+  const r = ingestSocialXlsx(p);
+  assert.equal(r.conteudo, "conta");
+  assert.ok(r.aplicadas.some((a) => a.loja === "Farma e Farma"));
+  const d = analiseSocial("Farma e Farma");
+  const alc = d.organico.series.find((s) => s.metrica === "alcance");
+  assert.ok(alc.pontos.some((pt) => pt.valor === 40000));
+  fs.unlinkSync(p);
+});

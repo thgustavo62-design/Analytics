@@ -377,6 +377,25 @@ app.post("/upload/instagram", (req, res) => {
   }
 });
 
+// métricas de rede social por PLANILHA (xlsx/csv) — sem IA
+app.post("/upload/social", upload.single("arquivo"), (req, res) => {
+  try {
+    if (!req.file) throw httpErr(400, "Arquivo 'arquivo' (xlsx/csv) obrigatório.");
+    const orig = req.file.originalname || "social.xlsx";
+    const ext = (require("path").extname(orig).toLowerCase() || ".xlsx");
+    if (!/\.(xlsx|csv)$/.test(ext)) throw httpErr(400, "Planilha precisa ser xlsx ou csv.");
+    const dir = require("path").join(UPLOAD_DIR, "social");
+    require("fs").mkdirSync(dir, { recursive: true });
+    const dest = require("path").join(dir, `${Date.now()}-${orig.replace(/[^\w.\- ]+/g, "_")}`);
+    require("fs").writeFileSync(dest, req.file.buffer);
+    const r = require("./ingest").ingestSocialXlsx(dest);
+    regenerarPublicoEmBreve();
+    res.json({ ok: true, social: r });
+  } catch (e) {
+    res.status(e.status || 500).json({ erro: e.message });
+  }
+});
+
 // print (screenshot) de Instagram / tráfego pago — lido por visão (precisa ANTHROPIC_API_KEY)
 app.post("/upload/print", upload.single("arquivo"), async (req, res) => {
   try {

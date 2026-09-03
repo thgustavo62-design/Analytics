@@ -279,6 +279,60 @@ async function ingestSocialPrint(filePath, lojaForcada) {
   throw new Error(`Não reconheci esse print como "resumo da conta" nem "tráfego pago". Mande a tela de Insights da conta (Visualizações/Alcance/Interações) ou a de resultados de anúncios.`);
 }
 
+// --- métricas de rede social por PLANILHA (alternativa ao print) -------
+
+function ingestSocialXlsx(filePath) {
+  const base = path.basename(filePath);
+  const { parseSocialXlsx, CONTA_ROTULO } = require("./parsers/social-xlsx");
+  const { tipo, linhas, resumo, header } = parseSocialXlsx(filePath);
+
+  const porLoja = {};
+  for (const l of linhas) (porLoja[l.loja] || (porLoja[l.loja] = [])).push(l);
+
+  const aplicadas = [];
+  for (const [loja, lins] of Object.entries(porLoja)) {
+    if (!LOJAS_VALIDAS.includes(loja)) continue;
+    const meses = new Set();
+
+    if (tipo === "conta") {
+      for (const lin of lins) {
+        const [ano, mes] = lin.ym.split("-").map(Number);
+        const pid = getOrCreatePeriodo(loja, ano, mes);
+        const metricas = [];
+        for (const [k, c] of Object.entries(lin.metricas)) {
+          const txt = c.valor_texto || (c.valor != null ? String(c.valor) : null);
+          if (txt == null) continue;
+          metricas.push({ metrica: k, rotulo: CONTA_ROTULO[k] || k, valor_exibicao: txt, delta_pct: c.delta_pct ?? null, observacao: `planilha ${base}` });
+        }
+        if (metricas.length) { db.mergeInstagram(pid, metricas); meses.add(lin.ym); }
+      }
+    } else {
+      // trafego_pago: agrupa por mês e substitui as linhas dessa planilha
+      const porYm = {};
+      for (const lin of lins) (porYm[lin.ym] || (porYm[lin.ym] = [])).push(lin);
+      for (const [ym, rows] of Object.entries(porYm)) {
+        const [ano, mes] = ym.split("-").map(Number);
+        const pid = getOrCreatePeriodo(loja, ano, mes);
+        db.substituirTrafegoPago(pid, base, rows.map((r) => ({
+          data_ini: null, data_fim: null,
+          investimento: r.investimento, impressoes: r.impressoes, alcance: r.alcance,
+          cliques: r.cliques, ctr_pct: r.ctr_pct, cpc: r.cpc, cpm: r.cpm,
+          resultados: r.resultados, tipo_resultado: r.tipo_resultado, custo_por_resultado: r.custo_por_resultado,
+          campanha: r.campanha, plataforma: r.plataforma,
+        })));
+        meses.add(ym);
+      }
+    }
+
+    const pidUlt = (() => { const ymUlt = [...meses].sort().pop(); if (!ymUlt) return null; const [a, m] = ymUlt.split("-").map(Number); const p = findPeriodo(loja, a, m); return p ? p.id : null; })();
+    db.registrarSocialPrint(loja, pidUlt, tipo, base, JSON.stringify(lins), "planilha");
+    aplicadas.push({ loja, meses: [...meses].sort() });
+  }
+
+  if (!aplicadas.length) throw new Error(`"${base}" não trouxe nenhuma linha com loja reconhecida (${resumo.lojas.join(", ") || "—"}). Use "Minas Farma" / "Farma e Farma" na coluna Loja ou no nome do arquivo.`);
+  return { tipo: "social-planilha", conteudo: tipo, aplicadas, header, resumo };
+}
+
 // --- tabela de planejamento de promoções (o "tabelão"/encarte) ---------
 
 function ingestPromocoes(filePath) {
@@ -310,10 +364,14 @@ async function ingestFile(filePath) {
   if (ext === ".pdf") return ingestVendas(filePath);
   if (/\.(png|jpe?g|webp)$/i.test(ext)) return ingestSocialPrint(filePath);
   const { ehArquivoPromocao } = require("./parsers/promocoes");
+  const { ehArquivoSocial } = require("./parsers/social-xlsx");
   if ((ext === ".xlsx" || ext === ".csv") && ehArquivoPromocao(base) && !ehArquivoConcorrente(base)) {
     return ingestPromocoes(filePath);
   }
-  if (ext === ".csv") throw new Error("csv só é lido como tabela de promoções (nome deve conter 'promo'/'oferta'/'encarte').");
+  if ((ext === ".xlsx" || ext === ".csv") && ehArquivoSocial(base) && !ehArquivoConcorrente(base) && !ehArquivoPromocao(base)) {
+    return ingestSocialXlsx(filePath);
+  }
+  if (ext === ".csv") throw new Error("csv só é lido como tabela de promoções ('promo'/'oferta'/'encarte') ou de redes sociais ('social'/'metricas'/'trafego'…).");
   if (ext === ".xlsx") {
     if (ehArquivoConcorrente(base)) {
       const r = ingestConcorrentes(filePath);
@@ -353,4 +411,4 @@ async function ingestFile(filePath) {
   throw new Error(`tipo de arquivo não suportado (${ext || "sem extensão"}).`);
 }
 
-module.exports = { ingestFile, ingestVendas, ingestConcorrentes, ingestInstagramJson, ingestSocialPrint, ingestAnaliseComercial, ingestPromocoes, resolveLoja };
+module.exports = { ingestFile, ingestVendas, ingestConcorrentes, ingestInstagramJson, ingestSocialPrint, ingestSocialXlsx, ingestAnaliseComercial, ingestPromocoes, resolveLoja };

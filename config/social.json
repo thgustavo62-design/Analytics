@@ -1,0 +1,37 @@
+{
+  "_nota": "Métricas de redes sociais por PLANILHA (alternativa ao print lido por IA). Jogue um xlsx/csv na pasta inbox; o nome deve conter uma das palavras de 'arquivo_contem' + a loja ('minas' / 'farma e farma'), ou inclua uma coluna 'Loja'. Dois tipos, detectados pelas colunas: RESUMO DA CONTA (visualizações/alcance/interações/visitas ao perfil/cliques no link/seguidores) e TRÁFEGO PAGO (investimento/impressões/cpc/cpm/ctr/resultados). Uma linha por mês. Ajuste os sinônimos de coluna aqui sem tocar no código.",
+  "arquivo_contem": ["social", "redes sociais", "rede social", "instagram", "insta", "metrica", "métrica", "metricas", "métricas", "engajamento", "insights", "trafego", "tráfego", "trafego pago", "tráfego pago", "anuncio", "anúncio", "anuncios", "anúncios", "impulsion", "meta ads"],
+  "colunas": {
+    "periodo":        ["mes", "mês", "periodo", "período", "competencia", "competência", "referencia", "referência", "ref", "data", "mes/ano", "mês/ano", "mes ref", "mês ref"],
+    "loja":           ["loja", "unidade", "filial", "conta", "perfil", "estabelecimento"],
+    "campanha":       ["campanha", "anuncio", "anúncio", "conjunto", "conjunto de anuncios", "conjunto de anúncios", "nome da campanha", "acao", "ação"],
+    "plataforma":     ["plataforma", "canal", "rede", "posicionamento"],
+
+    "visualizacoes":  ["visualizacoes", "visualizações", "views", "visualizacao", "visualização", "impressoes do perfil", "impressões do perfil"],
+    "visualizacoes_var": ["var visualizacoes", "var visualizações", "variacao visualizacoes", "variação visualizações", "visualizacoes %", "visualizações %", "% visualizacoes", "% visualizações"],
+    "alcance":        ["alcance", "contas alcancadas", "contas alcançadas", "reach", "alcance total"],
+    "alcance_var":    ["var alcance", "variacao alcance", "variação alcance", "alcance %", "% alcance"],
+    "interacoes":     ["interacoes", "interações", "engajamento", "interacoes com o conteudo", "interações com o conteúdo", "contas com engajamento", "engagement"],
+    "interacoes_var": ["var interacoes", "var interações", "variacao interacoes", "variação interações", "interacoes %", "interações %", "% interacoes", "% interações", "engajamento %"],
+    "visitas_perfil": ["visitas ao perfil", "visitas no perfil", "visitas de perfil", "visitas perfil", "profile visits", "acessos ao perfil"],
+    "visitas_perfil_var": ["var visitas ao perfil", "var visitas perfil", "variacao visitas ao perfil", "variação visitas ao perfil", "visitas ao perfil %", "% visitas ao perfil"],
+    "cliques_link":   ["cliques no link", "cliques em link", "cliques no site", "cliques link", "toques no link", "link clicks", "cliques no botao", "cliques no botão", "cliques no site (bio)"],
+    "cliques_link_var": ["var cliques no link", "var cliques link", "variacao cliques no link", "variação cliques no link", "cliques no link %", "% cliques no link"],
+    "seguidores":     ["seguidores", "novos seguidores", "seguidores novos", "crescimento de seguidores", "seguidores ganhos", "followers", "total de seguidores"],
+    "seguidores_var": ["var seguidores", "variacao seguidores", "variação seguidores", "seguidores %", "% seguidores"],
+
+    "investimento":   ["investimento", "investido", "gasto", "gasto total", "valor gasto", "verba", "budget", "orcamento", "orçamento", "amount spent", "custo total"],
+    "impressoes":     ["impressoes", "impressões", "impressions", "impressoes do anuncio", "impressões do anúncio"],
+    "cliques":        ["cliques", "clicks", "cliques totais", "cliques no anuncio", "cliques no anúncio", "cliques (todos)"],
+    "ctr_pct":        ["ctr", "ctr (%)", "ctr %", "taxa de cliques", "cliques %", "% de cliques"],
+    "cpc":            ["cpc", "custo por clique", "cpc (todos)", "custo por clique (todos)", "cpc medio", "cpc médio"],
+    "cpm":            ["cpm", "custo por mil impressoes", "custo por mil impressões", "custo por 1000 impressoes", "custo por 1000 impressões", "cpm medio", "cpm médio"],
+    "resultados":     ["resultados", "resultado", "conversas", "conversas iniciadas", "mensagens", "leads", "cadastros", "compras", "acoes", "ações", "results"],
+    "tipo_resultado": ["tipo de resultado", "tipo do resultado", "objetivo", "meta", "resultado (tipo)"],
+    "custo_por_resultado": ["custo por resultado", "custo/resultado", "custo por conversa", "custo por mensagem", "custo por lead", "cpr", "cost per result"],
+
+    "metrica":        ["metrica", "métrica", "indicador", "kpi"],
+    "valor":          ["valor", "total", "numero", "número", "quantidade", "qtd", "resultado"],
+    "variacao":       ["variacao", "variação", "var", "variacao %", "variação %", "% variacao", "% variação", "vs periodo anterior", "vs período anterior", "delta"]
+  }
+}

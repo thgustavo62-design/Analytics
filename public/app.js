@@ -393,7 +393,14 @@
       '<div class="card form-card"><form id="fPromo"><fieldset><legend>Tabela de promoções (o "tabelão" / encarte)</legend>' +
       '<div class="hint">Planilha (xlsx ou csv) com os produtos que vão entrar em oferta e o preço. Colunas: produto (ou EAN), preço de / preço por (ou desconto), início, fim, campanha, loja. Não precisa loja/mês aqui — o sistema descobre pelo arquivo. Alimenta o Share of Promotions e o Calendário.</div>' +
       '<input type="file" name="promo" accept=".xlsx,.csv" required></fieldset>' +
-      '<button class="btn" type="submit">Enviar tabela de promoções</button></form><div id="promoRes" class="result" hidden></div></div>';
+      '<button class="btn" type="submit">Enviar tabela de promoções</button></form><div id="promoRes" class="result" hidden></div></div>' +
+      '<div class="card form-card"><form id="fSocial"><fieldset><legend>Redes sociais (planilha)</legend>' +
+      '<div class="hint">Alternativa ao print. Planilha (xlsx ou csv) com <b>uma linha por mês</b>. ' +
+      "<b>Resumo da conta</b>: colunas Loja · Mês · Visualizações · Alcance · Interações · Visitas ao perfil · Cliques no link · Seguidores (+ colunas \"Var …\" opcionais). " +
+      "<b>Tráfego pago</b>: Loja · Mês · Investimento · Impressões · Cliques · CTR · CPC · CPM · Resultados · Custo por resultado. " +
+      'O sistema detecta qual é pelos nomes das colunas. Modelos: <code>docs/MODELO_redes_sociais.csv</code> e <code>docs/MODELO_trafego_pago.csv</code>.</div>' +
+      '<input type="file" name="social" accept=".xlsx,.csv" required></fieldset>' +
+      '<button class="btn" type="submit">Enviar planilha de redes sociais</button></form><div id="socialRes" class="result" hidden></div></div>';
     var mes = view.querySelector("#upMes");
     ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"].forEach(function (n, i) {
       var o = document.createElement("option"); o.value = i + 1; o.textContent = n; mes.appendChild(o);
@@ -410,6 +417,24 @@
     });
     view.querySelector("#fUp").addEventListener("submit", uploadSubmit);
     view.querySelector("#fPromo").addEventListener("submit", promoSubmit);
+    view.querySelector("#fSocial").addEventListener("submit", socialSubmit);
+  }
+  async function socialSubmit(ev) {
+    ev.preventDefault();
+    var f = ev.target, btn = f.querySelector("button"), box = view.querySelector("#socialRes");
+    if (!f.social.files[0]) return;
+    btn.disabled = true; btn.textContent = "Enviando…"; box.hidden = true;
+    var fd = new FormData(); fd.append("arquivo", f.social.files[0]);
+    try {
+      var r = await fetch("/upload/social", { method: "POST", body: fd });
+      var d = await r.json();
+      if (!r.ok) throw new Error(d.erro || ("HTTP " + r.status));
+      box.className = "result ok";
+      var ap = (d.social && d.social.aplicadas) || [];
+      box.textContent = (d.social && d.social.conteudo === "trafego_pago" ? "Tráfego pago" : "Resumo da conta") + " — " +
+        ap.map(function (a) { return a.loja + " (" + a.meses.join(", ") + ")"; }).join(" · ");
+    } catch (e) { box.className = "result err"; box.textContent = e.message; }
+    box.hidden = false; btn.disabled = false; btn.textContent = "Enviar planilha de redes sociais";
   }
   async function promoSubmit(ev) {
     ev.preventDefault();
@@ -2071,14 +2096,16 @@
   function socialHtml(d) {
     if (!d || d.erro) return '<div class="empty">' + esc((d && d.erro) || "erro") + "</div>";
     var out = "";
-    if (!d.motor_visao_ativo) {
-      out += '<div class="result" style="background:#fff6e6;border-color:#f0c98a;color:#8a5a00">O leitor de prints está <b>desligado</b> — falta a <code>ANTHROPIC_API_KEY</code> no <code>.env</code> do servidor. ' +
-        "Com ela, é só jogar o screenshot na pasta <b>inbox</b> (nome com \"minas\" ou \"farma e farma\") que o sistema lê os números sozinho. Sem ela, use o formulário do Instagram na tela de Upload.</div>";
-    }
     if (!d.tem_dados) {
       out += '<div class="empty"><div class="big">Nenhum dado de rede social ainda</div>' +
-        "Jogue na pasta <b>inbox</b> um print da tela de <b>Insights da conta</b> (Visualizações / Alcance / Interações) e, se usar, um print de <b>resultados de anúncios</b>. O nome do arquivo precisa dizer a loja.</div>";
+        "Duas formas de alimentar (jogue na pasta <b>inbox</b> ou use o botão acima):<br>" +
+        "• <b>Planilha</b> (xlsx/csv) com uma linha por mês — resumo da conta ou tráfego pago;<br>" +
+        "• <b>Print</b> (screenshot) — lido por IA" + (d.motor_visao_ativo ? "" : " (precisa da ANTHROPIC_API_KEY no .env)") + ".<br>" +
+        "O nome do arquivo, ou uma coluna &quot;Loja&quot;, precisa dizer a farmácia.</div>";
       return out;
+    }
+    if (!d.motor_visao_ativo) {
+      out += '<div class="result" style="background:#eef4ff;border-color:#c9dcff;color:#1a4a8a">Leitura de <b>print por IA</b> desligada (sem <code>ANTHROPIC_API_KEY</code>). Os dados abaixo vieram de <b>planilha</b>. Para ler screenshots automaticamente, adicione a chave no <code>.env</code>.</div>';
     }
     // orgânico — cards por métrica
     out += '<div class="cc-sec-h">📈 Alcance orgânico — mês a mês</div>';
@@ -2129,27 +2156,51 @@
 
     // fontes
     if (d.fontes && d.fontes.length) {
-      out += '<div class="card"><div class="chead"><div class="ci bulb">🖼️</div><div><h3>Prints lidos</h3><div class="cs">o que a IA transcreveu de cada imagem</div></div></div>' +
-        '<table class="tbl mobile-cards"><thead><tr><th>Quando</th><th>Tipo</th><th>Arquivo</th></tr></thead><tbody>' +
+      out += '<div class="card"><div class="chead"><div class="ci bulb">🗂️</div><div><h3>De onde vieram os números</h3><div class="cs">cada planilha / print processado</div></div></div>' +
+        '<table class="tbl mobile-cards"><thead><tr><th>Quando</th><th>Tipo</th><th>Origem</th><th>Arquivo</th></tr></thead><tbody>' +
         d.fontes.map(function (f) {
           var tipo = f.tipo === "conta" ? "resumo da conta" : f.tipo === "trafego_pago" ? "tráfego pago" : f.tipo;
-          return '<tr><td data-l="Quando">' + esc((f.criado_em || "").replace("T", " ").slice(0, 16)) + '</td><td data-l="Tipo">' + esc(tipo) + '</td><td data-l="Arquivo"><span class="cs">' + esc(f.arquivo) + "</span></td></tr>";
+          var origem = f.modelo === "planilha" ? "planilha" : (f.modelo ? "IA (" + esc(f.modelo) + ")" : "—");
+          return '<tr><td data-l="Quando">' + esc((f.criado_em || "").replace("T", " ").slice(0, 16)) + '</td><td data-l="Tipo">' + esc(tipo) + '</td><td data-l="Origem">' + origem + '</td><td data-l="Arquivo"><span class="cs">' + esc(f.arquivo) + "</span></td></tr>";
         }).join("") + "</tbody></table></div>";
     }
     out += '<div class="result" style="margin-top:10px;background:#fff6e6;border-color:#f0c98a;color:#8a5a00">' + esc(d.aviso) + "</div>";
     return out;
   }
   function socialPrintFormHtml() {
-    return '<div class="card form-card"><form id="spForm"><div class="rowf">' +
-      '<div><label class="f">Loja</label><select class="inp" name="loja">' + (state.lojas || []).map(function (l) { return '<option' + (l === state.loja ? " selected" : "") + ">" + esc(l) + "</option>"; }).join("") + "</select></div>" +
-      '<div style="flex:2"><label class="f">Print (Insights da conta ou resultados de anúncio)</label><input class="inp" type="file" name="arquivo" accept="image/png,image/jpeg,image/webp" required></div>' +
-      '</div><button class="btn" type="submit">Ler print</button><div id="spOut" class="result" hidden></div>' +
-      '<div class="hint">A imagem é lida por IA (só transcreve o que está na tela). Também dá para só jogar o arquivo na pasta <b>inbox</b>.</div></form></div>';
+    var lojaOpts = (state.lojas || []).map(function (l) { return '<option' + (l === state.loja ? " selected" : "") + ">" + esc(l) + "</option>"; }).join("");
+    return '<div class="card form-card">' +
+      '<form id="sxForm"><fieldset><legend>Planilha (xlsx / csv)</legend>' +
+      '<div class="hint">Uma linha por mês. <b>Resumo da conta</b>: Loja · Mês · Visualizações · Alcance · Interações · Visitas ao perfil · Cliques no link · Seguidores (+ "Var …" opcional). <b>Tráfego pago</b>: Loja · Mês · Investimento · Impressões · Cliques · CTR · CPC · CPM · Resultados · Custo por resultado. Modelos em <code>docs/</code>.</div>' +
+      '<input class="inp" type="file" name="arquivo" accept=".xlsx,.csv" required></fieldset>' +
+      '<button class="btn" type="submit">Enviar planilha</button><div id="sxOut" class="result" hidden></div></form>' +
+      '<form id="spForm" style="margin-top:16px"><fieldset><legend>Print (screenshot) — lido por IA</legend><div class="rowf">' +
+      '<div><label class="f">Loja</label><select class="inp" name="loja">' + lojaOpts + "</select></div>" +
+      '<div style="flex:2"><label class="f">Imagem (Insights da conta ou resultados de anúncio)</label><input class="inp" type="file" name="arquivo" accept="image/png,image/jpeg,image/webp" required></div>' +
+      '</div><button class="btn secondary" type="submit">Ler print</button><div id="spOut" class="result" hidden></div>' +
+      '<div class="hint">Precisa de <code>ANTHROPIC_API_KEY</code> no servidor. Só transcreve o que está na tela.</div></fieldset></form></div>';
   }
   function wireSocialPrintForm() {
+    var sx = view.querySelector("#sxForm");
+    if (sx) sx.addEventListener("submit", async function (ev) {
+      ev.preventDefault();
+      var out = view.querySelector("#sxOut");
+      out.hidden = false; out.className = "result"; out.textContent = "Lendo a planilha…";
+      var fd = new FormData();
+      if (sx.arquivo.files[0]) fd.append("arquivo", sx.arquivo.files[0]);
+      try {
+        var r = await fetch("/upload/social", { method: "POST", body: fd });
+        var j = await r.json();
+        if (!r.ok) throw new Error(j.erro || ("HTTP " + r.status));
+        var ap = (j.social && j.social.aplicadas) || [];
+        out.className = "result ok";
+        out.textContent = (j.social && j.social.conteudo === "trafego_pago" ? "Tráfego pago" : "Resumo da conta") + " — " +
+          ap.map(function (a) { return a.loja + " (" + a.meses.join(", ") + ")"; }).join(" · ");
+        setTimeout(renderSocial, 900);
+      } catch (e) { out.className = "result err"; out.textContent = e.message; }
+    });
     var f = view.querySelector("#spForm");
-    if (!f) return;
-    f.addEventListener("submit", async function (ev) {
+    if (f) f.addEventListener("submit", async function (ev) {
       ev.preventDefault();
       var out = view.querySelector("#spOut");
       out.hidden = false; out.className = "result"; out.textContent = "Lendo o print…";
@@ -2165,9 +2216,7 @@
           ? "Tráfego pago lido: R$ " + brl(j.print.investimento) + (j.print.resultados ? " · " + int(j.print.resultados) + " resultados" : "") + " (" + j.print.periodo + ")"
           : "Resumo da conta lido: " + ((j.print && j.print.campos) || []).join(", ") + " (" + (j.print && j.print.periodo) + ")";
         setTimeout(renderSocial, 900);
-      } catch (e) {
-        out.className = "result err"; out.textContent = e.message;
-      }
+      } catch (e) { out.className = "result err"; out.textContent = e.message; }
     });
   }
   function renderSocial() {

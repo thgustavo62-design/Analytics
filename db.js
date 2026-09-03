@@ -193,6 +193,13 @@ function getTrafegoPago(periodoId) {
   return db.prepare("SELECT * FROM trafego_pago WHERE periodo_id = ? ORDER BY COALESCE(data_fim, criado_em)").all(periodoId);
 }
 
+// re-upload da MESMA planilha substitui as linhas dela nesse período (o print, com outro
+// fonte_arquivo, continua acumulando).
+function substituirTrafegoPago(periodoId, fonteArquivo, linhas) {
+  db.prepare("DELETE FROM trafego_pago WHERE periodo_id = ? AND fonte_arquivo = ?").run(periodoId, fonteArquivo);
+  for (const l of linhas) inserirTrafegoPago(periodoId, { ...l, fonte_arquivo: fonteArquivo });
+}
+
 // soma do investimento de tráfego pago de um período (loja + AAAA-MM) — alimenta a Medição (Fase C)
 function investimentoTrafegoPago(loja, ano, mes) {
   const row = db.prepare(
@@ -1075,6 +1082,7 @@ module.exports = {
   mergeInstagram,
   getInstagram,
   inserirTrafegoPago,
+  substituirTrafegoPago,
   getTrafegoPago,
   investimentoTrafegoPago,
   registrarSocialPrint,
