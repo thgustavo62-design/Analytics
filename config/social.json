@@ -1,6 +1,6 @@
 {
   "_nota": "Métricas de redes sociais por PLANILHA (alternativa ao print lido por IA). Jogue um xlsx/csv na pasta inbox; o nome deve conter uma das palavras de 'arquivo_contem' + a loja ('minas' / 'farma e farma'), ou inclua uma coluna 'Loja'. Dois tipos, detectados pelas colunas: RESUMO DA CONTA (visualizações/alcance/interações/visitas ao perfil/cliques no link/seguidores) e TRÁFEGO PAGO (investimento/impressões/cpc/cpm/ctr/resultados). Uma linha por mês. Ajuste os sinônimos de coluna aqui sem tocar no código.",
-  "arquivo_contem": ["social", "redes sociais", "rede social", "instagram", "insta", "metrica", "métrica", "metricas", "métricas", "engajamento", "insights", "trafego", "tráfego", "trafego pago", "tráfego pago", "anuncio", "anúncio", "anuncios", "anúncios", "impulsion", "meta ads"],
+  "arquivo_contem": ["social", "redes sociais", "rede social", "instagram", "insta", "metrica", "métrica", "metricas", "métricas", "engajamento", "insights", "trafego", "tráfego", "trafego pago", "tráfego pago", "anuncio", "anúncio", "anuncios", "anúncios", "impulsion", "meta ads", "resumo mensal", "resumo do mes", "resumo do mês", "resumo da conta", "conta instagram", "gerenciador de anuncios"],
   "colunas": {
     "periodo":        ["mes", "mês", "periodo", "período", "competencia", "competência", "referencia", "referência", "ref", "data", "mes/ano", "mês/ano", "mes ref", "mês ref"],
     "loja":           ["loja", "unidade", "filial", "conta", "perfil", "estabelecimento"],
@@ -26,12 +26,15 @@
     "ctr_pct":        ["ctr", "ctr (%)", "ctr %", "taxa de cliques", "cliques %", "% de cliques"],
     "cpc":            ["cpc", "custo por clique", "cpc (todos)", "custo por clique (todos)", "cpc medio", "cpc médio"],
     "cpm":            ["cpm", "custo por mil impressoes", "custo por mil impressões", "custo por 1000 impressoes", "custo por 1000 impressões", "cpm medio", "cpm médio"],
-    "resultados":     ["resultados", "resultado", "conversas", "conversas iniciadas", "mensagens", "leads", "cadastros", "compras", "acoes", "ações", "results"],
-    "tipo_resultado": ["tipo de resultado", "tipo do resultado", "objetivo", "meta", "resultado (tipo)"],
+    "resultados":     ["resultados", "resultado", "conversas", "conversas iniciadas", "leads", "cadastros", "acoes", "ações", "results"],
+    "contatos":       ["contatos", "contatos total", "total de contatos", "mensagens", "conversas por mensagem"],
+    "compras":        ["compras", "vendas", "pedidos", "purchases"],
+    "tipo_resultado": ["indicador de resultado", "indicador do resultado", "indicador", "tipo de resultado", "tipo do resultado", "objetivo", "meta"],
     "custo_por_resultado": ["custo por resultado", "custo/resultado", "custo por conversa", "custo por mensagem", "custo por lead", "cpr", "cost per result"],
 
     "metrica":        ["metrica", "métrica", "indicador", "kpi"],
     "valor":          ["valor", "total", "numero", "número", "quantidade", "qtd", "resultado"],
-    "variacao":       ["variacao", "variação", "var", "variacao %", "variação %", "% variacao", "% variação", "vs periodo anterior", "vs período anterior", "delta"]
+    "variacao":       ["variacao", "variação", "var", "variacao %", "variação %", "% variacao", "% variação", "vs periodo anterior", "vs período anterior", "delta"],
+    "variacao_texto": ["variacao reportada pela meta", "variação reportada pela meta", "variacao reportada", "variação reportada", "variacoes", "variações", "resumo de variacao", "resumo de variação", "variacao meta", "variação meta"]
   }
 }

@@ -284,53 +284,53 @@ async function ingestSocialPrint(filePath, lojaForcada) {
 function ingestSocialXlsx(filePath) {
   const base = path.basename(filePath);
   const { parseSocialXlsx, CONTA_ROTULO } = require("./parsers/social-xlsx");
-  const { tipo, linhas, resumo, header } = parseSocialXlsx(filePath);
+  const { conta, trafego, resumo, header } = parseSocialXlsx(filePath);
 
-  const porLoja = {};
-  for (const l of linhas) (porLoja[l.loja] || (porLoja[l.loja] = [])).push(l);
+  const porLoja = {}; // loja -> { conta:[], trafego:[] }
+  for (const c of conta) (porLoja[c.loja] || (porLoja[c.loja] = { conta: [], trafego: [] })).conta.push(c);
+  for (const t of trafego) (porLoja[t.loja] || (porLoja[t.loja] = { conta: [], trafego: [] })).trafego.push(t);
 
   const aplicadas = [];
-  for (const [loja, lins] of Object.entries(porLoja)) {
+  for (const [loja, blocos] of Object.entries(porLoja)) {
     if (!LOJAS_VALIDAS.includes(loja)) continue;
     const meses = new Set();
+    const tipos = new Set();
 
-    if (tipo === "conta") {
-      for (const lin of lins) {
-        const [ano, mes] = lin.ym.split("-").map(Number);
-        const pid = getOrCreatePeriodo(loja, ano, mes);
-        const metricas = [];
-        for (const [k, c] of Object.entries(lin.metricas)) {
-          const txt = c.valor_texto || (c.valor != null ? String(c.valor) : null);
-          if (txt == null) continue;
-          metricas.push({ metrica: k, rotulo: CONTA_ROTULO[k] || k, valor_exibicao: txt, delta_pct: c.delta_pct ?? null, observacao: `planilha ${base}` });
-        }
-        if (metricas.length) { db.mergeInstagram(pid, metricas); meses.add(lin.ym); }
+    for (const lin of blocos.conta) {
+      const [ano, mes] = lin.ym.split("-").map(Number);
+      const pid = getOrCreatePeriodo(loja, ano, mes);
+      const metricas = [];
+      for (const [k, c] of Object.entries(lin.metricas)) {
+        const txt = c.valor_texto || (c.valor != null ? String(c.valor) : null);
+        if (txt == null) continue;
+        metricas.push({ metrica: k, rotulo: CONTA_ROTULO[k] || k, valor_exibicao: txt, delta_pct: c.delta_pct ?? null, observacao: `planilha ${base}` });
       }
-    } else {
-      // trafego_pago: agrupa por mês e substitui as linhas dessa planilha
-      const porYm = {};
-      for (const lin of lins) (porYm[lin.ym] || (porYm[lin.ym] = [])).push(lin);
-      for (const [ym, rows] of Object.entries(porYm)) {
-        const [ano, mes] = ym.split("-").map(Number);
-        const pid = getOrCreatePeriodo(loja, ano, mes);
-        db.substituirTrafegoPago(pid, base, rows.map((r) => ({
-          data_ini: null, data_fim: null,
-          investimento: r.investimento, impressoes: r.impressoes, alcance: r.alcance,
-          cliques: r.cliques, ctr_pct: r.ctr_pct, cpc: r.cpc, cpm: r.cpm,
-          resultados: r.resultados, tipo_resultado: r.tipo_resultado, custo_por_resultado: r.custo_por_resultado,
-          campanha: r.campanha, plataforma: r.plataforma,
-        })));
-        meses.add(ym);
-      }
+      if (metricas.length) { db.mergeInstagram(pid, metricas); meses.add(lin.ym); tipos.add("conta"); }
     }
 
+    const porYm = {};
+    for (const lin of blocos.trafego) (porYm[lin.ym] || (porYm[lin.ym] = [])).push(lin);
+    for (const [ym, rows] of Object.entries(porYm)) {
+      const [ano, mes] = ym.split("-").map(Number);
+      const pid = getOrCreatePeriodo(loja, ano, mes);
+      db.substituirTrafegoPago(pid, base, rows.map((r) => ({
+        data_ini: null, data_fim: null,
+        investimento: r.investimento, impressoes: r.impressoes, alcance: r.alcance,
+        cliques: r.cliques, ctr_pct: r.ctr_pct, cpc: r.cpc, cpm: r.cpm,
+        resultados: r.resultados, tipo_resultado: r.tipo_resultado, custo_por_resultado: r.custo_por_resultado,
+        campanha: r.campanha, plataforma: r.plataforma,
+      })));
+      meses.add(ym); tipos.add("trafego_pago");
+    }
+
+    if (!tipos.size) continue;
     const pidUlt = (() => { const ymUlt = [...meses].sort().pop(); if (!ymUlt) return null; const [a, m] = ymUlt.split("-").map(Number); const p = findPeriodo(loja, a, m); return p ? p.id : null; })();
-    db.registrarSocialPrint(loja, pidUlt, tipo, base, JSON.stringify(lins), "planilha");
-    aplicadas.push({ loja, meses: [...meses].sort() });
+    db.registrarSocialPrint(loja, pidUlt, [...tipos].join("+"), base, JSON.stringify(blocos), "planilha");
+    aplicadas.push({ loja, meses: [...meses].sort(), tipos: [...tipos] });
   }
 
-  if (!aplicadas.length) throw new Error(`"${base}" não trouxe nenhuma linha com loja reconhecida (${resumo.lojas.join(", ") || "—"}). Use "Minas Farma" / "Farma e Farma" na coluna Loja ou no nome do arquivo.`);
-  return { tipo: "social-planilha", conteudo: tipo, aplicadas, header, resumo };
+  if (!aplicadas.length) throw new Error(`"${base}" não trouxe nenhuma linha com loja reconhecida (${resumo.lojas.join(", ") || "—"}). Use "Minas Farma" / "Farma e Farma" na coluna Loja, no nome do arquivo ou no título da aba.`);
+  return { tipo: "social-planilha", conteudo: [...new Set(aplicadas.flatMap((a) => a.tipos))], aplicadas, header, resumo };
 }
 
 // --- tabela de planejamento de promoções (o "tabelão"/encarte) ---------
@@ -398,7 +398,13 @@ async function ingestFile(filePath) {
       }
       return r;
     }
-    throw new Error("xlsx não reconhecido — esperado Concorrentes_Coleta_*.xlsx, ou Estoque_/Custo_/Precos_*.xlsx.");
+    // último recurso: o nome não bate em nada, mas o conteúdo pode ser planilha de rede social
+    try { return ingestSocialXlsx(filePath); } catch (e) {
+      if (/nenhuma aba de métricas de rede social/i.test(e.message)) {
+        throw new Error("xlsx não reconhecido — esperado Concorrentes_Coleta_*.xlsx, Estoque_/Custo_/Precos_*.xlsx, ou planilha de redes sociais (nome com 'social'/'metricas'/'trafego' ou colunas de rede social).");
+      }
+      throw e; // era social, mas deu outro problema — mostra o motivo real
+    }
   }
   if (ext === ".json") {
     const payload = JSON.parse(fs.readFileSync(filePath, "utf8"));

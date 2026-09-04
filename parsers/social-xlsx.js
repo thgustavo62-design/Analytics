@@ -1,10 +1,11 @@
 // Métricas de redes sociais por PLANILHA — alternativa ao print lido por IA.
-// xlsx ou csv na inbox. Dois tipos, detectados pelas colunas presentes:
-//   - "conta":        visualizações / alcance / interações / visitas ao perfil / cliques no link / seguidores
-//   - "trafego_pago": investimento / impressões / cliques / ctr / cpc / cpm / resultados / custo por resultado
-// Layout: uma linha por MÊS (formato largo) — ou, para "conta", Métrica | Valor | Variação (formato longo).
+// xlsx ou csv na inbox. Lê TODAS as abas e separa em dois blocos pelas colunas presentes:
+//   - conta:        visualizações / alcance / interações / visitas ao perfil / cliques no link / seguidores
+//   - trafego_pago: investimento / impressões / cliques / ctr / cpc / cpm / resultados / custo por resultado
+// Uma linha por MÊS (formato largo) — ou, para conta, Métrica | Valor | Variação (formato longo).
+// Abas "puras" (só um dos dois tipos) vencem uma aba combinada tipo "Resumo Mensal".
 //
-// Config: config/social.json. Saída: { tipo, linhas, header, resumo }.
+// Config: config/social.json. Saída: { conta:[], trafego:[], header, resumo }.
 // Determinístico. Nada é estimado — coluna ausente = campo ausente.
 
 const fs = require("fs");
@@ -18,6 +19,11 @@ const CFG = (() => {
 })();
 
 const norm = (s) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
+// tira acentos/pontuação/unidades do fim ("CPM (R$)" -> "cpm", "Alcance (soma)" -> "alcance")
+const limpaHead = (s) => norm(s)
+  .replace(/[:.()%$]/g, " ")
+  .replace(/\b(r\$|brl|informado|reportad[oa]|soma|total|todos|todas)\b/g, " ")
+  .replace(/\s+/g, " ").trim();
 
 const CONTA_METRICAS = ["visualizacoes", "alcance", "interacoes", "visitas_perfil", "cliques_link", "seguidores"];
 const CONTA_ROTULO = {
@@ -25,10 +31,11 @@ const CONTA_ROTULO = {
   visitas_perfil: "Visitas ao perfil", cliques_link: "Cliques no link", seguidores: "Seguidores",
 };
 const TP_NUM = ["investimento", "impressoes", "alcance", "cliques", "ctr_pct", "cpc", "cpm", "resultados", "custo_por_resultado"];
+const GASTO_COLS = ["investimento", "cpc", "cpm", "custo_por_resultado"];
 const MESES_PT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
 function ehArquivoSocial(base) {
-  const b = norm(base);
+  const b = norm(base).replace(/[_-]+/g, " ");
   return (CFG.arquivo_contem || []).some((w) => b.includes(norm(w)));
 }
 
@@ -53,7 +60,6 @@ function parseYm(v, anoArq) {
     const ano = m[2] ? +m[2] : (anoArq || new Date().getFullYear());
     if (mi) return `${ano}-${String(mi).padStart(2, "0")}`;
   }
-  if (/^\d{4}$/.test(s)) return null; // só ano, sem mês
   return null;
 }
 
@@ -68,23 +74,23 @@ function pctBR(v) {
 }
 
 function resolverColunas(headerRow) {
-  const cells = headerRow.map((c) => norm(c).replace(/[:.()%]/g, "").trim());
+  const cells = headerRow.map(limpaHead);
   const idx = {};
-  const usadas = new Set(); // uma coluna do arquivo só serve para UM canon
+  const usadas = new Set();
   const canons = Object.entries(CFG.colunas || {});
-  // passe 1: só casamento EXATO (o mais específico ganha a coluna)
+  // passe 1: casamento EXATO (após limpar unidades) — o mais específico crava a coluna
   for (const [canon, nomes] of canons) {
     for (const nome of nomes) {
-      const alvo = norm(nome).replace(/[:.()%]/g, "").trim();
+      const alvo = limpaHead(nome);
       const j = cells.findIndex((c, i) => c === alvo && !usadas.has(i));
       if (j >= 0) { idx[canon] = j; usadas.add(j); break; }
     }
   }
-  // passe 2: fuzzy (contém / prefixo / sufixo) só em coluna ainda não reivindicada, e só p/ sinônimos ≥ 4 letras
+  // passe 2: fuzzy (prefixo/sufixo de palavra) só em coluna livre e só p/ sinônimo >= 4 letras
   for (const [canon, nomes] of canons) {
     if (idx[canon] != null) continue;
     for (const nome of nomes) {
-      const alvo = norm(nome).replace(/[:.()%]/g, "").trim();
+      const alvo = limpaHead(nome);
       if (alvo.length < 4) continue;
       const j = cells.findIndex((c, i) => c && !usadas.has(i) && (c === alvo || c.startsWith(alvo + " ") || c.endsWith(" " + alvo)));
       if (j >= 0) { idx[canon] = j; usadas.add(j); break; }
@@ -93,33 +99,46 @@ function resolverColunas(headerRow) {
   return idx;
 }
 
-function acharCabecalho(rows) {
+// acha a linha do cabeçalho de UMA aba e diz o que ela tem
+function analisarAba(rows) {
   for (let r = 0; r < Math.min(rows.length, 20); r++) {
     const idx = resolverColunas((rows[r] || []).map((c) => String(c ?? "")));
     const nConta = CONTA_METRICAS.filter((k) => idx[k] != null).length;
     const temLongo = idx.metrica != null && idx.valor != null;
-    // sinais FORTES de tráfego pago (não confundem com resumo da conta)
-    const temGasto = ["investimento", "cpc", "cpm", "custo_por_resultado"].some((k) => idx[k] != null);
-    // resumo da conta vence quando há ≥2 métricas orgânicas e nada de "gasto/custo"
-    if (nConta >= 2 && !temGasto) return { linha: r, idx, tipo: "conta", longo: false };
-    if (temGasto || (idx.impressoes != null && nConta === 0)) return { linha: r, idx, tipo: "trafego_pago" };
-    if (nConta >= 1 || temLongo) return { linha: r, idx, tipo: "conta", longo: temLongo && nConta === 0 };
+    const temGasto = GASTO_COLS.some((k) => idx[k] != null);
+    const temImpr = idx.impressoes != null;
+    const daConta = nConta >= 2 || (temLongo && nConta === 0);
+    const daTrafego = temGasto || (temImpr && nConta === 0);
+    if (daConta || daTrafego) {
+      return { linha: r, idx, nConta, longo: temLongo && nConta === 0, daConta, daTrafego, puraConta: daConta && !temGasto && !temImpr, puroTrafego: daTrafego && (idx.campanha != null || nConta === 0) };
+    }
   }
   return null;
 }
 
 function resolverLoja(txt) {
-  const b = norm(txt);
-  if (/farma e farma|farmaefarma|\bff\b/.test(b)) return "Farma e Farma";
+  const b = norm(txt).replace(/[_-]+/g, " ");
+  if (/farma e farma|farmaefarma|farmaefarmabg|\bff\b/.test(b)) return "Farma e Farma";
   if (/minas farma|minasfarma|\bmf\b|\bminas\b/.test(b)) return "Minas Farma";
   return null;
 }
 
+const APELIDO_METRICA = {
+  visualizacoes: "visualizacoes", visualizacao: "visualizacoes", views: "visualizacoes",
+  alcance: "alcance", reach: "alcance",
+  interacoes: "interacoes", interacao: "interacoes", engajamento: "interacoes",
+  visitas: "visitas_perfil", "visitas ao perfil": "visitas_perfil",
+  cliques: "cliques_link", "cliques no link": "cliques_link",
+  seguidores: "seguidores", "novos seguidores": "seguidores",
+};
 function chaveMetrica(rotulo) {
-  const b = norm(rotulo);
-  for (const [canon, nomes] of Object.entries(CFG.colunas || {})) {
-    if (!CONTA_METRICAS.includes(canon)) continue;
-    if (nomes.some((n) => b === norm(n) || b.includes(norm(n)))) return canon;
+  const b = limpaHead(rotulo).replace(/\s+com o conteudo|\s+no link|\s+ao perfil|\s+novos|\s+no periodo/g, "").trim();
+  if (APELIDO_METRICA[b]) return APELIDO_METRICA[b];
+  for (const canon of CONTA_METRICAS) {
+    for (const n of (CFG.colunas || {})[canon] || []) {
+      const a = limpaHead(n);
+      if (b === a || b.startsWith(a + " ") || b.endsWith(" " + a)) return canon;
+    }
   }
   return null;
 }
@@ -130,102 +149,126 @@ function parseSocialXlsx(filePath) {
     ? XLSX.read(fs.readFileSync(filePath, "utf8"), { type: "string", raw: true })
     : XLSX.readFile(filePath, { cellDates: false, raw: true });
 
-  let alvo = null;
-  for (const nome of wb.SheetNames) {
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: null, raw: true });
-    const cab = acharCabecalho(rows);
-    if (cab) { alvo = { rows, cab, aba: nome }; break; }
-  }
-  if (!alvo) {
-    throw new Error(`nenhuma aba de métricas de rede social reconhecida em "${base}". ` +
-      "Precisa de uma coluna de mês/período e ou (visualizações/alcance/interações/…) ou (investimento/impressões/cpc/…). Ajuste config/social.json.");
-  }
-
-  const { rows, cab } = alvo;
-  const idx = cab.idx;
   const anoArq = +(base.match(/(20\d{2})/) || [])[1] || new Date().getFullYear();
   const lojaArq = resolverLoja(base);
-  const ymArq = parseYm(base.replace(/20\d{2}/, ""), anoArq) || null; // p/ formato longo sem coluna de período
 
-  const dataRows = rows.slice(cab.linha + 1).filter((row) => row && !row.every((c) => c == null || String(c).trim() === ""));
+  const IGNORAR_ABA = /leia[- ]?me|readme|instru|como usar|ajuda|help|dicion/i;
+  const abas = [];
+  for (const nome of wb.SheetNames) {
+    if (IGNORAR_ABA.test(nome)) continue;
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: null, raw: true });
+    const a = analisarAba(rows);
+    if (a) abas.push({ nome, rows, ...a, lojaAba: resolverLoja([nome, ...(rows.slice(0, 3).flat())].join(" ")) });
+  }
+  if (!abas.length) {
+    throw new Error(`nenhuma aba de métricas de rede social reconhecida em "${base}". ` +
+      "Precisa de coluna de mês/período e ou (visualizações/alcance/interações/…) ou (investimento/impressões/cpc/…). Ajuste config/social.json.");
+  }
+
   const semLoja = new Set();
-  const num = (row, k) => (idx[k] != null ? numBR(row[idx[k]]) : null);
-  const txt = (row, k) => (idx[k] != null && row[idx[k]] != null && String(row[idx[k]]).trim() !== "" ? String(row[idx[k]]).trim() : null);
-  const lojaDe = (row) => resolverLoja(txt(row, "loja") || "") || lojaArq;
-  const ymDe = (row) => (idx.periodo != null ? parseYm(row[idx.periodo], anoArq) : null) || ymArq;
+  const abasComContaPura = abas.filter((a) => a.puraConta);
+  const abasComTrafegoPuro = abas.filter((a) => a.puroTrafego);
+  const abasParaConta = (abasComContaPura.length ? abasComContaPura : abas.filter((a) => a.daConta));
+  const abasParaTrafego = (abasComTrafegoPuro.length ? abasComTrafegoPuro : abas.filter((a) => a.daTrafego));
 
-  const linhas = [];
+  const contaPorChave = new Map(); // loja|ym -> {ym, loja, metricas}
+  const trafego = [];
 
-  if (cab.tipo === "trafego_pago") {
-    for (const row of dataRows) {
-      const loja = lojaDe(row);
-      const ym = ymDe(row);
+  const linhasDados = (a) => a.rows.slice(a.linha + 1).filter((row) => row && !row.every((c) => c == null || String(c).trim() === ""));
+  const cel = (row, idx, k) => (idx[k] != null ? row[idx[k]] : null);
+  const txt = (row, idx, k) => { const v = cel(row, idx, k); return v != null && String(v).trim() !== "" ? String(v).trim() : null; };
+
+  // ---- conta ----
+  for (const a of abasParaConta) {
+    const { idx } = a;
+    const lojaFallback = a.lojaAba || lojaArq;
+    for (const row of linhasDados(a)) {
+      const primeira = String(row[0] ?? "").toLowerCase();
+      if (/^total\b|^m[eé]dia\b|^como usar|^notas?\b/.test(primeira)) continue;
+      const loja = resolverLoja(txt(row, idx, "loja") || "") || lojaFallback;
+      const ym = parseYm(cel(row, idx, "periodo"), anoArq);
       if (!loja) { semLoja.add(1); continue; }
       if (!ym) continue;
-      const rec = { ym, loja, campanha: txt(row, "campanha"), plataforma: txt(row, "plataforma"), tipo_resultado: txt(row, "tipo_resultado") };
+
+      const chave = loja + "|" + ym;
+      if (!contaPorChave.has(chave)) contaPorChave.set(chave, { ym, loja, metricas: {} });
+      const alvoM = contaPorChave.get(chave).metricas;
+
+      if (a.longo) {
+        const ck = chaveMetrica(txt(row, idx, "metrica") || "");
+        if (!ck) continue;
+        const bruto = cel(row, idx, "valor");
+        if (bruto == null || String(bruto).trim() === "") continue;
+        alvoM[ck] = { valor: numBR(bruto), valor_texto: String(bruto).trim(), delta_pct: idx.variacao != null ? pctBR(cel(row, idx, "variacao")) : null };
+      } else {
+        // variação pode vir numa coluna livre de texto: "Visualizações +20,1% | Alcance -51% | ..."
+        const varTexto = txt(row, idx, "variacao_texto");
+        const deltaTexto = {};
+        if (varTexto) for (const parte of varTexto.split(/[|;\n]+/)) {
+          const m = parte.match(/^(.*?)([+\-−–]?\s*\d[\d.,]*\s*%)\s*$/);
+          if (!m) continue;
+          const ck = chaveMetrica(m[1]);
+          if (ck) deltaTexto[ck] = pctBR(m[2]);
+        }
+        for (const mk of CONTA_METRICAS) {
+          if (idx[mk] == null) continue;
+          const bruto = row[idx[mk]];
+          if (bruto == null || String(bruto).trim() === "") continue;
+          const val = numBR(bruto);
+          if (val === 0 && ym > new Date().toISOString().slice(0, 7)) continue; // meses futuros zerados na planilha
+          const dCol = idx[mk + "_var"] != null ? pctBR(row[idx[mk + "_var"]]) : null;
+          alvoM[mk] = { valor: val, valor_texto: String(bruto).trim(), delta_pct: dCol != null ? dCol : (deltaTexto[mk] ?? null) };
+        }
+      }
+    }
+  }
+  const conta = [...contaPorChave.values()].filter((c) => Object.keys(c.metricas).length);
+
+  // ---- tráfego pago ----
+  for (const a of abasParaTrafego) {
+    const { idx } = a;
+    const lojaFallback = a.lojaAba || lojaArq;
+    for (const row of linhasDados(a)) {
+      const primeira = String(row[0] ?? "").toLowerCase();
+      const camp = txt(row, idx, "campanha");
+      if (/^total\b|^m[eé]dia\b|^notas?\b|^como usar/.test(primeira) || /^total\b/.test((camp || "").toLowerCase())) continue;
+      const loja = resolverLoja(txt(row, idx, "loja") || "") || lojaFallback;
+      const ym = parseYm(cel(row, idx, "periodo"), anoArq);
+      if (!loja) { semLoja.add(1); continue; }
+      if (!ym) continue;
+
+      const rec = { ym, loja, campanha: camp, plataforma: txt(row, idx, "plataforma") };
       let temAlgo = false;
-      for (const k of TP_NUM) { const v = num(row, k); rec[k] = v; if (v != null) temAlgo = true; }
-      // deriva o que falta
+      for (const k of TP_NUM) { if (k === "resultados") continue; const v = numBR(cel(row, idx, k)); rec[k] = v; if (v != null && v !== 0) temAlgo = true; }
+      // "Resultados" da Meta em campanha de alcance = pessoas alcançadas (não é conversão) — não some.
+      // Prioridade real: Compras > Contatos > Resultados (só se o indicador for de conversão).
+      const indicador = txt(row, idx, "tipo_resultado") || "";
+      const ehAlcance = /alcance|reach|impress[õoã]/i.test(indicador);
+      const compras = numBR(cel(row, idx, "compras"));
+      const contatos = numBR(cel(row, idx, "contatos"));
+      const resBrutos = numBR(cel(row, idx, "resultados"));
+      rec.resultados = compras || contatos || (ehAlcance ? null : resBrutos) || null;
+      rec.tipo_resultado = compras ? "compras" : contatos ? "contatos" : (ehAlcance ? null : (indicador || null));
+      if (rec.resultados != null && rec.resultados !== 0) temAlgo = true;
       if (rec.cpc == null && rec.investimento != null && rec.cliques) rec.cpc = Math.round((rec.investimento / rec.cliques) * 100) / 100;
       if (rec.cpm == null && rec.investimento != null && rec.impressoes) rec.cpm = Math.round((rec.investimento / rec.impressoes) * 1000 * 100) / 100;
       if (rec.ctr_pct == null && rec.cliques != null && rec.impressoes) rec.ctr_pct = Math.round((rec.cliques / rec.impressoes) * 10000) / 100;
       if (rec.custo_por_resultado == null && rec.investimento != null && rec.resultados) rec.custo_por_resultado = Math.round((rec.investimento / rec.resultados) * 100) / 100;
-      if (temAlgo) linhas.push(rec);
-    }
-  } else if (cab.longo) {
-    // Métrica | Valor | Variação  -> agrupa tudo num mês só (da coluna período, ou do nome do arquivo)
-    const porLojaYm = new Map();
-    for (const row of dataRows) {
-      const chave = chaveMetrica(txt(row, "metrica") || "");
-      if (!chave) continue;
-      const loja = lojaDe(row);
-      const ym = ymDe(row);
-      if (!loja || !ym) { if (!loja) semLoja.add(1); continue; }
-      const k = loja + "|" + ym;
-      if (!porLojaYm.has(k)) porLojaYm.set(k, { ym, loja, metricas: {} });
-      const bruto = row[idx.valor];
-      porLojaYm.get(k).metricas[chave] = {
-        valor: numBR(bruto), valor_texto: bruto == null ? null : String(bruto).trim(),
-        delta_pct: idx.variacao != null ? pctBR(row[idx.variacao]) : null,
-      };
-    }
-    linhas.push(...porLojaYm.values());
-  } else {
-    // formato largo: uma linha por mês, colunas = métricas
-    for (const row of dataRows) {
-      const loja = lojaDe(row);
-      const ym = ymDe(row);
-      if (!loja) { semLoja.add(1); continue; }
-      if (!ym) continue;
-      const metricas = {};
-      for (const mk of CONTA_METRICAS) {
-        if (idx[mk] == null) continue;
-        const bruto = row[idx[mk]];
-        if (bruto == null || String(bruto).trim() === "") continue;
-        metricas[mk] = {
-          valor: numBR(bruto), valor_texto: String(bruto).trim(),
-          delta_pct: idx[mk + "_var"] != null ? pctBR(row[idx[mk + "_var"]]) : null,
-        };
-      }
-      if (Object.keys(metricas).length) linhas.push({ ym, loja, metricas });
+      if (temAlgo || (rec.investimento != null && rec.investimento > 0)) trafego.push(rec);
     }
   }
 
-  if (!linhas.length) {
-    throw new Error(`"${base}" foi lido como ${cab.tipo === "trafego_pago" ? "tráfego pago" : "resumo da conta"}, ` +
-      "mas nenhuma linha tinha loja + mês + pelo menos um número. Inclua uma coluna 'Loja' (ou o nome da loja no arquivo) e uma coluna de mês.");
+  if (!conta.length && !trafego.length) {
+    throw new Error(`"${base}" foi reconhecido como planilha de rede social, mas nenhuma linha tinha loja + mês + número. ` +
+      "Inclua uma coluna 'Loja' (ou o nome da loja no arquivo/aba) e uma coluna de mês.");
   }
 
+  const meses = [...new Set([...conta.map((c) => c.ym), ...trafego.map((t) => t.ym)])].sort();
+  const lojas = [...new Set([...conta.map((c) => c.loja), ...trafego.map((t) => t.loja)])];
   return {
-    tipo: cab.tipo,
-    header: { aba: alvo.aba, linha: cab.linha, colunas: Object.keys(idx), formato: cab.longo ? "longo" : "largo" },
-    linhas,
-    resumo: {
-      tipo: cab.tipo,
-      meses: [...new Set(linhas.map((l) => l.ym))].sort(),
-      lojas: [...new Set(linhas.map((l) => l.loja))],
-      linhas_sem_loja_ignoradas: semLoja.size ? dataRows.length - linhas.length : 0,
-    },
+    conta, trafego,
+    header: { abas: abas.map((a) => a.nome), abas_conta: abasParaConta.map((a) => a.nome), abas_trafego: abasParaTrafego.map((a) => a.nome) },
+    resumo: { meses, lojas, n_conta: conta.length, n_trafego: trafego.length, linhas_sem_loja_ignoradas: semLoja.size },
     _rotulos: CONTA_ROTULO,
   };
 }

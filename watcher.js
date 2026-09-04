@@ -16,8 +16,10 @@ try {
 } catch {
   log = [];
 }
-// assinatura (caminho+tamanho+mtime) dos arquivos já processados — evita reprocessar no boot
-const processados = new Set(log.filter((e) => e.sig).map((e) => e.sig));
+// assinatura (nome+tamanho+mtime) dos arquivos processados COM SUCESSO — não reprocessa no boot.
+// arquivos que falharam NÃO entram aqui: ganham nova chance a cada boot (ex.: depois de um fix
+// no parser, ou depois de configurar a ANTHROPIC_API_KEY).
+const processados = new Set(log.filter((e) => e.sig && e.ok).map((e) => e.sig));
 
 function persist() {
   try {
@@ -70,7 +72,8 @@ async function processar(filePath) {
       console.error("[inbox] auto-análise:", e.message);
     }
   } catch (e) {
-    processados.add(sig); // não reprocessa arquivo quebrado a cada boot; corrigir o arquivo muda a assinatura
+    // NÃO adiciona a `processados`: o arquivo será tentado de novo no próximo boot
+    // (útil quando a causa da falha é externa — parser atualizado, chave de API configurada…).
     registrar({ arquivo: nome, sig, ok: false, ms: Date.now() - t0, erro: e.message });
     console.error(`[inbox] ${nome} -> ERRO: ${e.message}`);
   }

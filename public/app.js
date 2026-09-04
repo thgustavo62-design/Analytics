@@ -419,6 +419,12 @@
     view.querySelector("#fPromo").addEventListener("submit", promoSubmit);
     view.querySelector("#fSocial").addEventListener("submit", socialSubmit);
   }
+  function socialConteudoLabel(s) {
+    var c = (s && s.conteudo) || [];
+    if (!Array.isArray(c)) c = [c];
+    var partes = c.map(function (x) { return x === "trafego_pago" ? "tráfego pago" : x === "conta" ? "resumo da conta" : x; });
+    return partes.length ? partes.join(" + ") : "planilha de redes sociais";
+  }
   async function socialSubmit(ev) {
     ev.preventDefault();
     var f = ev.target, btn = f.querySelector("button"), box = view.querySelector("#socialRes");
@@ -430,9 +436,8 @@
       var d = await r.json();
       if (!r.ok) throw new Error(d.erro || ("HTTP " + r.status));
       box.className = "result ok";
-      var ap = (d.social && d.social.aplicadas) || [];
-      box.textContent = (d.social && d.social.conteudo === "trafego_pago" ? "Tráfego pago" : "Resumo da conta") + " — " +
-        ap.map(function (a) { return a.loja + " (" + a.meses.join(", ") + ")"; }).join(" · ");
+      box.textContent = socialConteudoLabel(d.social) + " — " +
+        ((d.social && d.social.aplicadas) || []).map(function (a) { return a.loja + " (" + a.meses.join(", ") + ")"; }).join(" · ");
     } catch (e) { box.className = "result err"; box.textContent = e.message; }
     box.hidden = false; btn.disabled = false; btn.textContent = "Enviar planilha de redes sociais";
   }
@@ -2159,7 +2164,7 @@
       out += '<div class="card"><div class="chead"><div class="ci bulb">🗂️</div><div><h3>De onde vieram os números</h3><div class="cs">cada planilha / print processado</div></div></div>' +
         '<table class="tbl mobile-cards"><thead><tr><th>Quando</th><th>Tipo</th><th>Origem</th><th>Arquivo</th></tr></thead><tbody>' +
         d.fontes.map(function (f) {
-          var tipo = f.tipo === "conta" ? "resumo da conta" : f.tipo === "trafego_pago" ? "tráfego pago" : f.tipo;
+          var tipo = String(f.tipo || "").split("+").map(function (x) { return x === "conta" ? "resumo da conta" : x === "trafego_pago" ? "tráfego pago" : x; }).join(" + ");
           var origem = f.modelo === "planilha" ? "planilha" : (f.modelo ? "IA (" + esc(f.modelo) + ")" : "—");
           return '<tr><td data-l="Quando">' + esc((f.criado_em || "").replace("T", " ").slice(0, 16)) + '</td><td data-l="Tipo">' + esc(tipo) + '</td><td data-l="Origem">' + origem + '</td><td data-l="Arquivo"><span class="cs">' + esc(f.arquivo) + "</span></td></tr>";
         }).join("") + "</tbody></table></div>";
@@ -2192,10 +2197,9 @@
         var r = await fetch("/upload/social", { method: "POST", body: fd });
         var j = await r.json();
         if (!r.ok) throw new Error(j.erro || ("HTTP " + r.status));
-        var ap = (j.social && j.social.aplicadas) || [];
         out.className = "result ok";
-        out.textContent = (j.social && j.social.conteudo === "trafego_pago" ? "Tráfego pago" : "Resumo da conta") + " — " +
-          ap.map(function (a) { return a.loja + " (" + a.meses.join(", ") + ")"; }).join(" · ");
+        out.textContent = socialConteudoLabel(j.social) + " — " +
+          ((j.social && j.social.aplicadas) || []).map(function (a) { return a.loja + " (" + a.meses.join(", ") + ")"; }).join(" · ");
         setTimeout(renderSocial, 900);
       } catch (e) { out.className = "result err"; out.textContent = e.message; }
     });

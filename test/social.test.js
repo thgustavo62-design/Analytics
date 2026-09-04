@@ -119,9 +119,9 @@ test("parseSocialXlsx: resumo da conta (formato largo, uma linha por mês)", () 
     "Minas Farma,2026-08,\"52 mil\",\"+36,8%\",\"3.400\",\"145\"\n" +
     "Farma e Farma,2026-08,\"31 mil\",,\"1.800\",\"90\"\n");
   const r = parseSocialXlsx(p);
-  assert.equal(r.tipo, "conta");
-  assert.equal(r.linhas.length, 3);
-  const mf08 = r.linhas.find((l) => l.loja === "Minas Farma" && l.ym === "2026-08");
+  assert.equal(r.conta.length, 3);
+  assert.equal(r.trafego.length, 0);
+  const mf08 = r.conta.find((l) => l.loja === "Minas Farma" && l.ym === "2026-08");
   assert.equal(mf08.metricas.alcance.valor, 52000);
   assert.equal(mf08.metricas.alcance.delta_pct, 36.8);
   assert.equal(mf08.metricas.interacoes.valor, 3400);
@@ -135,13 +135,14 @@ test("parseSocialXlsx: tráfego pago + derivação de CPC/CPM/CTR quando falta",
     "Loja,Mes,Investimento,Impressoes,Cliques,Resultados,Tipo de resultado\n" +
     "Minas Farma,2026-08,\"R$ 450,00\",\"30.000\",\"600\",\"25\",Conversas\n");
   const r = parseSocialXlsx(p);
-  assert.equal(r.tipo, "trafego_pago");
-  assert.equal(r.linhas.length, 1);
-  const l = r.linhas[0];
+  assert.equal(r.trafego.length, 1);
+  assert.equal(r.conta.length, 0);
+  const l = r.trafego[0];
   assert.equal(l.investimento, 450);
   assert.equal(l.cpc, 0.75);                 // 450/600
   assert.equal(l.cpm, 15);                   // 450/30000*1000
   assert.equal(l.ctr_pct, 2);                // 600/30000*100
+  assert.equal(l.resultados, 25);
   assert.equal(l.custo_por_resultado, 18);   // 450/25
   fs.unlinkSync(p);
 });
@@ -152,9 +153,9 @@ test("parseSocialXlsx: 'Cliques no link' + 'Var …' não confundem resumo da co
     "Loja,Mês,Visualizações,Var Visualizações,Alcance,Var Alcance,Interações,Var Interações,Visitas ao perfil,Var Visitas ao perfil,Cliques no link,Var Cliques no link,Seguidores,Var Seguidores\n" +
     'Farma e Farma,2026-08,"328,9 mil","+20,1%","57,8 mil","-51%","2,1 mil","+21,9%","1,6 mil","+30,7%","302","-15,2%","146","+3,5%"\n');
   const r = parseSocialXlsx(p);
-  assert.equal(r.tipo, "conta");                               // NÃO trafego_pago
-  assert.equal(r.linhas.length, 1);
-  const m = r.linhas[0].metricas;
+  assert.equal(r.trafego.length, 0);                           // NÃO tráfego pago
+  assert.equal(r.conta.length, 1);
+  const m = r.conta[0].metricas;
   assert.equal(m.visualizacoes.valor, 328900);
   assert.equal(m.visualizacoes.delta_pct, 20.1);
   assert.equal(m.alcance.delta_pct, -51);
@@ -164,11 +165,54 @@ test("parseSocialXlsx: 'Cliques no link' + 'Var …' não confundem resumo da co
   fs.unlinkSync(p);
 });
 
+test("parseSocialXlsx: workbook multi-aba — aba pura de conta vence 'Resumo Mensal'; 'Leia-me' é ignorada", () => {
+  const XLSX = require("xlsx");
+  const wb = XLSX.utils.book_new();
+  // aba combinada (não deve ser usada porque há abas puras)
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ["Farma e Farma - Resumo mensal"], [null],
+    [null, "TRÁFEGO PAGO", null, "CONTA ORGÂNICA"],
+    ["Mês", "Investimento (R$)", "Alcance (soma)", "Visualizações", "Alcance", "Interações", "Cliques no link", "Visitas ao perfil", "Novos seguidores"],
+    ["2026-08", 999, 111111, 111, 222, 333, 44, 55, 66],
+  ]), "Resumo Mensal");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ["Farma e Farma - Campanhas"], [null],
+    ["Mês", "Campanha", "Indicador de resultado", "Resultados", "Valor gasto (R$)", "Impressões", "Alcance", "Contatos (total)", "Compras"],
+    ["2026-08", "Inauguração", "Alcance", 31430, 265.42, 82093, 31430, 20, 0],
+    ["2026-08", "Landing", "Visualizações da página de destino", 46, 22.16, 4243, 2786, 6, 0],
+    ["TOTAL 2026-08", null, null, 31476, 287.58, 86336, 34216, 26, 0],
+  ]), "Campanhas");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ["Farma e Farma - Conta @farmaefarmabg"], [null],
+    ["Mês", "Visualizações", "Alcance", "Interações com conteúdo", "Cliques no link", "Visitas ao perfil", "Novos seguidores", "Variação reportada pela Meta"],
+    ["2026-08", 328855, 57800, 2100, 302, 1600, 146, "Visualizações +20,1% | Alcance -51% | Interações +21,9% | Cliques -15,2% | Visitas +30,7% | Seguidores +3,5%"],
+  ]), "Conta Instagram");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Como alimentar esta planilha"], ["1. Aba Campanhas ..."]]), "Leia-me");
+  const p = path.join(TMP, `wb-${process.pid}.xlsx`);
+  XLSX.writeFile(wb, p);
+
+  const r = parseSocialXlsx(p);
+  assert.equal(r.conta.length, 1);
+  const m = r.conta[0].metricas;
+  assert.equal(m.visualizacoes.valor, 328855);     // da aba "Conta Instagram", não os 111 do Resumo
+  assert.equal(m.alcance.valor, 57800);
+  assert.equal(m.cliques_link.delta_pct, -15.2);   // variação lida do texto livre
+  assert.equal(m.seguidores.delta_pct, 3.5);
+  // tráfego: 2 campanhas (linha TOTAL ignorada), reach não conta como resultado, contatos sim
+  assert.equal(r.trafego.length, 2);
+  assert.ok(r.trafego.every((t) => t.loja === "Farma e Farma"));
+  const inaug = r.trafego.find((t) => t.campanha === "Inauguração");
+  assert.equal(inaug.investimento, 265.42);
+  assert.equal(inaug.resultados, 20);              // Contatos, não os 31430 de "Resultados"(alcance)
+  assert.equal(inaug.tipo_resultado, "contatos");
+  fs.unlinkSync(p);
+});
+
 test("parseSocialXlsx: loja pelo nome do arquivo quando não há coluna Loja", () => {
   const p = path.join(TMP, `metricas minas farma ${process.pid}.csv`);
   fs.writeFileSync(p, "Mes,Alcance,Seguidores\n2026-08,\"52 mil\",\"145\"\n");
   const r = parseSocialXlsx(p);
-  assert.equal(r.linhas[0].loja, "Minas Farma");
+  assert.equal(r.conta[0].loja, "Minas Farma");
   fs.unlinkSync(p);
 });
 
@@ -179,7 +223,7 @@ test("ingestSocialXlsx: grava e a análise passa a mostrar", { skip: SKIP }, asy
     "Loja,Mes,Alcance,Interacoes,Seguidores\n" +
     `Farma e Farma,${ANO}-${String(MES).padStart(2, "0")},\"40 mil\",\"2.500\",\"80\"\n`);
   const r = ingestSocialXlsx(p);
-  assert.equal(r.conteudo, "conta");
+  assert.ok(r.conteudo.includes("conta"));
   assert.ok(r.aplicadas.some((a) => a.loja === "Farma e Farma"));
   const d = analiseSocial("Farma e Farma");
   const alc = d.organico.series.find((s) => s.metrica === "alcance");

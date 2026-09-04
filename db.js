@@ -167,11 +167,13 @@ function mergeInstagram(periodoId, metricas) {
   const porChave = new Map(atuais.map((m) => [m.metrica, m]));
   for (const m of metricas) {
     if (m.valor_exibicao == null || String(m.valor_exibicao).trim() === "") continue;
+    const antigo = porChave.get(m.metrica) || {};
     porChave.set(m.metrica, {
       metrica: m.metrica, rotulo: m.rotulo,
       valor_exibicao: String(m.valor_exibicao).trim(),
-      delta_pct: m.delta_pct ?? null,
-      observacao: m.observacao ?? (porChave.get(m.metrica) || {}).observacao ?? null,
+      // uma fonte que não traz variação não apaga a variação que já existia
+      delta_pct: m.delta_pct != null ? m.delta_pct : (antigo.delta_pct ?? null),
+      observacao: m.observacao ?? antigo.observacao ?? null,
     });
   }
   replaceInstagram(periodoId, [...porChave.values()]);
