@@ -20,10 +20,10 @@ test.after(() => { for (const s of ["", "-wal", "-shm"]) { try { fs.unlinkSync(T
 const PDF = [
   process.env.VENDAS_FIXTURE,
   path.join(__dirname, "fixtures", "vendas-agosto-farma-e-farma.pdf"),
-  "C:\\Sistema Marketing\\inbox\\vendas agosto farma e farma.pdf",
+  "C:\\Sistema Marketing\\inbox\\vendas\\vendas agosto farma e farma.pdf",
   "C:\\Users\\Admin\\Downloads\\vendas agosto farma e farma.pdf",
 ].filter(Boolean).find((p) => fs.existsSync(p));
-const XLSX = ["C:\\Sistema Marketing\\inbox\\Concorrentes_Coleta_2026-08-31.xlsx"].find((p) => fs.existsSync(p));
+const XLSX = ["C:\\Sistema Marketing\\inbox\\concorrentes\\Concorrentes_Coleta_2026-08-31.xlsx"].find((p) => fs.existsSync(p));
 const SKIP = PDF ? false : "fixture de vendas não encontrada";
 
 const STATUS_OK = new Set(["OK", "SUSPENDER", "RENOVAR", "REVISAR"]);

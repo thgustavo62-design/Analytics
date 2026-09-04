@@ -358,9 +358,100 @@ const CONC_CFG = (() => {
 })();
 const ehArquivoConcorrente = (base) => (CONC_CFG.arquivo_contem || []).some((w) => base.includes(w));
 
+// --- roteamento por PASTA da inbox --------------------------------------
+// A pasta onde o arquivo foi solto força o tipo — não depende do nome do arquivo.
+// Ex.: inbox/promocoes/qualquer_nome.xlsx  ->  tabela de promoções.
+const INBOX_DIR = process.env.VA_INBOX || path.join(__dirname, "inbox");
+const nrm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s_]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+
+const PASTAS = {
+  vendas:            { aliases: ["vendas", "venda", "faturamento", "analitico-de-vendas", "relatorio-de-vendas"], exts: [".pdf"] },
+  estoque:           { aliases: ["estoque", "estoque-custo-preco", "catalogo", "custo", "precos", "preco"], exts: [".xlsx"] },
+  concorrentes:      { aliases: ["concorrentes", "concorrencia", "concorrente", "coleta", "coleta-de-precos"], exts: [".xlsx"] },
+  promocoes:         { aliases: ["promocoes", "promocao", "promo", "tabelao", "tabela-de-promocoes", "encarte", "ofertas", "plano-de-midia"], exts: [".xlsx", ".csv"] },
+  "redes-sociais":   { aliases: ["redes-sociais", "rede-social", "redes", "social", "instagram", "insta", "metricas", "metrica", "trafego-pago", "trafego", "anuncios", "anuncio", "meta-ads", "impulsionamento"], exts: [".xlsx", ".csv", ".png", ".jpg", ".jpeg", ".webp"] },
+  "analise-comercial": { aliases: ["analise-comercial", "analise", "diretor-comercial", "scorecard"], exts: [".json"] },
+};
+function pastaDoArquivo(filePath) {
+  let dir = path.dirname(path.resolve(filePath));
+  const raiz = path.resolve(INBOX_DIR);
+  const dentro = (d) => d.toLowerCase().startsWith(raiz.toLowerCase());
+  // sobe até achar uma pasta cujo nome bate com um tipo (aceita subpasta aninhada), parando na raiz da inbox
+  for (let i = 0; i < 12 && dentro(dir) && dir.toLowerCase() !== raiz.toLowerCase(); i++) {
+    const nome = nrm(path.basename(dir));
+    for (const [tipo, cfg] of Object.entries(PASTAS)) {
+      if (nome === tipo || cfg.aliases.includes(nome)) return { tipo, cfg };
+    }
+    dir = path.dirname(dir);
+  }
+  return null;
+}
+const PASTA_LEIAME = {
+  vendas: "PDF do \"Analítico de Vendas\". A soma é conferida contra o \"Total:\" do rodapé.",
+  estoque: "xlsx de estoque (com preço de venda, preço de promoção, custo e Nome Grupo). Vale para 1 loja (nome do arquivo ou coluna Loja) ou 'geral' para as duas.",
+  concorrentes: "xlsx da coleta de concorrentes (formato de 36 colunas OU Concorrente+Produto+Preço).",
+  promocoes: "xlsx/csv com os produtos que vão entrar em oferta e o preço (o \"tabelão\"/encarte). Colunas: produto ou EAN, preço de / preço por (ou desconto), início, fim, campanha, loja.",
+  "redes-sociais": "xlsx/csv com uma linha por mês (resumo da conta E/OU tráfego pago), ou um print (.png/.jpg) — o print precisa da ANTHROPIC_API_KEY. Loja no nome do arquivo, numa coluna Loja ou no título da aba.",
+  "analise-comercial": "JSON da Análise Comercial mensal (schema da Parte 2).",
+};
+function criarPastasInbox(inboxDir) {
+  for (const [tipo, txt] of Object.entries(PASTA_LEIAME)) {
+    const dir = path.join(inboxDir, tipo);
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const leia = path.join(dir, "LEIA-ME.txt");
+      if (!fs.existsSync(leia)) fs.writeFileSync(leia, `Coloque aqui: ${txt}\n\n(Qualquer nome de arquivo funciona — a pasta já diz o tipo.)\n`);
+    } catch (e) { /* sem permissão de escrita — segue */ }
+  }
+}
+
+async function ingestPorTipo(tipo, filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (tipo === "vendas") return ingestVendas(filePath);
+
+  if (tipo === "estoque") {
+    const { ingestPlanilhaProduto } = require("./catalogo");
+    const r = ingestPlanilhaProduto(filePath);
+    try { for (const loja of r.lojas || []) if (LOJAS_VALIDAS.includes(loja)) require("./intelligence").rodarDeteccao(loja); }
+    catch (e) { console.error("[ingest] detecção pós-planilha:", e.message); }
+    return r;
+  }
+
+  if (tipo === "concorrentes") {
+    const r = ingestConcorrentes(filePath);
+    try { for (const a of r.aplicadas || []) if (LOJAS_VALIDAS.includes(a.loja)) require("./intelligence").rodarDeteccao(a.loja); }
+    catch (e) { console.error("[ingest] detecção pós-concorrentes:", e.message); }
+    return r;
+  }
+
+  if (tipo === "promocoes") return ingestPromocoes(filePath);
+
+  if (tipo === "redes-sociais") {
+    return /\.(png|jpe?g|webp)$/i.test(ext) ? ingestSocialPrint(filePath) : ingestSocialXlsx(filePath);
+  }
+
+  if (tipo === "analise-comercial") {
+    const payload = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return ingestAnaliseComercial(payload);
+  }
+
+  throw new Error(`pasta "${tipo}" sem tratador.`);
+}
+
 async function ingestFile(filePath) {
   const base = path.basename(filePath).toLowerCase();
   const ext = path.extname(base);
+
+  // 1) roteamento por PASTA (tem prioridade sobre o nome do arquivo)
+  const rota = pastaDoArquivo(filePath);
+  if (rota) {
+    if (!rota.cfg.exts.includes(ext)) {
+      throw new Error(`a pasta "inbox/${rota.tipo}/" só lê ${rota.cfg.exts.join(", ")} — "${path.basename(filePath)}" (${ext || "sem extensão"}) não serve aqui.`);
+    }
+    return ingestPorTipo(rota.tipo, filePath);
+  }
+
+  // 2) inbox raiz: dispatch pelo nome/conteúdo (comportamento antigo)
   if (ext === ".pdf") return ingestVendas(filePath);
   if (/\.(png|jpe?g|webp)$/i.test(ext)) return ingestSocialPrint(filePath);
   const { ehArquivoPromocao } = require("./parsers/promocoes");
@@ -419,4 +510,4 @@ async function ingestFile(filePath) {
   throw new Error(`tipo de arquivo não suportado (${ext || "sem extensão"}).`);
 }
 
-module.exports = { ingestFile, ingestVendas, ingestConcorrentes, ingestInstagramJson, ingestSocialPrint, ingestSocialXlsx, ingestAnaliseComercial, ingestPromocoes, resolveLoja };
+module.exports = { ingestFile, ingestVendas, ingestConcorrentes, ingestInstagramJson, ingestSocialPrint, ingestSocialXlsx, ingestAnaliseComercial, ingestPromocoes, resolveLoja, criarPastasInbox, PASTAS_NOMES: Object.keys(PASTAS) };

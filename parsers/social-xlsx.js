@@ -31,6 +31,18 @@ const CONTA_ROTULO = {
   visitas_perfil: "Visitas ao perfil", cliques_link: "Cliques no link", seguidores: "Seguidores",
 };
 const TP_NUM = ["investimento", "impressoes", "alcance", "cliques", "ctr_pct", "cpc", "cpm", "resultados", "custo_por_resultado"];
+// nomes crus do Gerenciador de Anúncios -> rótulo legível
+const RES_LABEL = {
+  "link_click": "cliques no link", "landing_page_view": "visitas à página",
+  "onsite_conversion.messaging_conversation_started_7d": "conversas",
+  "messaging_conversation_started_7d": "conversas", "post_engagement": "engajamento",
+  "video_view": "views de vídeo", "lead": "leads", "purchase": "compras", "reach": "alcance",
+};
+function labelResultado(s) {
+  if (!s) return s;
+  const k = String(s).toLowerCase().trim().replace(/^actions:/, "");
+  return RES_LABEL[k] || s;
+}
 const GASTO_COLS = ["investimento", "cpc", "cpm", "custo_por_resultado"];
 const MESES_PT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
@@ -248,7 +260,7 @@ function parseSocialXlsx(filePath) {
       const contatos = numBR(cel(row, idx, "contatos"));
       const resBrutos = numBR(cel(row, idx, "resultados"));
       rec.resultados = compras || contatos || (ehAlcance ? null : resBrutos) || null;
-      rec.tipo_resultado = compras ? "compras" : contatos ? "contatos" : (ehAlcance ? null : (indicador || null));
+      rec.tipo_resultado = compras ? "compras" : contatos ? "contatos ou conversas" : (ehAlcance ? null : (labelResultado(indicador) || null));
       if (rec.resultados != null && rec.resultados !== 0) temAlgo = true;
       if (rec.cpc == null && rec.investimento != null && rec.cliques) rec.cpc = Math.round((rec.investimento / rec.cliques) * 100) / 100;
       if (rec.cpm == null && rec.investimento != null && rec.impressoes) rec.cpm = Math.round((rec.investimento / rec.impressoes) * 1000 * 100) / 100;

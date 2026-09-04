@@ -2,7 +2,7 @@
   "_nota": "Métricas de redes sociais por PLANILHA (alternativa ao print lido por IA). Jogue um xlsx/csv na pasta inbox; o nome deve conter uma das palavras de 'arquivo_contem' + a loja ('minas' / 'farma e farma'), ou inclua uma coluna 'Loja'. Dois tipos, detectados pelas colunas: RESUMO DA CONTA (visualizações/alcance/interações/visitas ao perfil/cliques no link/seguidores) e TRÁFEGO PAGO (investimento/impressões/cpc/cpm/ctr/resultados). Uma linha por mês. Ajuste os sinônimos de coluna aqui sem tocar no código.",
   "arquivo_contem": ["social", "redes sociais", "rede social", "instagram", "insta", "metrica", "métrica", "metricas", "métricas", "engajamento", "insights", "trafego", "tráfego", "trafego pago", "tráfego pago", "anuncio", "anúncio", "anuncios", "anúncios", "impulsion", "meta ads", "resumo mensal", "resumo do mes", "resumo do mês", "resumo da conta", "conta instagram", "gerenciador de anuncios"],
   "colunas": {
-    "periodo":        ["mes", "mês", "periodo", "período", "competencia", "competência", "referencia", "referência", "ref", "data", "mes/ano", "mês/ano", "mes ref", "mês ref"],
+    "periodo":        ["mes", "mês", "periodo", "período", "competencia", "competência", "referencia", "referência", "ref", "data", "mes/ano", "mês/ano", "mes ref", "mês ref", "inicio dos relatorios", "início dos relatórios", "encerramento dos relatorios", "encerramento dos relatórios", "termino", "término", "data de inicio", "dia"],
     "loja":           ["loja", "unidade", "filial", "conta", "perfil", "estabelecimento"],
     "campanha":       ["campanha", "anuncio", "anúncio", "conjunto", "conjunto de anuncios", "conjunto de anúncios", "nome da campanha", "acao", "ação"],
     "plataforma":     ["plataforma", "canal", "rede", "posicionamento"],

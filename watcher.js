@@ -4,8 +4,10 @@
 const fs = require("fs");
 const path = require("path");
 const chokidar = require("chokidar");
-const { ingestFile } = require("./ingest");
+const { ingestFile, criarPastasInbox } = require("./ingest");
 const { maybeAutoAnalise } = require("./motor");
+
+let INBOX_RAIZ = null;
 
 const LOG_PATH = path.join(__dirname, "data", "inbox-log.json");
 const MAX_LOG = 200;
@@ -57,7 +59,9 @@ async function processar(filePath) {
   const nome = path.basename(filePath);
   if (nome.startsWith("~$") || nome.startsWith(".")) return;
   if (!/\.(pdf|xlsx|csv|json|png|jpe?g|webp)$/i.test(nome)) return; // ignora LEIA-ME.txt e afins, sem barulho
-  const sig = `${nome}|${st.size}|${Math.round(st.mtimeMs)}`;
+  // assinatura inclui a subpasta (inbox/promocoes/x.xlsx != inbox/x.xlsx)
+  const rel = INBOX_RAIZ ? path.relative(INBOX_RAIZ, filePath).replace(/\\/g, "/") : nome;
+  const sig = `${rel}|${st.size}|${Math.round(st.mtimeMs)}`;
   if (processados.has(sig)) return;
 
   const t0 = Date.now();
@@ -80,16 +84,18 @@ async function processar(filePath) {
 }
 
 function startWatcher(inboxDir) {
+  INBOX_RAIZ = path.resolve(inboxDir);
   fs.mkdirSync(inboxDir, { recursive: true });
+  try { criarPastasInbox(inboxDir); } catch (e) { console.error("[inbox] criar subpastas:", e.message); }
   const watcher = chokidar.watch(inboxDir, {
-    depth: 0,
+    depth: 3, // inbox/<tipo>/[subpasta]/arquivo
     ignoreInitial: false, // processa o que já estiver lá no boot (a assinatura evita repetição)
     awaitWriteFinish: { stabilityThreshold: 2500, pollInterval: 300 },
   });
   watcher.on("add", enfileirar);
   watcher.on("change", enfileirar);
   watcher.on("error", (e) => console.error("[inbox] watcher:", e.message));
-  console.log(`[inbox] observando ${inboxDir}`);
+  console.log(`[inbox] observando ${inboxDir} (subpastas: ${require("./ingest").PASTAS_NOMES.join(", ")})`);
   return watcher;
 }
 

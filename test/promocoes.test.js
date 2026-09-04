@@ -72,10 +72,10 @@ test("substituir + vigência por data + re-upload substitui", () => {
 
 const PDF = [
   process.env.VENDAS_FIXTURE,
-  "C:\\Sistema Marketing\\inbox\\vendas agosto farma e farma.pdf",
+  "C:\\Sistema Marketing\\inbox\\vendas\\vendas agosto farma e farma.pdf",
   "C:\\Users\\Admin\\Downloads\\vendas agosto farma e farma.pdf",
 ].find((p) => p && fs.existsSync(p));
-const XLSX_CONC = ["C:\\Sistema Marketing\\inbox\\Concorrentes_Coleta_2026-08-31.xlsx"].find((p) => fs.existsSync(p));
+const XLSX_CONC = ["C:\\Sistema Marketing\\inbox\\concorrentes\\Concorrentes_Coleta_2026-08-31.xlsx"].find((p) => fs.existsSync(p));
 
 test("integração: Share of Promotions usa a tabela de planejamento", { skip: PDF && XLSX_CONC ? false : "fixtures (vendas + coleta) não encontradas" }, async () => {
   const rv = await ingestVendas(PDF);

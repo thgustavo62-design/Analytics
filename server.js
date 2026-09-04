@@ -1549,7 +1549,7 @@ function verificacaoAnaliseComercial() {
 app.listen(PORT, () => {
   console.log(`Analytics em http://localhost:${PORT}`);
   console.log(`  painel:  http://localhost:${PORT}/`);
-  console.log(`  inbox:   ${INBOX_DIR}  (jogue aqui o "Analítico de Vendas" .pdf e o Concorrentes_Coleta_*.xlsx)`);
+  console.log(`  inbox:   ${INBOX_DIR}  (subpastas: vendas/ estoque/ concorrentes/ promocoes/ redes-sociais/ analise-comercial/ — a pasta define o tipo)`);
   if (podeGerar()) {
     console.log(`  motor:   análise comercial via ${ANALISE_MODEL}${process.env.AUTO_ANALISE === "0" ? " (auto DESLIGADO)" : " (auto ligado — AUTO_ANALISE=0 desliga)"}`);
   } else {

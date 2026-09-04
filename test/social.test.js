@@ -35,7 +35,7 @@ test("numBR: números em pt-BR (mil/mi, ponto de milhar, vírgula decimal, R$, %
 
 const PDF = [
   process.env.VENDAS_FIXTURE,
-  "C:\\Sistema Marketing\\inbox\\vendas agosto farma e farma.pdf",
+  "C:\\Sistema Marketing\\inbox\\vendas\\vendas agosto farma e farma.pdf",
   "C:\\Users\\Admin\\Downloads\\vendas agosto farma e farma.pdf",
 ].find((p) => p && fs.existsSync(p));
 const SKIP = PDF ? false : "fixture de vendas não encontrada";
@@ -204,7 +204,7 @@ test("parseSocialXlsx: workbook multi-aba — aba pura de conta vence 'Resumo Me
   const inaug = r.trafego.find((t) => t.campanha === "Inauguração");
   assert.equal(inaug.investimento, 265.42);
   assert.equal(inaug.resultados, 20);              // Contatos, não os 31430 de "Resultados"(alcance)
-  assert.equal(inaug.tipo_resultado, "contatos");
+  assert.match(inaug.tipo_resultado, /contatos/);
   fs.unlinkSync(p);
 });
 

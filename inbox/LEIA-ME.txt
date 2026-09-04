@@ -1,68 +1,56 @@
 PASTA DE ENTRADA — Vermelhinha Analytics
 =========================================
 
-Jogue os arquivos aqui. O site percebe sozinho e atualiza o painel — não precisa
-abrir nada, nem clicar em "enviar".
+Jogue os arquivos NAS SUBPASTAS abaixo. O site percebe sozinho e atualiza o
+painel — nao precisa abrir nada nem clicar em "enviar". Dentro de cada subpasta,
+QUALQUER NOME DE ARQUIVO funciona: a pasta ja diz o tipo.
 
-O QUE JOGAR
+    inbox/
+      vendas/            <- PDF "Analitico de Vendas"
+      estoque/           <- xlsx de estoque (preco de venda, preco de promocao, custo, Nome Grupo)
+      concorrentes/      <- xlsx da coleta de precos de concorrente
+      promocoes/         <- xlsx/csv com os produtos que vao entrar em oferta + preco (o "tabelao")
+      redes-sociais/     <- xlsx/csv (1 linha por mes) OU print .png/.jpg do Instagram / Meta Ads
+      analise-comercial/ <- JSON da Analise Comercial mensal
+
+Cada subpasta tem um LEIA-ME.txt proprio explicando o que colocar.
+
+DETALHES POR TIPO
+-----------------
+vendas/       Exporte o relatorio de sempre. Nao precisa dizer a loja: o site le o
+              CNPJ no cabecalho. Se a soma nao bater com o "Total:" do rodape, o
+              arquivo e RECUSADO e o painel antigo continua no ar. Um PDF que cobre
+              varios meses vira um painel por mes.
+
+estoque/      A coluna "preco de promocao" e tratada como o PRECO PRATICADO NO
+              BALCAO (o ERP ja aplica -20% perfumaria / -40% generico e similar
+              sobre o "preco de venda"). O "preco de venda" vira preco de tabela.
+              Um arquivo alimenta estoque + preco + custo + categoria do ERP.
+              Diz a loja pelo nome ("minas" / "farma e farma") ou "geral" p/ as duas.
+
+concorrentes/ Formato de 36 colunas OU planilha simples (Concorrente + Produto +
+              Preco). Vale para as duas lojas. Ao entrar, re-roda a deteccao.
+
+promocoes/    Colunas: produto (ou EAN), preco de / preco por (ou desconto), inicio,
+              fim, campanha, loja. Alimenta o Share of Promotions e o Calendario.
+
+redes-sociais/  Planilha com UMA LINHA POR MES. Dois blocos, detectados pelas
+              colunas: RESUMO DA CONTA (visualizacoes / alcance / interacoes /
+              visitas ao perfil / cliques no link / seguidores) e TRAFEGO PAGO
+              (investimento / impressoes / cpc / cpm / ctr / resultados). Pode ser
+              um workbook com varias abas (Resumo Mensal, Campanhas, Conta
+              Instagram) — o sistema le todas. A exportacao crua do Gerenciador de
+              Anuncios tambem funciona. Loja: coluna "Loja", nome do arquivo ou
+              titulo da aba. Print .png/.jpg tambem vale, mas so com
+              ANTHROPIC_API_KEY no .env (le a imagem com IA).
+
+analise-comercial/  .json com "meta" + "diagnostico_executivo". Gerado por fora.
+              Se nao passar na validacao, e recusado e a analise anterior fica.
+
+OBSERVACOES
 -----------
-1) Relatorio "Analitico de Vendas" (PDF)
-   - Exporte do sistema da farmacia (o mesmo relatorio de sempre).
-   - Pode ser o mes inteiro OU o mes-ate-hoje (para acompanhar o dia a dia).
-   - Nao precisa dizer de qual loja e: o site le o CNPJ no cabecalho e descobre
-     se e Minas Farma ou Farma e Farma.
-   - Se a soma nao bater com o "Total:" impresso no rodape, o arquivo e RECUSADO
-     (aparece no log em "Entrada de arquivos") e o painel antigo continua no ar.
-
-2) Preco de concorrente (xlsx)
-   - Formato completo: Concorrentes_Coleta_AAAA-MM-DD.xlsx (36 colunas de sempre).
-   - Formato simples: qualquer planilha com pelo menos "Concorrente", "Produto" e um
-     "Preco". Sem coluna de status = todas as linhas contam. Sem validade = nada expira.
-     Colunas mapeadas por config/concorrentes.json (edite os nomes se precisar).
-   - O nome do arquivo precisa ter uma pista: "concorrente", "coleta", "preco concorrente",
-     ou o nome de um concorrente ("inova", "lavagnoli", "circulista", "indiana"...).
-   - Vale para as DUAS lojas (cada uma comparada com o proprio preco medio praticado).
-   - O mes vem da data no nome; sem data, usa o mes corrente.
-   - Ao entrar, ja re-roda a deteccao: vira sinal COMPETITOR_PRICE_ATTACK no War Room e
-     entra no Opportunity Score (componente concorrencia) e na classe DEFESA.
-
-2b) Estoque (xlsx do sistema — "Posicao de estoque" / export geral)
-   - Nome do arquivo PRECISA conter "estoque" (ou "estoqeu") E dizer a loja:
-     "minas" ou "farma e farma".  Ex.: "estoque minas farma.xlsx".
-     Se for o export unico da rede toda, use "estoque geral.xlsx" (aplica nas 2).
-   - Um arquivo so ja alimenta estoque + preco de venda + preco de promocao +
-     custo (coluna "Ult. Prc. Entrada"), tudo do mesmo xlsx.
-   - Isso libera: days-of-cover, margem %, risco de ruptura, capital parado e o
-     simulador de oferta com margem/estoque reais.
-   - Pode mandar todo dia/semana; cada envio vira um snapshot novo (historico).
-
-3) (opcional) Instagram em JSON
-   - Nome do arquivo com "instagram" (ex.: instagram-minas-2026-08.json)
-   - Conteudo: { "loja": "Minas Farma", "periodo": "2026-08",
-                 "metricas": { "visualizacoes": {"valor":"414,3 mil","delta":"112,0"}, ... } }
-   - Sem isso, use o formulario em Upload de dados.
-
-4) (Fase 2) Analise Comercial em JSON
-   - Qualquer .json cujo conteudo tenha "meta" + "diagnostico_executivo".
-   - Gerado por fora (tarefa agendada que aplica o prompt em
-     prompts/motor-analise-comercial.md). Vai para a tela "Analise Comercial".
-   - Se nao passar na validacao, e recusado e a analise anterior fica no ar.
-
-COPIA ESTATICA (site "publicavel")
-----------------------------------
-- A cada arquivo processado, o servidor regenera uma copia estatica em
-  C:\Sistema Marketing\publico\  (index.html + uma pagina por loja, com Painel +
-  Marketing + Intelligence "assados" dentro do HTML — abrem sem servidor).
-- Preview local: http://localhost:4180/publico/  (sem senha).
-- Para deixar "disponivel" de verdade: aponte a variavel de ambiente
-  VA_PUBLIC_DIR para uma pasta do OneDrive / Google Drive / GitHub Pages /
-  Netlify.  O link publico passa a se atualizar sozinho, sem expor o servidor.
-- Forcar agora: botao nao tem — use  POST /api/publicar  (logado).
-
-DICAS
------
-- Pode deixar os arquivos aqui depois de processados; o site nao reprocessa o
-  mesmo arquivo (a menos que ele mude).
-- Um PDF que cobre varios meses vira um painel por mes automaticamente.
-- Para exportar o "Analitico de Vendas" todo dia sem pensar, crie uma Tarefa
-  Agendada do Windows que salve o arquivo direto nesta pasta.
+- Arquivo na RAIZ da inbox (fora das subpastas) ainda funciona pelo nome antigo,
+  mas o jeito recomendado agora e a subpasta.
+- Arquivo que da erro e tentado de novo a cada boot do servidor (util depois de
+  um ajuste ou de configurar uma chave). Arquivo processado com sucesso nao repete.
+- A cada arquivo processado o site regenera a copia estatica (publico/index.html).

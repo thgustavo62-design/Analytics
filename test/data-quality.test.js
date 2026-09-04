@@ -20,7 +20,7 @@ const SEV = new Set(["ALTO", "MEDIO", "BAIXO"]);
 
 const PDF = [
   process.env.VENDAS_FIXTURE,
-  "C:\\Sistema Marketing\\inbox\\vendas agosto farma e farma.pdf",
+  "C:\\Sistema Marketing\\inbox\\vendas\\vendas agosto farma e farma.pdf",
   "C:\\Users\\Admin\\Downloads\\vendas agosto farma e farma.pdf",
 ].find((p) => p && fs.existsSync(p));
 const SKIP = PDF ? false : "fixture de vendas não encontrada";

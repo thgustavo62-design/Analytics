@@ -114,7 +114,7 @@ do Supabase (Vercel + GitHub Pages).
 ### Ingestão e parsing
 | Arquivo | Papel |
 |---|---|
-| `watcher.js` | observa `inbox/` com chokidar, serializa a ingestão, grava `data/inbox-log.json` |
+| `watcher.js` | observa `inbox/` **e suas subpastas** (chokidar, `depth:3`), serializa a ingestão, grava `data/inbox-log.json`. Cria as subpastas por tipo no boot. Arquivo que FALHOU não entra em `processados` — é tentado de novo a cada boot. |
 | `ingest.js` | dispatcher: extensão + nome do arquivo → função de ingestão; resolve loja pelo **CNPJ** do cabeçalho do PDF; split de PDF multi-mês; roda detecção pós-ingestão |
 | `parsers/vendas.js` | PDF "Analítico de Vendas" via `pdfjs-dist` → transações + empresa (CNPJ/razão social) + **validação da soma vs. "Total:"** (não bate → lança, nada é gravado) + detecção de dia parcial |
 | `parsers/concorrentes.js` | xlsx de concorrente — formato de 36 colunas **ou** planilha simples (Concorrente+Produto+Preço); colunas mapeadas por `config/concorrentes.json`; sem status = tudo confirmado |
@@ -385,7 +385,7 @@ leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 
 ## 11. Testes
 
-`npm test` (`node --test`) — **132 testes**, arquivos em separado (`process.env.VA_DB_PATH`
+`npm test` (`node --test`) — **137 testes**, arquivos em separado (`process.env.VA_DB_PATH`
 isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\Admin\Downloads\`.
 
 | Arquivo | Cobre |
