@@ -398,12 +398,14 @@ async function ingestFile(filePath) {
       }
       return r;
     }
-    // último recurso: o nome não bate em nada, mas o conteúdo pode ser planilha de rede social
+    // último recurso: o nome não bate em nada, mas o conteúdo pode ser planilha de rede social.
+    // só assume "social" se REALMENTE trouxe dados (loja + mês + número); senão, recusa genérico.
+    if (ehArquivoSocial(base)) return ingestSocialXlsx(filePath); // nome já dizia que é social — deixa o erro específico passar
     try { return ingestSocialXlsx(filePath); } catch (e) {
-      if (/nenhuma aba de métricas de rede social/i.test(e.message)) {
+      if (/aplicadas|linha.*loja|loja.*mês|nenhuma aba/i.test(e.message)) {
         throw new Error("xlsx não reconhecido — esperado Concorrentes_Coleta_*.xlsx, Estoque_/Custo_/Precos_*.xlsx, ou planilha de redes sociais (nome com 'social'/'metricas'/'trafego' ou colunas de rede social).");
       }
-      throw e; // era social, mas deu outro problema — mostra o motivo real
+      throw e;
     }
   }
   if (ext === ".json") {
