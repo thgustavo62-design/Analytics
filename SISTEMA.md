@@ -75,7 +75,7 @@ do Supabase (Vercel + GitHub Pages).
   png/jpg  -> parsers/social-vision.js (Claude com visão) -> instagram_metricas (merge) OU trafego_pago
              -> social? (nome com 'social'/'metricas'/'trafego'…)  parsers/social-xlsx.js (SEM IA)
                                  v
-   db.js  (node:sqlite / DatabaseSync)  —  data/analytics.db  —  30 tabelas
+   db.js  (node:sqlite / DatabaseSync)  —  data/analytics.db  —  31 tabelas
                                  v
    ┌─ camada determinística ──────────────────────────────────────────────┐
    │ aggregate · analytics-deep · classify · insights · match             │
@@ -97,7 +97,7 @@ do Supabase (Vercel + GitHub Pages).
    ┌─ frontend local ─────────┐   ┌─ publicação (a cada ingestão) ─────────┐
    │ public/ (vanilla JS,     │   │ coletar-tudo.js -> publicar.js         │
    │ SVG à mão, sem framework) │   │   -> publico/index.html (autocontido,  │
-   │ 11 telas                  │   │      lê Supabase ao vivo + fallback)   │
+   │ 12 telas                  │   │      lê Supabase ao vivo + fallback)   │
    └──────────────────────────┘   │ supabase-sync.js -> analytics_snapshots │
                                   └───────────┬───────────────────────────┘
                                               v
@@ -123,6 +123,7 @@ do Supabase (Vercel + GitHub Pages).
 | `parsers/social-vision.js` | **lê um PRINT** (screenshot .png/.jpg/.webp) de Instagram / Meta Ads via **Claude com visão** (opt-in: `ANTHROPIC_API_KEY`; `SOCIAL_VISION_MODEL`, padrão `claude-sonnet-5`). Classifica `conta` / `trafego_pago` / `desconhecido` e extrai só o que está visível (ausente = null, nunca estima). `numBR` converte "1,2 mil" / "R$ 1.234,56" / "3,4%" pt-BR |
 | `parsers/social-xlsx.js` | **alternativa sem IA**: lê as mesmas métricas de uma **planilha** (xlsx/csv, uma linha por mês). Varre **todas as abas** e separa em `conta` + `trafego` pelas colunas presentes; uma aba "pura" (só um tipo) vence uma aba combinada ("Resumo Mensal"); abas "Leia-me" ignoradas. Resolvedor de coluna em 2 passes (exato → fuzzy). Variação por coluna `Var …` **ou** por texto livre ("Visualizações +20,1% \| Alcance -51% \| …"). Tráfego: "Resultados" de campanha de alcance **não é** conversão — usa Compras > Contatos. Deriva CPC/CPM/CTR/custo-por-resultado. Loja pela coluna `Loja`, nome do arquivo ou título da aba. `config/social.json`. |
 | `social-analise.js` | `analiseSocial(loja)` — métricas orgânicas mês a mês (série + variação, delta do print/planilha ou calculado), tráfego pago (investimento / CPC / CPM / CTR / custo por resultado por mês) e **cruzamento com o faturamento** da loja (co-movimento, nunca atribui venda ao anúncio). Determinístico. |
+| `marketing/kanban.js` | **Quadro Kanban de marketing** — `quadro(loja)` (colunas `ideia` / `fazer` / `fazendo` / `feito`, cada card com a jogada de multinacional que o inspirou), `criar` / `atualizar` / `remover` (mover para "feito" carimba `entregue_em`; voltar limpa). **`sugestoes(loja)`** cruza o **playbook de multinacionais** (`config/playbook-multinacionais.json`) com os dados reais: cada jogada tem um **gatilho** (`categoria_sob_ataque`, `estoque_parado`, `cesta_lift_alto`, `produto_recorrente`, `margem_alta_sem_giro`, `ruptura`, `campanha_em_fadiga`, `subcomunicando`, `sempre`) e só aparece quando o gatilho existe — com a **evidência da loja** ao lado (produto / categoria / R$). Lê os pares de cesta já materializados (não recalcula). |
 | `catalogo.js` | `sincronizarProdutosDeVendas()` popula `produtos` pelos EAN das vendas; `ingestPlanilhaProduto()` lê planilha de estoque — **um arquivo alimenta estoque + preço + custo + a categoria REAL do ERP** ("Nome Grupo" → `mapGrupoErp`) + `Princípio Ativo` + `Registro MS`; nome com `geral`/`rede` aplica nas 2 lojas. **Preço:** a coluna "preço de promoção" do estoque é o **preço praticado no BALCÃO** (o ERP já a preenche com a tabela menos o desconto fixo do grupo — Perfumaria −20%, Genérico/Similar −40%, `config/preco-balcao.json`); grava como `tipo_preco='normal'`. A coluna "preço de venda" vira `tipo_preco='tabela'` (referência). Coluna de promoção vazia → deriva o balcão do desconto do grupo. |
 | `classify.js` | categoria por palavra-chave (`config/categorias.json`) — **fallback**, só quando o ERP não deu grupo |
 | `categorias.js` | **vocabulário canônico** de categoria. `categoriaCanonica(rotulo)` resolve qualquer rótulo de fora (grupo de ERP, coleta de concorrente, classificador) para o mesmo conjunto (`config/categorias-sinonimos.json`); `mapGrupoErp(grupo)` → `{categoria, subcategoria, classe_comercial}` (`config/grupos-erp.json`, regras `prefixo` separam Genérico/Similar/Ético/OTC); `expandirSuperGrupo("Bebê")` → `[Bebê, Fraldas, Leite Infantil]` |
@@ -187,7 +188,7 @@ do Supabase (Vercel + GitHub Pages).
 
 ## 4. Banco de dados (`data/analytics.db`, SQLite via `node:sqlite`)
 
-30 tabelas. Migrations **idempotentes** no boot: `schema.sql` roda `CREATE TABLE IF NOT EXISTS`
+31 tabelas. Migrations **idempotentes** no boot: `schema.sql` roda `CREATE TABLE IF NOT EXISTS`
 + bloco de `ALTER TABLE … ADD COLUMN` em try/catch (engole "duplicate column name"). Nada é
 destrutivo.
 
@@ -198,6 +199,7 @@ destrutivo.
 | | `vendas_transacoes` | `periodo_id`, `data`, `lancamento` (cupom), `barras` (EAN), `descricao`, `categoria`, `quantidade`, `valor_liquido`, `forma_pagto`, `emp_id`, `cli_id` |
 | | `instagram_metricas` | `periodo_id`, `metrica`, `valor_exibicao`, `delta_pct` (merge por métrica quando vem de print) |
 | | `trafego_pago` | `periodo_id`, `investimento`, `impressoes`, `alcance`, `cliques`, `ctr_pct`, `cpc`, `cpm`, `resultados`, `tipo_resultado`, `custo_por_resultado`, `campanha`, `plataforma`, `fonte_arquivo` — alimenta a Medição (Fase C) |
+| | `mkt_tarefas` | Kanban: `loja` (NULL = as duas), `titulo`, `descricao`, `coluna` (ideia/fazer/fazendo/feito), `prioridade`, `categoria`, `origem`, `playbook` (jogada de multinacional), `resultado`, `entregue_em` |
 | | `social_prints` | auditoria: cada print processado (`loja`, `tipo`, `arquivo`, `extraido_json`, `modelo`) |
 | | `concorrencia_ofertas` | `periodo_id`, `concorrente`, `produto`, `preco_normal/promo`, `validade`, `nivel_confianca`, `status_validacao`, `nosso_preco_medio`, `abaixo_do_nosso`, **`data_coleta`**, **`fonte`** (`coleta`/`manual`) |
 | | `promocoes_planejadas` | tabela do "tabelão"/encarte: `loja_id` (NULL = todas), `produto_id` (resolvido, pode ser NULL), `ean`, `descricao`, `categoria`, `preco_normal/promo`, `desconto_pct`, `data_inicio/fim`, `campanha`, `fonte_arquivo`, `chave` UNIQUE |
@@ -250,6 +252,8 @@ CRUD `GET/POST/PATCH/DELETE /api/marketing/:loja/campaigns[/:id]`.
 `POST /api/concorrencia/:loja/ofertas` (registrar 1 ou N, vale p/ as 2 lojas) ·
 `POST /api/concorrencia/:loja/colar` (interpreta texto de encarte, não salva).
 
+**Kanban de marketing** — `GET /api/marketing/:loja/kanban` (quadro, rápido) · `GET /api/marketing/:loja/kanban-sugestoes` (playbook de multinacionais × dados da loja) · `POST` / `PATCH /:id` / `DELETE /:id`.
+
 **Redes Sociais** — `GET /api/social/:loja` (métricas orgânicas mês a mês + tráfego pago + cruzamento com faturamento) ·
 `POST /upload/print` (multipart `arquivo` = imagem + `loja`; lê o print por visão — precisa `ANTHROPIC_API_KEY`) ·
 `POST /upload/social` (multipart `arquivo` = xlsx/csv; **sem IA**, uma linha por mês). A inbox aceita `.png/.jpg/.webp` (print) e `.xlsx/.csv` com nome de rede social (planilha).
@@ -280,6 +284,7 @@ CRUD `GET/POST/PATCH/DELETE /api/marketing/:loja/campaigns[/:id]`.
 | **Painel** | 4 cartões de resumo + abas: Visão Geral · Vendas · Redes Sociais · Concorrência · Categorias · Top Produtos · Tendência. Gráficos SVG (combo barras+linha, donut, dia-da-semana, tendência). |
 | **Marketing** (14 abas) | **Resultado** (KPIs de lucro/capital parado/risco + matriz visual + tabelas top-lucro / vende-e-não-lucra / custo-a-conferir / peso-morto / ruptura / sumindo) · Produtos · Recomendados · Não anunciar · Estoque parado · Cestas & Combos · Eficiência · **Precificação** (seletor de grupo → todos os produtos que valem promoção nele com preço a colocar + margem; ranking geral "o que colocar em promoção"; busca por produto; qualquer linha abre o detalhe: curva lucro×desconto SVG, 3 preços para testar, break-even, comparação com a promoção planejada — o detalhe vem embutido no snapshot, funciona no site publicado) · **Curva ABC** (produtos A/B/C em barra + tabela, categorias, concentração de cliente) · **Medição** (por campanha do calendário: baseline mesmo dia da semana, incremental, canibalização + campo de investimento → ROAS e retorno sobre margem) · **Playbooks** (por campanha recorrente: badge de tendência, melhor dia, barras de lift por dia, veredito, produtos + ângulo dominante; seção de fadiga de produto) · **Calendário** (semana a semana + ocorrências com status OK/SUSPENDER/RENOVAR/REVISAR + slots sugeridos + ciclo fechado) · **Montar campanha** (Campaign Builder 2.0: escolhe dias + tema → campanha inteira com score, elenco por papel, preço/ângulo/forecast por item, combos e forecast em 3 cenários) · Simulador de oferta |
 | **Concorrentes** | Botão **➕ Registrar oferta** (formulário rápido **ou** "colar encarte/post" → preview → salvar em lote) · KPIs (ofertas, abaixo do nosso, desconto médio) · Leitura automática + ações · **Onde reagir** (priorizado, com veredito, + "promover no lugar") · **Share of Promotions** (nossa ação promocional da tabela de promoções × ofertas do concorrente, por categoria) · Por concorrente (pressão + categorias atacadas) · Pressão por categoria |
+| **Kanban** | quadro de 4 colunas (Ideias / A fazer / Executando / Entregue) com arrastar-e-soltar + botões de mover (mobile); cada card mostra a jogada de multinacional por trás, prioridade, categoria e o resultado quando entregue · **Banco de ideias**: sugestões do playbook que os SEUS dados dispararam, cada uma com "o que é / por que funciona / na farmácia" + a evidência, e um botão para jogar no quadro |
 | **Redes Sociais** | métricas orgânicas mês a mês (card por métrica com valor, variação e sparkline) · leitura automática · **Tráfego pago** (tabela mensal: investido / cliques / resultados / CPC / CPM / CTR / custo por resultado + leitura) · **Cruzamento com o faturamento** da loja (co-movimento, com ressalva de causa) · **De onde vieram os números** (planilha vs IA, por arquivo) · botão **➕** com dois caminhos: **planilha** (`/upload/social`, sem IA) ou **print** (`/upload/print`, precisa `ANTHROPIC_API_KEY`). |
 | **Intelligence** (7 abas) | **War Room** (bloco escuro: prioridade #1, decisões recomendadas, Threat/Opportunity Map, contradições, situação por categoria) · **Recomendações** (decisões cruzadas + "Registrar como decisão") · Sinais (com "Por quê?", Observando, Resolver, Virar decisão) · Investigações · Decisões · Padrões · Pauta 7 dias · Perguntar |
 | **Conexões** | grafo radial SVG — nós (loja/categoria/canal/campanha/concorrente/sinal/…) ligados por arestas com significado; clique → foco + painel lateral navegável |
@@ -385,7 +390,7 @@ leitura pública nas 2 tabelas + `GRANT SELECT to anon`.
 
 ## 11. Testes
 
-`npm test` (`node --test`) — **137 testes**, arquivos em separado (`process.env.VA_DB_PATH`
+`npm test` (`node --test`) — **147 testes**, arquivos em separado (`process.env.VA_DB_PATH`
 isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\Admin\Downloads\`.
 
 | Arquivo | Cobre |
@@ -394,6 +399,7 @@ isola um banco temporário). Fixtures = PDFs reais de agosto/2026 em `C:\Users\A
 | `command-center.test.js` | **Fase A** — papel por produto (HERO / DESOVA / GIRO fallback / supressão por do-not-promote), sub-scores (profit null sem custo, clearance null sem estoque, creative sempre null, campaign cortado se bloqueado), plano do dia ranqueado com evidência e papel válido |
 | `campaign-builder.test.js` | **Fase B** — ângulo segue o desconto planejado / o papel / a concorrência; preço sugerido respeita o piso de margem; `parseDias`; combos com flag `viavel` + filtro `apenasViaveis`; `montarCampanha` — janela contígua, elenco por papel, forecast em 3 cenários monotônicos, score 0–100, margem null sem custo |
 | `campaign-measure.test.js` | **Fase C** — erro claro fora do calendário; exige nome ou dias+categorias; incremento total ≈ (média − baseline) × dias; canibalização só com baseline do mesmo dia da semana; ROAS/retorno só com investimento; lucro null sem custo; `medirTodasDoCalendario`; medição ad-hoc por dias+categorias |
+| `kanban.test.js` | **Kanban** — playbook íntegro (id único, gatilho conhecido, esforço/impacto válidos); quadro com as 4 colunas; `criar` exige título e cai em `ideia`; mover para "feito" carimba `entregue_em` e voltar limpa; `atualizar` ignora coluna inválida e campo não permitido; `remover`; loja inválida → erro; `sugestoes` só saem com gatilho, trazem a jogada e a evidência, as com evidência vêm antes, e o que já está no quadro vem marcado |
 | `social.test.js` | **Redes Sociais** — `numBR` (pt-BR: mil/mi, ponto de milhar, vírgula decimal, R$, %); `mergeInstagram` (mantém o que existe, sobrepõe o preenchido); `trafego_pago` (insere, `investimentoTrafegoPago` soma por mês e **entra na Medição** quando não se informa investimento); `analiseSocial` (6 séries, tráfego pago, cruzamento com faturamento; `motor_visao_ativo` false sem chave); **planilha** (`parseSocialXlsx`: formato largo, tráfego pago + derivação de CPC/CPM/CTR, loja pelo nome do arquivo; `ehArquivoSocial`; `ingestSocialXlsx` grava e a análise mostra); loja inválida → erro |
 | `padroes-mkt.test.js` | **Fase D** — uma entrada por campanha; `por_dia_semana` ordenado por lift; `tendencia` em conjunto válido; lift da ocorrência ≈ receita campanha / baseline; veredito coerente com a tendência; fadiga só de categoria de campanha, ainda vendendo (`lift_atual > 0`), com queda real e volume mínimo |
 | `concorrencia-analise.test.js` | **Fase E** — `share_promocoes`: estrutura, `nossas_promocoes_total` 0 sem campanhas cadastradas, linha "nós" em `por_concorrente`, categoria do calendário marcada recorrente, "subcomunicando" só com ≥2 ofertas abaixo do nosso preço e sem ação nossa; `contra_ataque` nunca aponta o próprio produto e só surge quando não vale cobrir |

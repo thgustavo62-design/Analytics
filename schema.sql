@@ -432,3 +432,24 @@ CREATE TABLE IF NOT EXISTS promocoes_planejadas (
   atualizado_em TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_promo_plan_loja ON promocoes_planejadas(loja_id, data_fim);
+
+-- Quadro Kanban de marketing: ideias -> a fazer -> executando -> entregue.
+-- Sempre com a "jogada" de multinacional que inspirou (config/playbook-multinacionais.json).
+CREATE TABLE IF NOT EXISTS mkt_tarefas (
+  id               INTEGER PRIMARY KEY,
+  loja             TEXT,                  -- NULL = vale para as duas
+  titulo           TEXT NOT NULL,
+  descricao        TEXT,
+  coluna           TEXT NOT NULL DEFAULT 'ideia',   -- ideia | fazer | fazendo | feito
+  prioridade       TEXT,                  -- alta | media | baixa
+  categoria        TEXT,                  -- categoria canônica alvo
+  origem           TEXT,                  -- manual | sugestao
+  playbook         TEXT,                  -- id da jogada de multinacional
+  impacto_esperado TEXT,
+  resultado        TEXT,                  -- o que deu, preenchido ao entregar
+  ordem            INTEGER NOT NULL DEFAULT 0,
+  criado_em        TEXT NOT NULL DEFAULT (datetime('now')),
+  atualizado_em    TEXT NOT NULL DEFAULT (datetime('now')),
+  entregue_em      TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_mkt_tarefas ON mkt_tarefas(loja, coluna, ordem);

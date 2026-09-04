@@ -1,0 +1,181 @@
+{
+  "_nota": "Jogadas de marketing consagradas em multinacionais, traduzidas para uma farmácia de bairro. Cada jogada tem um GATILHO: uma condição nos dados da loja que faz o sistema sugerir aquela ideia no Kanban. Edite/adicione jogadas aqui sem tocar no código. 'gatilho' válidos: categoria_sob_ataque, estoque_parado, cesta_lift_alto, produto_recorrente, subcomunicando, margem_alta_sem_giro, ruptura, campanha_em_fadiga, ticket_baixo, sempre.",
+  "jogadas": [
+    {
+      "id": "coca-disponibilidade",
+      "empresa": "Coca-Cola",
+      "jogada": "Ao alcance do desejo",
+      "o_que_e": "A Coca trabalha para estar em todo ponto de contato onde a vontade aparece — não basta ter, tem que estar visível no momento certo.",
+      "por_que_funciona": "A maior parte da decisão de compra em varejo é tomada na loja, não antes. Visibilidade converte melhor que desconto.",
+      "como_adaptar": "Pegue o produto-chamariz da semana e garanta 3 pontos de contato no mesmo dia: ponta de gôndola, story fixado e cartaz na porta. Sem mudar o preço.",
+      "gatilho": "sempre",
+      "esforco": "baixo",
+      "impacto": "medio"
+    },
+    {
+      "id": "pg-primeiro-momento-verdade",
+      "empresa": "Procter & Gamble",
+      "jogada": "First Moment of Truth (os 3 segundos na gôndola)",
+      "o_que_e": "A P&G descobriu que a decisão acontece nos primeiros segundos diante da prateleira e passou a desenhar embalagem e material de ponto de venda para vencer nesse instante.",
+      "por_que_funciona": "Atenção é escassa. Uma informação clara ganha de sete informações competindo entre si.",
+      "como_adaptar": "Um post = um produto = um preço grande. Corte a arte poluída com 8 itens. Teste um post de produto único contra o encarte cheio e compare o alcance.",
+      "gatilho": "sempre",
+      "esforco": "baixo",
+      "impacto": "medio"
+    },
+    {
+      "id": "unilever-escada-preco",
+      "empresa": "Unilever",
+      "jogada": "Escada de preço explícita",
+      "o_que_e": "A Unilever mantém marcas em faixas de preço diferentes para a mesma necessidade e comunica a escada abertamente, capturando quem quer economizar sem perder quem quer marca.",
+      "por_que_funciona": "O cliente que ia embora por preço fica com a opção de baixo; o que valoriza marca não é empurrado para baixo.",
+      "como_adaptar": "Numa categoria com genérico/similar/ético, poste os três lado a lado com o preço de cada um: 'mesma substância, três bolsos'. Farmácia tem a escada pronta no estoque.",
+      "gatilho": "margem_alta_sem_giro",
+      "esforco": "baixo",
+      "impacto": "alto"
+    },
+    {
+      "id": "amazon-comprados-juntos",
+      "empresa": "Amazon",
+      "jogada": "Frequentemente comprados juntos",
+      "o_que_e": "A Amazon sugere o complemento no momento da compra, com base no que outros clientes levaram junto.",
+      "por_que_funciona": "Aumenta o ticket sem custo de aquisição — o cliente já está comprando.",
+      "como_adaptar": "Use os pares de cesta que o sistema já calculou (lift alto) e monte um combo com desconto pequeno só no segundo item. Treine o balcão para oferecer o par.",
+      "gatilho": "cesta_lift_alto",
+      "esforco": "baixo",
+      "impacto": "alto"
+    },
+    {
+      "id": "nestle-ritual",
+      "empresa": "Nestlé / Danone",
+      "jogada": "Transformar compra episódica em ritual",
+      "o_que_e": "Marcas de consumo constroem um horário/ocasião fixa de consumo para virar hábito e reduzir a decisão de recompra.",
+      "por_que_funciona": "Hábito é a defesa mais barata contra concorrente — o cliente para de comparar preço toda vez.",
+      "como_adaptar": "Produtos de recompra previsível (fralda, leite, uso contínuo): calcule o ciclo pelo giro e mande lembrete no WhatsApp perto do fim do ciclo. 'Sua fralda deve estar acabando.'",
+      "gatilho": "produto_recorrente",
+      "esforco": "medio",
+      "impacto": "alto"
+    },
+    {
+      "id": "mcdonalds-ancora",
+      "empresa": "McDonald's",
+      "jogada": "Âncora barata + subida de valor",
+      "o_que_e": "Um item de entrada muito barato traz o fluxo; a margem vem do que se agrega depois (bebida, batata, combo maior).",
+      "por_que_funciona": "O chamariz paga o tráfego; o acompanhamento paga a conta.",
+      "como_adaptar": "Anuncie o chamariz no preço agressivo que o motor de precificação calculou e defina de véspera qual item de margem o balcão oferece junto. Meça o ticket dos dias de campanha.",
+      "gatilho": "sempre",
+      "esforco": "medio",
+      "impacto": "alto"
+    },
+    {
+      "id": "zara-janela-curta",
+      "empresa": "Zara",
+      "jogada": "Janela curta e giro rápido",
+      "o_que_e": "Coleções pequenas com prazo curto criam urgência real e ensinam o cliente a voltar sempre para não perder.",
+      "por_que_funciona": "Escassez verdadeira (não inventada) acelera a decisão e aumenta a frequência de visita.",
+      "como_adaptar": "Oferta de 3 dias com data de fim escrita no post, e cumpra o fim. Nada de 'promoção permanente' — ela mata a urgência e a margem.",
+      "gatilho": "campanha_em_fadiga",
+      "esforco": "baixo",
+      "impacto": "medio"
+    },
+    {
+      "id": "raia-recompra",
+      "empresa": "Raia Drogasil",
+      "jogada": "Base cadastrada e lembrete de recompra",
+      "o_que_e": "As grandes redes de farmácia vivem da base identificada: sabem quem compra o quê e quando, e puxam a recompra.",
+      "por_que_funciona": "Cliente identificado custa muito menos que cliente novo e compra mais vezes.",
+      "como_adaptar": "Comece pequeno: peça o WhatsApp na hora do uso contínuo e registre o produto. O sistema já mostra quanto da receita vem de cliente identificado — acompanhe esse número subir.",
+      "gatilho": "sempre",
+      "esforco": "medio",
+      "impacto": "alto"
+    },
+    {
+      "id": "natura-consultoria",
+      "empresa": "Natura",
+      "jogada": "Vender por consultoria, não por preço",
+      "o_que_e": "A Natura constrói a venda em cima de orientação de uso e relacionamento, não de desconto.",
+      "por_que_funciona": "Conteúdo útil sustenta preço e cria autoridade; desconto só compra a venda de hoje.",
+      "como_adaptar": "Em dermocosmético e suplemento (margem alta), troque um post de preço por um de 'como usar / qual escolher'. Compare o alcance e as visitas ao perfil contra o post de preço.",
+      "gatilho": "margem_alta_sem_giro",
+      "esforco": "medio",
+      "impacto": "medio"
+    },
+    {
+      "id": "magalu-porta-voz",
+      "empresa": "Magazine Luiza",
+      "jogada": "Porta-voz humano fixo",
+      "o_que_e": "A 'Lu' deu rosto e voz constantes à marca, o que aumenta reconhecimento e confiança ao longo do tempo.",
+      "por_que_funciona": "Rosto humano recorrente gera familiaridade; familiaridade gera preferência.",
+      "como_adaptar": "Escolha uma pessoa da farmácia para aparecer sempre (mesmo que 15 s por post). Consistência vale mais que produção.",
+      "gatilho": "sempre",
+      "esforco": "baixo",
+      "impacto": "medio"
+    },
+    {
+      "id": "apple-um-heroi",
+      "empresa": "Apple",
+      "jogada": "Um herói por vez",
+      "o_que_e": "A Apple comunica um produto por campanha, com uma mensagem só.",
+      "por_que_funciona": "Mensagem única é lembrada; lista de itens é ignorada.",
+      "como_adaptar": "Se o encarte tem 12 itens, escolha 1 herói para o post principal e deixe os outros 11 no material de loja.",
+      "gatilho": "subcomunicando",
+      "esforco": "baixo",
+      "impacto": "medio"
+    },
+    {
+      "id": "ambev-calendario",
+      "empresa": "Ambev",
+      "jogada": "Calendário travado com antecedência",
+      "o_que_e": "Grandes anunciantes planejam a sazonalidade meses antes e chegam nas datas com estoque, material e verba prontos.",
+      "por_que_funciona": "Quem improvisa na semana da data paga mais caro e compete com todo mundo pelo mesmo espaço.",
+      "como_adaptar": "Trave as próximas 3 datas do calendário (volta às aulas, dia das mães, festa junina…) com produto, preço e estoque definidos com 30 dias de antecedência.",
+      "gatilho": "sempre",
+      "esforco": "medio",
+      "impacto": "alto"
+    },
+    {
+      "id": "walmart-preco-baixo-todo-dia",
+      "empresa": "Walmart",
+      "jogada": "Preço baixo todo dia vs. promoção",
+      "o_que_e": "O Walmart trocou promoções pontuais por preço baixo permanente numa cesta visível, para o cliente parar de esperar a oferta.",
+      "por_que_funciona": "Promoção constante ensina o cliente a só comprar em promoção e destrói a margem do resto do mês.",
+      "como_adaptar": "Escolha 10–20 itens de alta frequência para ter preço fixo competitivo o mês todo, comunicados como 'preço de sempre', e pare de girar promoção neles.",
+      "gatilho": "categoria_sob_ataque",
+      "esforco": "medio",
+      "impacto": "alto"
+    },
+    {
+      "id": "loreal-defesa-categoria",
+      "empresa": "L'Oréal",
+      "jogada": "Defender a categoria onde o concorrente atacou",
+      "o_que_e": "Quando um rival ataca preço numa linha, a resposta é reforçar valor percebido na mesma linha (amostra, kit, conteúdo), não só cobrir o preço.",
+      "por_que_funciona": "Guerra de preço destrói a categoria para os dois; valor percebido segura o cliente sem queimar margem.",
+      "como_adaptar": "Na categoria atacada, monte um kit (dois itens que já andam juntos na cesta) em vez de só baixar o preço do item atacado. O sistema mostra até onde dá para descer sem furar a margem.",
+      "gatilho": "categoria_sob_ataque",
+      "esforco": "medio",
+      "impacto": "alto"
+    },
+    {
+      "id": "zara-liquidacao-planejada",
+      "empresa": "Inditex / Renner",
+      "jogada": "Liquidação planejada, não desespero",
+      "o_que_e": "Varejo de moda tem data e regra de remarcação: o item entra em liquidação no prazo certo, antes de virar prejuízo.",
+      "por_que_funciona": "Capital parado custa mais do que o desconto necessário para girar.",
+      "como_adaptar": "Estoque parado com cobertura muito alta: defina uma regra fixa (ex.: acima de 120 dias de cobertura, entra em desova) e execute sem discutir caso a caso.",
+      "gatilho": "estoque_parado",
+      "esforco": "baixo",
+      "impacto": "alto"
+    },
+    {
+      "id": "pg-nunca-anunciar-sem-estoque",
+      "empresa": "Procter & Gamble",
+      "jogada": "Não anunciar o que pode faltar",
+      "o_que_e": "Grandes anunciantes travam a campanha se a cadeia não garante abastecimento no período.",
+      "por_que_funciona": "Anúncio que leva o cliente à ruptura queima a verba e a confiança de uma vez.",
+      "como_adaptar": "Antes de subir a campanha, cheque a lista de ruptura do sistema. Se o herói está em risco, troque o herói — não a data.",
+      "gatilho": "ruptura",
+      "esforco": "baixo",
+      "impacto": "alto"
+    }
+  ]
+}

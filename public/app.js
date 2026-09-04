@@ -1045,6 +1045,7 @@
 
   // ---------- Marketing (Fase 2/3/4) ----------
   var mkt = { tab: "resultado", cache: {} };
+  var kb = { data: null, sug: null };
   var MKT_TABS = [
     ["resultado", "Resultado"], ["produtos", "Produtos"], ["recomendados", "Recomendados"], ["nao-anunciar", "Não anunciar"],
     ["estoque-parado", "Estoque parado"], ["cestas", "Cestas & Combos"], ["eficiencia", "Eficiência"], ["medicao", "Medição"],
@@ -2076,6 +2077,179 @@
   }
 
   // ---------- Concorrentes ----------
+  // ---------- Kanban de marketing ----------
+  var KB_COLS = [
+    ["ideia", "💡 Ideias", "o que dá para fazer"],
+    ["fazer", "📌 A fazer", "aprovado, ainda não começou"],
+    ["fazendo", "🚀 Executando", "no ar agora"],
+    ["feito", "✅ Entregue", "o que já rodou"],
+  ];
+  var KB_PRIO = { alta: ["Alta", "var(--down)"], media: ["Média", "var(--warn)"], baixa: ["Baixa", "var(--muted)"] };
+  function kbCard(t) {
+    var p = KB_PRIO[t.prioridade];
+    return '<div class="kb-card" draggable="true" data-kb-id="' + t.id + '">' +
+      '<div class="kb-card-h"><b>' + esc(t.titulo) + "</b>" +
+      (p ? '<span class="tag" style="background:' + p[1] + ';color:#fff">' + p[0] + "</span>" : "") + "</div>" +
+      (t.descricao ? '<div class="kb-desc">' + esc(t.descricao) + "</div>" : "") +
+      (t.jogada ? '<div class="kb-jog">🏢 <b>' + esc(t.jogada.empresa) + "</b> · " + esc(t.jogada.jogada) + "</div>" : "") +
+      (t.categoria ? '<span class="chip">' + esc(t.categoria) + "</span> " : "") +
+      (t.resultado ? '<div class="kb-res">📈 ' + esc(t.resultado) + "</div>" : "") +
+      (t.entregue_em ? '<div class="cs">entregue em ' + esc(String(t.entregue_em).slice(0, 10)) + "</div>" : "") +
+      '<div class="kb-acts">' +
+        KB_COLS.filter(function (c) { return c[0] !== t.coluna; }).map(function (c) {
+          return '<button class="kb-mv" data-kb-to="' + c[0] + '" data-kb-id="' + t.id + '" title="mover para ' + esc(c[1]) + '">' + c[1].split(" ")[0] + "</button>";
+        }).join("") +
+        '<button class="kb-del" data-kb-id="' + t.id + '" title="excluir">🗑️</button>' +
+      "</div></div>";
+  }
+  function kanbanHtml(d) {
+    if (!d || d.erro) return '<div class="empty">' + esc((d && d.erro) || "erro") + "</div>";
+    var out = '<div class="kb-board">' + KB_COLS.map(function (c) {
+      var col = (d.colunas || []).find(function (x) { return x.id === c[0]; }) || { tarefas: [] };
+      return '<div class="kb-col" data-kb-col="' + c[0] + '">' +
+        '<div class="kb-col-h"><b>' + c[1] + '</b><span class="tag">' + col.tarefas.length + "</span></div>" +
+        '<div class="cs kb-col-sub">' + c[2] + "</div>" +
+        '<div class="kb-drop" data-kb-col="' + c[0] + '">' +
+        (col.tarefas.length ? col.tarefas.map(kbCard).join("") : '<div class="cs kb-vazio">—</div>') +
+        "</div></div>";
+    }).join("") + "</div>";
+    return out;
+  }
+  function kbSugestoesHtml(s) {
+    if (!s) return '<div class="empty">Analisando os seus dados…</div>';
+    if (s.erro) return '<div class="result err">' + esc(s.erro) + "</div>";
+    var lst = s.sugestoes || [];
+    if (!lst.length) return '<div class="empty">Sem sugestão nova — tudo o que o playbook dispara já está no quadro.</div>';
+    var out = '<div class="cs" style="margin-bottom:10px">' + esc(s.aviso || "") + "</div>";
+    out += lst.map(function (x) {
+      return '<div class="kb-sug' + (x.ja_no_quadro ? " ja" : "") + '">' +
+        '<div class="kb-sug-h"><span class="kb-emp">' + esc(x.empresa) + "</span><b>" + esc(x.jogada) + "</b>" +
+        '<span class="tag">impacto ' + esc(x.impacto) + "</span><span class=\"tag\">esforço " + esc(x.esforco) + "</span></div>" +
+        '<div class="kb-desc">' + esc(x.o_que_e) + "</div>" +
+        '<div class="kb-porque"><b>Por que funciona:</b> ' + esc(x.por_que_funciona) + "</div>" +
+        '<div class="kb-adapt"><b>Na farmácia:</b> ' + esc(x.descricao) + "</div>" +
+        (x.evidencia ? '<div class="kb-evid">📊 nos seus dados: ' + esc(x.evidencia) + "</div>" : '<div class="cs">boa prática geral (sem gatilho específico nos seus dados hoje)</div>') +
+        '<div class="kb-acts">' + (x.ja_no_quadro
+          ? '<span class="cs">já está no quadro</span>'
+          : '<button class="btn secondary kb-add" data-kb-pb="' + esc(x.playbook) + '">➕ adicionar às ideias</button>') + "</div>" +
+        "</div>";
+    }).join("");
+    return out;
+  }
+  function kbNovaHtml() {
+    return '<div class="card form-card"><form id="kbForm"><div class="rowf">' +
+      '<div style="flex:2"><label class="f">Nova tarefa / ideia</label><input class="inp" name="titulo" placeholder="ex.: kit fralda + lenço no fim de semana" required></div>' +
+      '<div><label class="f">Coluna</label><select class="inp" name="coluna">' + KB_COLS.map(function (c) { return '<option value="' + c[0] + '">' + c[1] + "</option>"; }).join("") + "</select></div>" +
+      '<div><label class="f">Prioridade</label><select class="inp" name="prioridade"><option value="">—</option><option value="alta">Alta</option><option value="media">Média</option><option value="baixa">Baixa</option></select></div>' +
+      '</div><div><label class="f">Detalhe (opcional)</label><input class="inp" name="descricao" placeholder="o que exatamente vai ser feito"></div>' +
+      '<button class="btn" type="submit" style="margin-top:10px">Adicionar</button><div id="kbFormOut" class="result" hidden></div></form></div>';
+  }
+  async function kbRecarregar() {
+    var L = encodeURIComponent(state.loja);
+    var d = await getJSON("/api/marketing/" + L + "/kanban");
+    kb.data = d;
+    view.querySelector("#kbBody").innerHTML = kanbanHtml(d);
+    wireKanbanBoard();
+  }
+  async function kbPost(metodo, url, body) {
+    var r = await fetch(url, { method: metodo, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+    var j = await r.json().catch(function () { return {}; });
+    if (!r.ok) throw new Error(j.erro || ("HTTP " + r.status));
+    return j;
+  }
+  function wireKanbanBoard() {
+    var L = encodeURIComponent(state.loja);
+    var root = view.querySelector("#kbBody");
+    if (!root) return;
+    root.addEventListener("click", async function (ev) {
+      var mv = ev.target.closest(".kb-mv"), del = ev.target.closest(".kb-del");
+      try {
+        if (mv) { await kbPost("PATCH", "/api/marketing/" + L + "/kanban/" + mv.getAttribute("data-kb-id"), { coluna: mv.getAttribute("data-kb-to") }); await kbRecarregar(); }
+        else if (del) { if (!confirm("Excluir esta tarefa?")) return; await kbPost("DELETE", "/api/marketing/" + L + "/kanban/" + del.getAttribute("data-kb-id")); await kbRecarregar(); }
+      } catch (e) { alert(e.message); }
+    });
+    // arrastar e soltar
+    var arrastando = null;
+    root.querySelectorAll(".kb-card").forEach(function (c) {
+      c.addEventListener("dragstart", function () { arrastando = c.getAttribute("data-kb-id"); c.classList.add("arrastando"); });
+      c.addEventListener("dragend", function () { c.classList.remove("arrastando"); arrastando = null; });
+    });
+    root.querySelectorAll(".kb-drop").forEach(function (z) {
+      z.addEventListener("dragover", function (e) { e.preventDefault(); z.classList.add("sobre"); });
+      z.addEventListener("dragleave", function () { z.classList.remove("sobre"); });
+      z.addEventListener("drop", async function (e) {
+        e.preventDefault(); z.classList.remove("sobre");
+        if (!arrastando) return;
+        try { await kbPost("PATCH", "/api/marketing/" + L + "/kanban/" + arrastando, { coluna: z.getAttribute("data-kb-col") }); await kbRecarregar(); }
+        catch (err) { alert(err.message); }
+      });
+    });
+  }
+  function renderKanban() {
+    state.view = "kanban";
+    document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === "kanban"); });
+    if (!state.loja) { view.innerHTML = '<div class="empty">Escolha uma loja.</div>'; return; }
+    var podeEditar = !(EXPORT || window.__HOSTED__ || window.__PUBLICO__);
+    view.innerHTML = '<div class="page-head"><div><h1>📋 Kanban de marketing</h1><div class="sub">' + esc(state.loja) +
+      ' · o que está sendo executado, o que já foi entregue e o que dá para fazer — com a jogada de multinacional por trás de cada ideia</div></div>' +
+      (podeEditar ? '<button class="btn" id="kbNovaBtn">➕ Nova tarefa</button>' : "") + "</div>" +
+      '<div id="kbNova" hidden></div>' +
+      '<div id="kbBody"><div class="empty">Carregando…</div></div>' +
+      '<div class="cc-sec-h">💡 Banco de ideias — o que as multinacionais fazem, traduzido para a farmácia</div>' +
+      '<div id="kbSug"><div class="empty">Analisando os seus dados…</div></div>';
+
+    var nb = view.querySelector("#kbNovaBtn");
+    if (nb) nb.addEventListener("click", function () {
+      var box = view.querySelector("#kbNova");
+      box.hidden = !box.hidden;
+      if (!box.hidden && !box.innerHTML) { box.innerHTML = kbNovaHtml(); wireKbForm(); }
+    });
+
+    kbRecarregar().catch(function (e) { view.querySelector("#kbBody").innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>"; });
+    getJSON("/api/marketing/" + encodeURIComponent(state.loja) + "/kanban-sugestoes").then(function (s) {
+      kb.sug = s;
+      view.querySelector("#kbSug").innerHTML = kbSugestoesHtml(s);
+      wireKbSugestoes();
+    }).catch(function (e) {
+      view.querySelector("#kbSug").innerHTML = '<div class="result err">' + esc((e.body && e.body.erro) || e.message) + "</div>";
+    });
+  }
+  function wireKbForm() {
+    var f = view.querySelector("#kbForm");
+    if (!f) return;
+    f.addEventListener("submit", async function (ev) {
+      ev.preventDefault();
+      var out = view.querySelector("#kbFormOut");
+      var body = { titulo: f.titulo.value.trim(), descricao: f.descricao.value.trim() || null, coluna: f.coluna.value, prioridade: f.prioridade.value || null };
+      try {
+        await kbPost("POST", "/api/marketing/" + encodeURIComponent(state.loja) + "/kanban", body);
+        f.reset(); out.hidden = true;
+        await kbRecarregar();
+      } catch (e) { out.hidden = false; out.className = "result err"; out.textContent = e.message; }
+    });
+  }
+  function wireKbSugestoes() {
+    var box = view.querySelector("#kbSug");
+    if (!box) return;
+    box.addEventListener("click", async function (ev) {
+      var b = ev.target.closest(".kb-add");
+      if (!b) return;
+      var pb = b.getAttribute("data-kb-pb");
+      var s = (kb.sug && kb.sug.sugestoes || []).find(function (x) { return x.playbook === pb; });
+      if (!s) return;
+      b.disabled = true; b.textContent = "adicionando…";
+      try {
+        await kbPost("POST", "/api/marketing/" + encodeURIComponent(state.loja) + "/kanban", {
+          titulo: s.jogada, descricao: s.descricao, coluna: "ideia", origem: "sugestao",
+          playbook: s.playbook, categoria: s.alvo && s.alvo.length < 40 ? s.alvo : null,
+          impacto_esperado: s.evidencia || null,
+        });
+        await kbRecarregar();
+        b.outerHTML = '<span class="cs">já está no quadro</span>';
+      } catch (e) { b.disabled = false; b.textContent = "➕ adicionar às ideias"; alert(e.message); }
+    });
+  }
+
   // ---------- Redes Sociais ----------
   function ssSpark(pontos, w, h) {
     w = w || 160; h = h || 34;
@@ -2432,7 +2606,7 @@
   }
 
   // ---------- nav ----------
-  var VIEWS = ["command", "painel", "marketing", "concorrentes", "social", "intelligence", "conexoes", "analise", "upload", "historico", "config"];
+  var VIEWS = ["command", "painel", "marketing", "concorrentes", "social", "kanban", "intelligence", "conexoes", "analise", "upload", "historico", "config"];
   function go(v) {
     state.view = v;
     document.querySelectorAll(".nav a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-view") === v); });
@@ -2441,6 +2615,7 @@
     else if (v === "marketing") { mkt.cache = {}; renderMarketing(); }
     else if (v === "concorrentes") renderConcorrentes();
     else if (v === "social") renderSocial();
+    else if (v === "kanban") renderKanban();
     else if (v === "intelligence") { itl.cache = {}; renderIntelligence(); }
     else if (v === "conexoes") renderConexoes();
     else if (v === "analise") renderAnalise();
@@ -2473,6 +2648,7 @@
       else if (state.view === "intelligence") { itl.cache = {}; loadPeriodos().then(function () { renderIntelligence(); }); }
       else if (state.view === "concorrentes") { loadPeriodos().then(function () { renderConcorrentes(); }); }
       else if (state.view === "social") { loadPeriodos().then(function () { renderSocial(); }); }
+      else if (state.view === "kanban") { loadPeriodos().then(function () { renderKanban(); }); }
       else loadPeriodos();
     });
     selPeriodo.addEventListener("change", function () {

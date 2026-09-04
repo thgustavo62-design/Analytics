@@ -872,6 +872,53 @@ app.get("/api/marketing/:loja/campaign-measure", (req, res) => {
 });
 
 // Precificação de promoção — que preço colocar, quanto de lucro, qual produto promover
+// --- Kanban de marketing (ideias -> a fazer -> executando -> entregue) ---
+const kanban = require("./marketing/kanban");
+// o quadro é só um SELECT — responde na hora
+app.get("/api/marketing/:loja/kanban", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const q = kanban.quadro(req.params.loja);
+    res.status(q.erro ? 404 : 200).json(q);
+  } catch (e) {
+    console.error("[api/marketing kanban]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+// as sugestões cruzam o playbook com os dados da loja (pesado) — endpoint separado
+app.get("/api/marketing/:loja/kanban-sugestoes", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  try {
+    const ctx = contextoMarketing(req.params.loja);
+    const r = kanban.sugestoes(req.params.loja, ctx);
+    res.status(r.erro ? 404 : 200).json(r);
+  } catch (e) {
+    console.error("[api/marketing kanban-sugestoes]", e);
+    res.status(500).json({ erro: e.message });
+  }
+});
+app.post("/api/marketing/:loja/kanban", express.json({ limit: "256kb" }), (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const r = kanban.criar(req.params.loja, req.body || {});
+  if (r.erro) return res.status(400).json(r);
+  regenerarPublicoEmBreve();
+  res.json(r);
+});
+app.patch("/api/marketing/:loja/kanban/:id", express.json({ limit: "256kb" }), (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const r = kanban.atualizar(+req.params.id, req.body || {});
+  if (r.erro) return res.status(r.erro === "tarefa não encontrada" ? 404 : 400).json(r);
+  regenerarPublicoEmBreve();
+  res.json(r);
+});
+app.delete("/api/marketing/:loja/kanban/:id", (req, res) => {
+  if (!lojaOk(req, res)) return;
+  const r = kanban.remover(+req.params.id);
+  if (r.erro) return res.status(404).json(r);
+  regenerarPublicoEmBreve();
+  res.json(r);
+});
+
 const promoPricing = require("./marketing/promo-pricing");
 app.get("/api/marketing/:loja/promo-pricing", (req, res) => {
   if (!lojaOk(req, res)) return;

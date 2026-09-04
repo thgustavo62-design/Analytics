@@ -8,7 +8,7 @@ const MK_MARKETING = {
   "stagnant-stock": "parado", "baskets": "baskets", "combos": "combos",
   "campaign-efficiency": "eficiencia", "campaign-builder": "builder", "resultado": "resultado",
   "command-center": "commandCenter", "campaign-plan": "campaignPlan", "campaign-measure": "campaignMeasure",
-  "playbooks": "playbooks", "calendar": "calendar", "abc": "abc", "promo-pricing": "promoPricing",
+  "playbooks": "playbooks", "calendar": "calendar", "abc": "abc", "promo-pricing": "promoPricing", "kanban": "kanban", "kanban-sugestoes": "kanbanSugestoes",
 };
 const MK_INTEL = {
   "war-room": "warRoom", "signals": "signals", "investigations": "investigations",
@@ -58,6 +58,8 @@ async function coletarLoja(get, nome) {
       calendar: await get(`/api/marketing/${L}/calendar`),
       abc: await get(`/api/marketing/${L}/abc`),
       promoPricing: await get(`/api/marketing/${L}/promo-pricing`),
+      kanban: await get(`/api/marketing/${L}/kanban`),
+      kanbanSugestoes: await get(`/api/marketing/${L}/kanban-sugestoes`),
       produtos: await get(`/api/marketing/${L}/${ultimo}/produtos?limite=90`),
       recommended: await get(`/api/marketing/${L}/${ultimo}/recommended-products`),
       dnp: await get(`/api/marketing/${L}/${ultimo}/do-not-promote`),
