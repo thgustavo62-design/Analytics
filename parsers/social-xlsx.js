@@ -68,15 +68,26 @@ function pctBR(v) {
 }
 
 function resolverColunas(headerRow) {
-  const cells = headerRow.map((c) => norm(c));
+  const cells = headerRow.map((c) => norm(c).replace(/[:.()%]/g, "").trim());
   const idx = {};
-  for (const [canon, nomes] of Object.entries(CFG.colunas || {})) {
+  const usadas = new Set(); // uma coluna do arquivo só serve para UM canon
+  const canons = Object.entries(CFG.colunas || {});
+  // passe 1: só casamento EXATO (o mais específico ganha a coluna)
+  for (const [canon, nomes] of canons) {
     for (const nome of nomes) {
-      const alvo = norm(nome);
-      let j = cells.indexOf(alvo);
-      if (j < 0) j = cells.findIndex((c) => c && (c === alvo || c.replace(/[:.()%]/g, "").trim() === alvo));
-      if (j < 0) j = cells.findIndex((c) => c && (c.startsWith(alvo + " ") || c.endsWith(" " + alvo)));
-      if (j >= 0) { idx[canon] = j; break; }
+      const alvo = norm(nome).replace(/[:.()%]/g, "").trim();
+      const j = cells.findIndex((c, i) => c === alvo && !usadas.has(i));
+      if (j >= 0) { idx[canon] = j; usadas.add(j); break; }
+    }
+  }
+  // passe 2: fuzzy (contém / prefixo / sufixo) só em coluna ainda não reivindicada, e só p/ sinônimos ≥ 4 letras
+  for (const [canon, nomes] of canons) {
+    if (idx[canon] != null) continue;
+    for (const nome of nomes) {
+      const alvo = norm(nome).replace(/[:.()%]/g, "").trim();
+      if (alvo.length < 4) continue;
+      const j = cells.findIndex((c, i) => c && !usadas.has(i) && (c === alvo || c.startsWith(alvo + " ") || c.endsWith(" " + alvo)));
+      if (j >= 0) { idx[canon] = j; usadas.add(j); break; }
     }
   }
   return idx;
@@ -85,11 +96,14 @@ function resolverColunas(headerRow) {
 function acharCabecalho(rows) {
   for (let r = 0; r < Math.min(rows.length, 20); r++) {
     const idx = resolverColunas((rows[r] || []).map((c) => String(c ?? "")));
-    const temTP = TP_NUM.some((k) => idx[k] != null && ["investimento", "impressoes", "cliques", "cpc", "cpm", "resultados"].includes(k));
-    const temConta = CONTA_METRICAS.some((k) => idx[k] != null);
+    const nConta = CONTA_METRICAS.filter((k) => idx[k] != null).length;
     const temLongo = idx.metrica != null && idx.valor != null;
-    if (temTP) return { linha: r, idx, tipo: "trafego_pago" };
-    if (temConta || temLongo) return { linha: r, idx, tipo: "conta", longo: temLongo && !temConta };
+    // sinais FORTES de tráfego pago (não confundem com resumo da conta)
+    const temGasto = ["investimento", "cpc", "cpm", "custo_por_resultado"].some((k) => idx[k] != null);
+    // resumo da conta vence quando há ≥2 métricas orgânicas e nada de "gasto/custo"
+    if (nConta >= 2 && !temGasto) return { linha: r, idx, tipo: "conta", longo: false };
+    if (temGasto || (idx.impressoes != null && nConta === 0)) return { linha: r, idx, tipo: "trafego_pago" };
+    if (nConta >= 1 || temLongo) return { linha: r, idx, tipo: "conta", longo: temLongo && nConta === 0 };
   }
   return null;
 }

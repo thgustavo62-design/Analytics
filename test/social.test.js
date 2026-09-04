@@ -146,6 +146,24 @@ test("parseSocialXlsx: tráfego pago + derivação de CPC/CPM/CTR quando falta",
   fs.unlinkSync(p);
 });
 
+test("parseSocialXlsx: 'Cliques no link' + 'Var …' não confundem resumo da conta com tráfego pago", () => {
+  const p = path.join(TMP, `sx-conta-clicks-${process.pid}.csv`);
+  fs.writeFileSync(p,
+    "Loja,Mês,Visualizações,Var Visualizações,Alcance,Var Alcance,Interações,Var Interações,Visitas ao perfil,Var Visitas ao perfil,Cliques no link,Var Cliques no link,Seguidores,Var Seguidores\n" +
+    'Farma e Farma,2026-08,"328,9 mil","+20,1%","57,8 mil","-51%","2,1 mil","+21,9%","1,6 mil","+30,7%","302","-15,2%","146","+3,5%"\n');
+  const r = parseSocialXlsx(p);
+  assert.equal(r.tipo, "conta");                               // NÃO trafego_pago
+  assert.equal(r.linhas.length, 1);
+  const m = r.linhas[0].metricas;
+  assert.equal(m.visualizacoes.valor, 328900);
+  assert.equal(m.visualizacoes.delta_pct, 20.1);
+  assert.equal(m.alcance.delta_pct, -51);
+  assert.equal(m.cliques_link.valor, 302);
+  assert.equal(m.cliques_link.delta_pct, -15.2);
+  assert.equal(m.seguidores.valor, 146);
+  fs.unlinkSync(p);
+});
+
 test("parseSocialXlsx: loja pelo nome do arquivo quando não há coluna Loja", () => {
   const p = path.join(TMP, `metricas minas farma ${process.pid}.csv`);
   fs.writeFileSync(p, "Mes,Alcance,Seguidores\n2026-08,\"52 mil\",\"145\"\n");
